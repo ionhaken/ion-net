@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="ion::Array&lt;*,*&gt;">
+    <Intrinsic Name="size" Expression="(size_t)($T2)" />
+    <DisplayString>{{ size={size()} }}"</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>size()</Size>
+        <ValuePointer>mData._Elems</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+  <Type Name="ion::RawBuffer&lt;*&gt;">
+    <Expand>
+      <ArrayItems>
+        <Size>64</Size>
+        <ValuePointer>mData</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+  <Type Name="ion::AlignedStorage&lt;*,*&gt;">
+    <Intrinsic Name="size" Expression="(size_t)($T2)" />
+    <DisplayString>{{ size={size()} }}"</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>size()</Size>
+        <ValuePointer>mData</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+  
+  <Type Name="ion::ArenaVector&lt;*,*,*,*&gt;">
+  <Intrinsic Name="size" Expression="(size_t)(mStorage.mData.mBuffer.mInfo.mSize)" />
+  <Intrinsic Name="capacity" Expression="(size_t)(mStorage.mData.mBuffer.mInfo.mCapacity)" />
+  <DisplayString>{{ size={size()} }}</DisplayString>
+  <Expand>
+    <Item Name="[capacity]" ExcludeView="simple">capacity()</Item>
+    <ArrayItems Condition="$T4 != mStorage.mData.mBuffer.mInfo.mCapacity">
+      <Size>size()</Size>
+      <ValuePointer>mStorage.mData.mBuffer.mItems.mData</ValuePointer>
+    </ArrayItems>
+    <ArrayItems Condition="$T2 &gt; 0">
+      <Direction>Forward</Direction>
+      <Size>size()</Size>
+      <ValuePointer>mStorage.mData.mBuffer.mSmallItems.mData</ValuePointer>
+    </ArrayItems>
+    <ArrayItems Condition="$T4 &gt; 0">
+      <Direction>Forward</Direction>
+      <Size>size()</Size>
+      <ValuePointer>>mStorage.mData.mBuffer.mTinyItems.mData</ValuePointer>
+    </ArrayItems>
+  </Expand>
+  </Type>
+  
+  <Type Name="ion::Vector&lt;*,*,*,*,*&gt;">
+    <Intrinsic Name="size" Expression="(size_t)(mProxy.mImpl.mStorage.mData.mBuffer.mInfo.mSize)" />
+    <Intrinsic Name="capacity" Expression="(size_t)(mProxy.mImpl.mStorage.mData.mBuffer.mInfo.mCapacity)" />
+    <DisplayString>{{ size={size()} }}</DisplayString>
+    <Expand>
+      <Item Name="[capacity]" ExcludeView="simple">capacity()</Item>
+      <ArrayItems Condition="$T5 != mProxy.mImpl.mStorage.mData.mBuffer.mInfo.mCapacity">
+        <Size>size()</Size>
+        <ValuePointer>mProxy.mImpl.mStorage.mData.mBuffer.mItems.mData</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+<!--
+  <Type Name="std::_Vector_iterator&lt;*&gt;">
+      <AlternativeType Name="std::_Vector_const_iterator&lt;*&gt;" />
+      <SmartPointer Usage="Indexable">_Ptr,na</SmartPointer>
+      <Expand>
+          <Item Name="[ptr]">_Ptr</Item>
+      </Expand>
+  </Type>
+  -->
+</AutoVisualizer>

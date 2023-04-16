@@ -82,12 +82,12 @@ Example server implementation
 // Starts server on port 60000. Reads packets until ctrl+break is pressed
 #include <ion/net/NetSdk.h>
 #include <ion/net/NetStartupParameters.h>
-#include <ion/RakPeer.h>
+#include <ion/net/NetGeneralPeer.h>
 void main()
 {
 	ion::NetInit();
 	{
-		ion::UniquePtr<ion::RakPeer> server = ion::MakeUnique<ion::RakPeer>();
+		ion::UniquePtr<ion::NetGeneralPeer> server = ion::MakeUnique<ion::NetGeneralPeer>();
 		ion::SocketDescriptor sd(60000, 0);
 		server->Startup(ion::NetStartupParameters::Create(8, &sd, 1));
 
@@ -111,12 +111,12 @@ Example client implementation
 // Starts client and connects to localhost port 60000. Reads packets until ctrl+break is pressed
 #include <ion/net/NetSdk.h>
 #include <ion/net/NetStartupParameters.h>
-#include <ion/RakPeer.h>
+#include <ion/net/NetGeneralPeer.h>
 void main()
 {
 	ion::NetInit();
 	{
-		ion::UniquePtr<ion::RakPeer> client = ion::MakeUnique<ion::RakPeer>();
+		ion::UniquePtr<ion::NetGeneralPeer> client = ion::MakeUnique<ion::NetGeneralPeer>();
 		ion::SocketDescriptor sd;
 		client->Startup(ion::NetStartupParameters::CreateClient(&sd, 1));
 		client->Connect("127.0.0.1", 60000, nullptr, 0);

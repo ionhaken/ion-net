@@ -30,7 +30,8 @@ void Prepare(uint32_t NumClients, ion::Vector<ion::UniquePtr<ion::NetGeneralPeer
 		peerList.Add(ion::MakeUnique<ion::NetGeneralPeer>());
 		ion::NetSocketDescriptor sd;
 		peerList.Back()->DisableSecurity();
-		peerList.Back()->Startup(ion::NetStartupParameters::CreateClient(&sd, 1));
+		auto res = peerList.Back()->Startup(ion::NetStartupParameters::CreateClient(&sd, 1));
+		ION_ASSERT(res == ion::StartupResult::RAKNET_STARTED, "Failed to start");
 		peerList.Back()->Connect("127.0.0.1", 60000, nullptr, 0);
 	}
 
@@ -134,6 +135,7 @@ TEST_CASE("client_server_randomized_data")
 		ion::UniquePtr<ion::NetGeneralPeer> server = ion::MakeUnique<ion::NetGeneralPeer>();
 		ion::UniquePtr<test::TestBuffer> buffer = ion::MakeUnique<test::TestBuffer>();
 		ion::NetSocketDescriptor sd(60000, 0);
+		server->DisableSecurity();
 		server->Startup(ion::NetStartupParameters::Create(test::MaxClients, &sd, 1));
 
 		ion::Vector<ion::UniquePtr<ion::NetGeneralPeer>> peerList;

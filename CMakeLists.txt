@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.26)
 
 project(ion-net)
 
+set( ION_NET_HEADERFILES ${PROJECT_SOURCE_DIR}/src) #This name doesn't follow CMake conventions but for retro compatibility I'll let it there.
+
+set(ION_NET_COMMON_LIBS ion-net-lib-static)
+
 MACRO(GETCURRENTFOLDER)#Gets the current foldername without the path
 	string(REGEX REPLACE
 	  ".+/(.?)"
@@ -11,8 +15,8 @@ ENDMACRO(GETCURRENTFOLDER)
 
 MACRO(STANDARDSUBPROJECT PROJECTNAME)#Many of the projects just need the cpp files compiled and the header added to the project, this avoids repeating code
 	project(${PROJECTNAME})
-	FILE(GLOB ALL_CPP_SRCS *.cpp)
-	FILE(GLOB ALL_HEADER_SRCS *.h)
+	FILE(GLOB_RECURSE ALL_CPP_SRCS *.cpp)
+	FILE(GLOB_RECURSE ALL_HEADER_SRCS *.h)
 	include_directories(${ION_NET_HEADERFILES} ./) 
 	add_executable(${PROJECTNAME} ${ALL_CPP_SRCS} ${ALL_HEADER_SRCS} ${READMES})
 	target_link_libraries(${PROJECTNAME} ${ION_NET_COMMON_LIBS})
@@ -77,8 +81,6 @@ option( ION_NET_ENABLE_DLL		"Generate the DLL project if true." 			TRUE)
 option( ION_NET_ENABLE_STATIC	"Generate the static library project if true." 	TRUE )
 option( ION_NET_GENERATE_INCLUDE_ONLY_DIR "Setup a include/ion-net/ directory in which all the headers are copied." FALSE )
 
-set( ION_NET_HEADERFILES ${PROJECT_SOURCE_DIR}/src) #This name doesn't follow CMake conventions but for retro compatibility I'll let it there.
-
 if( ION_NET_GENERATE_INCLUDE_ONLY_DIR )
 	set( ION_NET_INCLUDE_ONLY_DIR ${PROJECT_SOURCE_DIR}/include ) # this will be visible by client code
 	set( ION_NET_NAMED_INCLUDE_ONLY_DIR ${ION_NET_INCLUDE_ONLY_DIR}/ion-net )
@@ -95,12 +97,9 @@ set( ION_NET_INCLUDE_DIRS
 	${PROJECT_SOURCE_DIR}/src/ion
 	${PROJECT_SOURCE_DIR}/depend/libsodium/src
 	${PROJECT_SOURCE_DIR}/depend/ion/src
-	${PROJECT_SOURCE_DIR}/depend/ion/3rdparty PARENT_SCOPE) # Visible from outside
-
+	${PROJECT_SOURCE_DIR}/depend/ion/3rdparty)
 
 add_subdirectory(lib)
-
-set(ION_NET_COMMON_LIBS ion-net-lib-static)
 
 add_subdirectory(benchmark)
 add_subdirectory(fuzzer)

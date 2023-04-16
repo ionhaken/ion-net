@@ -1,0 +1,6 @@
+Copyright: Carl Cook, Nicolas Fleury, Lukas Bergdoll, Arthur O'Dwyer
+License: Boost-1.0
+Comment: For details, see <https://github.com/WG21-SG14/SG14/issues/174>.
+ The mentioned Copyright holders are the authors of the file according to WG21-SG14.
+ Original source is <https://github.com/WG21-SG14/SG14/blob/98baf1ae/SG14/inplace_function.h>.
+

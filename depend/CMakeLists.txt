@@ -1,0 +1,2 @@
+add_subdirectory(libsodium)
+add_subdirectory(ion)

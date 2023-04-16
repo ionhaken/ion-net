@@ -484,11 +484,14 @@ void BasePeer::Shutdown(unsigned int blockDuration, unsigned char orderingChanne
 	ion::NetConnectionLayer::Reset(mPeer->mConnections, mPeer->mControl.mMemoryResource);
 
 	ion::NetRemoteStoreLayer::Deinit(mPeer->mRemoteStore, mPeer->mControl, now);
-	// Free any packets the user didn't deallocate
-	mPeer->mControl.mPacketReturnQueue.DequeueAll([&](NetPacket* packet) { DeallocatePacket(packet); });
 	ion::NetReceptionLayer::Reset(mPeer->mReception, mPeer->mControl);
 	ClearBufferedCommands();
+
 	ion::NetControlLayer::Deinit(mPeer->mControl);
+
+	// Free any packets the user didn't deallocate
+	mPeer->mControl.mPacketReturnQueue.DequeueAll([&](NetPacket* packet) { DeallocatePacket(packet); });
+
 	NetReceptionLayer::ClearBanList(mPeer->mReception, mPeer->mControl);
 }
 

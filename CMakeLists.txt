@@ -95,7 +95,7 @@ set( ION_NET_INCLUDE_DIRS
 	${PROJECT_SOURCE_DIR}/src/ion
 	${PROJECT_SOURCE_DIR}/depend/libsodium/src
 	${PROJECT_SOURCE_DIR}/depend/ion/src
-	${PROJECT_SOURCE_DIR}/depend/ion/3rdparty) # Visible from outside
+	${PROJECT_SOURCE_DIR}/depend/ion/3rdparty PARENT_SCOPE) # Visible from outside
 
 
 add_subdirectory(lib)

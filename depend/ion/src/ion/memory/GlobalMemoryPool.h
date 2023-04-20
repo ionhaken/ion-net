@@ -16,9 +16,11 @@
 
 #pragma once
 
+// Global memory pool using thread-local memory pools
 namespace ion
 {
 
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
 void GlobalMemoryInit();
 
 void GlobalMemoryDeinit();
@@ -27,12 +29,11 @@ void GlobalMemoryThreadInit(UInt index);
 
 void GlobalMemoryThreadDeinit(UInt index);
 
-void GlobalMemoryThreadDeinit(UInt index);
-
-void* GlobalMemoryAllocate(UInt index, size_t size, size_t aligmnet);
+void* GlobalMemoryAllocate(UInt index, size_t size, size_t alignment);
 
 void* GlobalMemoryReallocate(UInt index, void* ptr, size_t size);
 
 void GlobalMemoryDeallocate(UInt index, void* ptr);
+#endif
 
-}
+}  // namespace ion

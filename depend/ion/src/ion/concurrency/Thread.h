@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 #pragma once
-#include <ion/Base.h>
 #include <ion/memory/Memory.h>
 
 #if ION_PLATFORM_MICROSOFT
@@ -125,8 +124,6 @@ bool SleepMs(int64_t ms);
 
 int64_t MinSleepUsec();
 
-void FreeHeaps();
-
 static_assert(sizeof(ThreadLocalStore) <= 256, "TLS must have small size");
 
 void YieldCPU();
@@ -135,7 +132,9 @@ void SetMainThreadPolicy();
 
 void SetPriority(Priority priority);
 
-inline void InitMain() { ion::Thread::Init(0); }
+void InitMain();
+
+void DeinitMain();
 
 void OnEngineRestart();
 
@@ -147,9 +146,8 @@ void InitThreadIdPool();
 ion::ThreadSynchronizer& Synchronizer();
 #endif
 
-void WaitForJoin();
-
 Int ThreadPriority(ion::Thread::Priority priority);
+
 Int GetSchedulingPolicy();
 
 }  // namespace Thread

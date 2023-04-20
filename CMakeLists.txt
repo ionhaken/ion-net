@@ -49,10 +49,9 @@ add_compile_options(
 
 add_compile_options(
 	"$<$<CONFIG:RELEASE>:-DION_CONFIG_ERROR_CHECKING=0>"
-	"$<$<CONFIG:RELWITHDEBINFO>:-DION_CONFIG_ERROR_CHECKING=0>"
-	"$<$<CONFIG:MINSIZEREL>:-DION_CONFIG_ERROR_CHECKING=0>"
-    	"$<$<CONFIG:DEBUG>:-DION_DEBUG_LOG_ENABLED=0>"
+    "$<$<CONFIG:DEBUG>:-DION_DEBUG_LOG_ENABLED=0>"
 )
+
 
 if( NOT APPLE )
 # check 64 bit
@@ -77,8 +76,6 @@ ENDIF(WIN32 AND NOT UNIX)
 set(CMAKE_DEBUG_POSTFIX "_d")
 
 # Options
-option( ION_NET_ENABLE_DLL		"Generate the DLL project if true." 			TRUE)
-option( ION_NET_ENABLE_STATIC	"Generate the static library project if true." 	TRUE )
 option( ION_NET_GENERATE_INCLUDE_ONLY_DIR "Setup a include/ion-net/ directory in which all the headers are copied." FALSE )
 
 if( ION_NET_GENERATE_INCLUDE_ONLY_DIR )

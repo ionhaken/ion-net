@@ -250,8 +250,6 @@ void Free(void* p);
 #endif
 }  // namespace detail
 
-void MemDeinit();
-
 #if ION_MEMORY_TRACKER || !defined(_WIN32) || !ION_BUILD_DEBUG
 [[nodiscard]] inline ION_RESTRICT_RETURN_VALUE void* Malloc(size_t size)
 {

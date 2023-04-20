@@ -30,6 +30,8 @@ public:
 
 	static bool IsDynamicInitExit();
 
+	static bool IsDynamicInitDone();
+
 	static void RequestExit();
 
 private:

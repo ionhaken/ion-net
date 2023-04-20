@@ -20,6 +20,7 @@
 
 #include <ion/debug/Profiling.h>
 
+#include <ion/memory/GlobalMemoryPool.h>
 #include <ion/memory/Memory.h>
 
 #include <ion/concurrency/MPMCQueue.h>
@@ -546,15 +547,22 @@ LogEvent& operator<<(LogEvent& out, char text[])
 
 void TracingInit()
 {
-	CoreInit();
 	ION_ACCESS_GUARD_WRITE_BLOCK(tracing::gGuard);
 	if (0 != tracing::gIsInitialized++)
 	{
 		return;
 	}
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
+	GlobalMemoryInit();
+#endif
+	CoreInit();
+#if ION_CONFIG_CONCURRENCY
+	Thread::InitMain();
+#endif
 	ION_MEMORY_SCOPE(ion::tag::Debug);
 	tracing::gInstance.Init(64 * 1024);
 }
+
 void TracingDeinit()
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(tracing::gGuard);
@@ -563,7 +571,15 @@ void TracingDeinit()
 		return;
 	}
 	tracing::gInstance.Deinit();
+#if ION_CONFIG_CONCURRENCY
+	Thread::DeinitMain();
+#endif
 	CoreDeinit();
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
+	GlobalMemoryDeinit();
+#else
+	ion::memory_tracker::PrintStats(true, ion::memory_tracker::Layer::Invalid);
+#endif
 }
 
 bool TracingIsInitialized() { return tracing::gIsInitialized != 0; }

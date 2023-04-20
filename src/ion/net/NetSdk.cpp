@@ -42,6 +42,7 @@ bool NetInit()
 	{
 		return true;
 	}
+	TracingInit();
 	ION_MEMORY_SCOPE(ion::tag::Network);
 	net::gInstance.Init(4 * 1024 * 1024);
 
@@ -107,6 +108,7 @@ void NetDeinit()
 #endif
 	randombytes_close();
 	net::gInstance.Deinit();
+	TracingDeinit();
 }
 
 }  // namespace ion

@@ -18,11 +18,16 @@
 	#include <ion/concurrency/Mutex.h>
 	#include <ion/container/ForEach.h>
 	#include <ion/container/Vector.h>
+	#include <ion/tweakables/Tweakables.h>
 
 	#include <ion/memory/AllocatorTraits.h>
 	#include <ion/memory/UniquePtr.h>
 
 	#include <ion/hw/CPU.inl>
+
+#if ION_TEMPORARY_MEMORY_STATS
+TWEAKABLE_BOOL("temporary.stats", ShowTemporaryStats, false);
+#endif
 
 namespace ion
 {
@@ -46,7 +51,9 @@ struct PoolRegistry
 	#endif
 };
 
-static PoolRegistry* mPoolRegistry = nullptr;
+PoolRegistry* mPoolRegistry = nullptr;
+ION_ACCESS_GUARD_STATIC(gGuard);
+std::atomic<int> gIsInitialized = 0;
 }  // namespace
 
 	#if ION_TEMPORARY_MEMORY_STATS
@@ -76,7 +83,7 @@ void TryPurgePool(CorePtr<BytePool>* iter)
 
 BytePool* ThreadInit()
 {
-	ION_ASSERT(mPoolRegistry != nullptr, "Temporary memory allocation not initialized");
+	ION_ASSERT_FMT_IMMEDIATE(mPoolRegistry != nullptr, "Temporary memory allocation not initialized");
 	ion::AutoLock<ion::Mutex> lock(mPoolRegistry->mPoolRegistryMutex);
 	ion::CorePtr<BytePool> pool(ion::MakeCorePtr<BytePool>());
 	ION_CHECK_FATAL(pool.Get(), "Fatal: Out of memory for thread temporary memory");
@@ -102,8 +109,6 @@ void ThreadDeferDeinit(BytePool* pool)
 		TryPurgePool(iter);
 	}
 }
-
-
 
 BytePool::BytePool() : mDefaultPage(this), mCurrentPage(&mDefaultPage)
 {
@@ -207,6 +212,11 @@ BytePage<BytePool::TSize>* BytePool::GetNextPage()
 
 void TemporaryInit()
 {
+	ION_ACCESS_GUARD_WRITE_BLOCK(temporary::gGuard);
+	if (0 != temporary::gIsInitialized++)
+	{
+		return;
+	}
 	ion::MemoryScope memoryScope(ion::tag::Core);
 	temporary::mPoolRegistry = new temporary::PoolRegistry();
 	ION_CHECK_FATAL(temporary::mPoolRegistry, "Fatal: Out of memory for temporary memory pool");
@@ -214,18 +224,27 @@ void TemporaryInit()
 
 void TemporaryDeinit()
 {
+	ION_ACCESS_GUARD_WRITE_BLOCK(temporary::gGuard);
+	if (1 != temporary::gIsInitialized--)
+	{
+		return;
+	}
+
 	#if ION_CLEAN_EXIT
 	ION_ASSERT_FMT_IMMEDIATE(temporary::mPoolRegistry->mEntries.IsEmpty(), "Leaking temporary memory");
 
 	#if ION_TEMPORARY_MEMORY_STATS
-	ION_LOG_FMT_IMMEDIATE("Temporary memory: Total %f MBytes allocated",
-						  (float)(temporary::mPoolRegistry->mTotalBytesAllocated) / 1024 / 1024);
-	ION_LOG_FMT_IMMEDIATE("Temporary memory: Total %f MBytes in pages",
-						  (float)(temporary::mPoolRegistry->mTotalBytesInPages) / 1024 / 1024);
-	ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times locked out", size_t(temporary::mPoolRegistry->mNumLockedOut));
-	ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of pages", size_t(temporary::mPoolRegistry->mNumOutOfPages));
-	ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of space", size_t(temporary::mPoolRegistry->mNumTooLarge));
-	ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of memory", size_t(temporary::mPoolRegistry->mOutOfMemory));
+	if (TWEAKABLE_IS_EQUAL(ShowTemporaryStats, true))
+	{
+		ION_LOG_FMT_IMMEDIATE("Temporary memory: Total %f MBytes allocated",
+							  (float)(temporary::mPoolRegistry->mTotalBytesAllocated) / 1024 / 1024);
+		ION_LOG_FMT_IMMEDIATE("Temporary memory: Total %f MBytes in pages",
+							  (float)(temporary::mPoolRegistry->mTotalBytesInPages) / 1024 / 1024);
+		ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times locked out", size_t(temporary::mPoolRegistry->mNumLockedOut));
+		ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of pages", size_t(temporary::mPoolRegistry->mNumOutOfPages));
+		ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of space", size_t(temporary::mPoolRegistry->mNumTooLarge));
+		ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of memory", size_t(temporary::mPoolRegistry->mOutOfMemory));
+	}
 	#endif
 	ion::MemoryScope memoryScope(ion::tag::Core);
 	delete temporary::mPoolRegistry;

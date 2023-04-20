@@ -18,8 +18,7 @@ Library Goals
 - Easy to use and feature parity with RakNet. (WIP: See future work)
 - Robust. Tested and fuzzed. Library peer instances can run 24/7 without need to restart or do any maintenance.
 - Tenacious. Reliability layer is able to handle poor network conditions well
-- Fast. Efficient data serialization/deserialization with no extra copying.
-- Efficient. Feasible for thousands of simultanous connections via optimized datapath and multi-threaded update loop.
+- Efficient. Fast data serialization/deserialization with no extra copying. Feasible for thousands of simultanous connections.
 
 
 Key features
@@ -57,7 +56,7 @@ Benchmarks have been run using Intel i5-9600k CPU with 32 GB memory and Windows 
 |1300B reliable 20 packets burst 		           |0.5ms  |1.0ms |
 |1300B reliable packet by 4 clients same PC        |0.3ms  |0.4ms |
 
-- In general,  RakNet+ implementation has less than or equal CPU overhead compared to the reference.
+- In general,  Ion Net implementation has less than or equal CPU overhead compared to the reference.
 - RakNet reference may be limited by its congestion control.
 - Note that most of the measured time these tests spend on waiting for update thread to wake up, the actual processing time is ~10% of measured time. It would be possible to busy loop receiver and sender to relay packets in less than 0.1 milliseconds, but that use case is not in the scope of game networking library - current send delays should be more than adequate for any game.
 

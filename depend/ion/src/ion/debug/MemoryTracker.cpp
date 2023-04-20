@@ -34,7 +34,10 @@ namespace ion
 {
 namespace memory_tracker
 {
+static bool gEnableTracking = false;
 static size_t FatalMemoryLeakLimitBytes = 0;
+bool WaitUserOnLeak = false;
+
 struct MemoryTracker
 {
 	static constexpr const char* LayerNames[] = {"TLSF", "Global", "Os"};
@@ -111,7 +114,10 @@ struct MemoryTracker
 
 	void PrintStats(Layer layer = Layer::Invalid, bool breakOnLeaks = false)
 	{
-		constexpr bool WaitUser = false;
+		if (!gEnableTracking)
+		{
+			return;
+		}
 		bool detectedLeak = false;
 
 	#if ION_PLATFORM_MICROSOFT && 0	 // defined(_DEBUG)
@@ -137,50 +143,64 @@ struct MemoryTracker
 		ION_ASSERT_FMT_IMMEDIATE(leakSum <= MallocLeakLimit, "External systems have fatal memory leak");
 	#endif
 
-		ION_LOG_IMMEDIATE("--- Memory stats ---");
-		for (size_t j = 0; j < mTrackedLayers.Size(); ++j)
+		for (int run = 0; run < 2; run++)
 		{
-			if (layer != Layer::Invalid && size_t(layer) != j)
+			if (run == 1)
 			{
-				continue;
+				ION_LOG_IMMEDIATE("--- Memory stats ---");
 			}
-
-			auto& trackedLayer = mTrackedLayers[j];
-
-			for (size_t i = 0; i < trackedLayer.memoryCount.Size(); ++i)
+			for (size_t j = 0; j < mTrackedLayers.Size(); ++j)
 			{
-				auto numAllocs = static_cast<uint64_t>(trackedLayer.allocCountDelta[i]);
-				auto allocSize = static_cast<uint64_t>(trackedLayer.memoryCountDelta[i]);
-				if (numAllocs > 0)
+				if (layer != Layer::Invalid && size_t(layer) != j)
 				{
-					trackedLayer.allocCountDelta[i] -= numAllocs;
-					trackedLayer.memoryCountDelta[i] -= allocSize;
+					continue;
 				}
-				bool isLeaking = trackedLayer.memoryCount[i] > int64_t(FatalMemoryLeakLimitBytes) && i != ion::tag::IgnoreLeaks &&
-								 i != ion::tag::Profiling;
-				if (isLeaking && breakOnLeaks)
+
+				auto& trackedLayer = mTrackedLayers[j];
+
+				for (size_t i = 0; i < trackedLayer.memoryCount.Size(); ++i)
 				{
-					detectedLeak = true;
-				}
-				if (numAllocs > 0 || (breakOnLeaks && isLeaking))
-				{
-					// Note: IgnoreLeaks count can be negative as pre dynamic init gets reset after dynamic init is
-					// complete
-					ION_LOG_FMT_IMMEDIATE("Memory[%s/%s] %f KBytes allocated (%zi blocks; peak %f Mbytes)", LayerNames[j],
-										  ion::tag::Name(ion::MemTag(i)), static_cast<double>(trackedLayer.memoryCount[i]) / 1024,
-										  size_t(trackedLayer.memoryBlockCount[i]), float(trackedLayer.memoryPeak[i]) / (1024.0 * 1024.0));
-					if (isLeaking)
+					auto numAllocs = static_cast<uint64_t>(trackedLayer.allocCountDelta[i]);
+					auto allocSize = static_cast<uint64_t>(trackedLayer.memoryCountDelta[i]);
+					if (numAllocs > 0)
 					{
-						ION_LOG_IMMEDIATE("^^^^^^^^^^^^^^^^^^^");
+						trackedLayer.allocCountDelta[i] -= numAllocs;
+						trackedLayer.memoryCountDelta[i] -= allocSize;
 					}
-					if constexpr (!WaitUser)
+					bool isLeaking = trackedLayer.memoryCount[i] > int64_t(FatalMemoryLeakLimitBytes) && i != ion::tag::IgnoreLeaks &&
+									 i != ion::tag::Profiling;
+					if (isLeaking && breakOnLeaks)
 					{
-						ION_ASSERT_FMT_IMMEDIATE(!breakOnLeaks || !isLeaking, "Fatal memory leak");
+						detectedLeak = true;
+					}
+					if (numAllocs > 0 || (breakOnLeaks && isLeaking))
+					{
+						if (run == 1)
+						{
+							// Note: IgnoreLeaks count can be negative as pre dynamic init gets reset after dynamic init is
+							// complete
+							ION_LOG_FMT_IMMEDIATE("Memory[%s/%s] %zu bytes allocated (%zi blocks; peak %f Mbytes)", LayerNames[j],
+												  ion::tag::Name(ion::MemTag(i)), static_cast<size_t>(trackedLayer.memoryCount[i]) /*/ 1024*/,
+												  size_t(trackedLayer.memoryBlockCount[i]),
+												  float(trackedLayer.memoryPeak[i]) / (1024.0 * 1024.0));
+							if (isLeaking)
+							{
+								ION_LOG_IMMEDIATE("^^^^^^^^^^^^^^^^^^^");
+							}
+							if (!WaitUserOnLeak)
+							{
+								ION_ASSERT_FMT_IMMEDIATE(!breakOnLeaks || !isLeaking, "Fatal memory leak");
+							}
+						}
 					}
 				}
+			}
+			if (!detectedLeak)
+			{
+				break;
 			}
 		}
-		if constexpr (WaitUser)
+		if (WaitUserOnLeak)
 		{
 			if (detectedLeak)
 			{
@@ -360,7 +380,11 @@ void Stats(MemoryStats* stats)
 
 void PrintStats(bool breakOnLeaks, Layer layer) { gTracker->PrintStats(layer, breakOnLeaks); }
 
+void EnableWaitUserOnLeak() { WaitUserOnLeak = true; }
+
 void SetFatalMemoryLeakLimit(size_t s) { FatalMemoryLeakLimitBytes = s; }
+
+void EnableTracking() { gEnableTracking = true; }
 
 	#if ION_PLATFORM_MICROSOFT && 0	 // defined(_DEBUG)
 struct _CrtMemBlockHeader
@@ -461,5 +485,7 @@ namespace ion::memory_tracker
 void Stats(MemoryStats*) {}
 void PrintStats(bool, Layer) {}
 void SetFatalMemoryLeakLimit(size_t) {}
+void EnableWaitUserOnLeak() {}
+void EnableTracking() {}
 }  // namespace ion::memory_tracker
 #endif

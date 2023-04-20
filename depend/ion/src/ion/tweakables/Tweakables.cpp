@@ -117,6 +117,7 @@ void GetTweakable(const char* id, char* buffer, size_t bufferLen)
 
 void SetTweakable(const char* id, const char* newValue, bool isCommandLine)
 {
+	TweakablesInit();
 	ION_ACCESS_GUARD_WRITE_BLOCK(Instance().mGuard);
 	tweakables::String str(&Source(), id);
 	auto iter = Instance().mCommandToTweakable.Find(str);
@@ -289,12 +290,12 @@ void TweakablesInit()
 }
 void TweakablesDeinit()
 {
-#if ION_CLEAN_EXIT
 	ION_ACCESS_GUARD_WRITE_BLOCK(tweakables::gGuard);
 	if (!tweakables::gIsInitialized.exchange(0))
 	{
 		return;
 	}
+#if ION_CLEAN_EXIT
 	tweakables::gInstance.Deinit();
 #endif
 }

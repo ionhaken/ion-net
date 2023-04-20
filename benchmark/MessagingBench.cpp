@@ -68,7 +68,6 @@ void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerIns
 #endif
 	if (server == nullptr)
 	{
-		ION_LOG_INFO("Setting up");
 		server = ion::MakeUnique<test::PeerInstance>();
 		BaseLibSocketDescriptor sd(60000, 0);
 #if TEST_RAKNET_REFERENCE == 0
@@ -119,8 +118,6 @@ void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerIns
 		REQUIRE(cres == ion::ConnectionAttemptResult::CONNECTION_ATTEMPT_STARTED);
 	}
 
-	ION_LOG_INFO("Setup ready");
-
 	for (int k = 0; k < 100; ++k)
 	{
 		for (size_t i = 0; i < NumClients; ++i)
@@ -141,7 +138,7 @@ void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerIns
 	while (server->NumberOfConnections() != NumClients)
 	{
 		ion::Thread::Sleep(10 * 1000);
-		ION_LOG_INFO("Server waiting " << NumClients - server->NumberOfConnections() << " clients");
+		//ION_LOG_INFO("Server waiting " << NumClients - server->NumberOfConnections() << " clients");
 		for (size_t i = 0; i < NumClients; ++i)
 		{
 			peerList[i]->PreUpdate();
@@ -443,9 +440,10 @@ TEST_CASE("no_packet_loss", "[actual]")
 
 TEST_CASE("packet_loss_1", "[actual]")
 {
-	ion::UniquePtr<ion::JobScheduler> js = ion::MakeUnique<ion::JobScheduler>();
 	ion::NetInit();
 	{
+		ion::UniquePtr<ion::JobScheduler> js = ion::MakeUnique<ion::JobScheduler>();
+
 		test::gExtraPing = 20;
 		test::gPacketLoss = 0.01f;
 		constexpr unsigned short MaxClients = 4;
@@ -470,9 +468,10 @@ TEST_CASE("packet_loss_1", "[actual]")
 
 TEST_CASE("packet_loss_5", "[actual]")
 {
-	ion::UniquePtr<ion::JobScheduler> js = ion::MakeUnique<ion::JobScheduler>();
 	ion::NetInit();
 	{
+		ion::UniquePtr<ion::JobScheduler> js = ion::MakeUnique<ion::JobScheduler>();
+
 		test::gExtraPing = 20;
 		test::gPacketLoss = 0.05f;
 		constexpr unsigned short MaxClients = 4;

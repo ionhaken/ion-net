@@ -36,6 +36,7 @@ namespace ion
 {
 bool gIsActive = false;
 bool gIsDynamicInitExitDone = false;
+bool gIsDynamicInitDone = false;
 std::atomic<bool> gExitRequested = false;
 }  // namespace ion
 
@@ -90,10 +91,15 @@ namespace ion
 {
 Engine::Engine()
 {
-	//ION_LOG_FMT_IMMEDIATE("Waiting 10s for user...");
-	//ion::Thread::SleepMs(10000);
-	//ION_LOG_FMT_IMMEDIATE("Wait ended.");
+	memory_tracker::EnableTracking();
+	#if 0 // wait on memory leak
+	ION_LOG_FMT_IMMEDIATE("Waiting 10s for user...");
+	memory_tracker::EnableWaitUserOnLeak();
+	ion::Thread::SleepMs(10000);
+	ION_LOG_FMT_IMMEDIATE("Wait ended.");
+	#endif
 
+	gIsDynamicInitDone = true;
 	gIsDynamicInitExitDone = true;
 	ion::Engine::Start();
 	{
@@ -113,6 +119,8 @@ Engine::~Engine()
 }
 
 bool Engine::IsDynamicInitExit() { return !gIsDynamicInitExitDone; }
+
+bool Engine::IsDynamicInitDone() { return gIsDynamicInitDone; }
 
 bool Engine::IsExitRequested() { return gExitRequested; }
 
@@ -173,28 +181,15 @@ void ion::Engine::StartInternal()
 	}
 #endif
 
-	ion::MemInit();
-	ion::Thread::InitMain();
-
-	ion::CoreInit();
-#if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
-	ion::TemporaryInit();
-#endif
 	ion::TracingInit();
 	ion::TweakablesInit();
 }
 
 void ion::Engine::Stop()
 {
-	ion::Thread::Deinit();
-	ion::Thread::FreeHeaps();
 	ion::TweakablesDeinit();
 	ion::TracingDeinit();
-	#if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
-	ion::TemporaryDeinit();
-	#endif
-	ion::CoreDeinit();
-	ion::MemDeinit();
+
 	gIsActive = false;
 	ClearAbortHandler();
 }

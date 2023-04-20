@@ -104,6 +104,11 @@ void Init(NetInterface& net, const NetStartupParameters& pars)
 }
 
 
+void ClearBufferedCommands(NetControl& control)
+{
+	control.mBufferedCommands.DequeueAll([&](ion::NetCommandPtr& bcs) { ion::DeleteArenaPtr(&control.mMemoryResource, bcs); });
+}
+
 void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections, ion::TimeMS now)
 {
 	SmallVector<NetRemoteIndex, 16, NetAllocator<NetRemoteIndex>> remoteIndices;

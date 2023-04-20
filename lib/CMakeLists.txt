@@ -8,14 +8,7 @@ set( ION_NET_INTERNAL_INCLUDE_DIRS
 	${PROJECT_SOURCE_DIR}/depend
 )
 
-if( ION_NET_ENABLE_STATIC )
-	add_subdirectory(lib-static)
-endif()
-
-
-if( ION_NET_ENABLE_DLL )
-	add_subdirectory(dll)
-endif()
+add_subdirectory(lib-static)
 
 FILE(GLOB ALL_HEADER_SRCS ${PROJECT_SOURCE_DIR}/src/*.h)
-INSTALL(FILES ${ALL_HEADER_SRCS} DESTINATION ${CMAKE_PREFIX_PATH}/include/raknet)
+INSTALL(FILES ${ALL_HEADER_SRCS} DESTINATION ${CMAKE_PREFIX_PATH}/include/ion)

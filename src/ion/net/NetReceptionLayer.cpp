@@ -287,7 +287,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		ion::ByteReader reader((unsigned char*)data, byteSize);
 		reader.SkipBytes(1);
 		bool isValid = reader.Process(externalID);
-		isValid &= externalID.IsAssigned();
+		isValid &= externalID.IsValid();
 		isValid &= reader.Process(systemIndex);
 		for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 		{

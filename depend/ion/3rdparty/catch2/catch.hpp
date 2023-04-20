@@ -7166,6 +7166,7 @@ namespace Catch {
 
             template <typename Clock>
             Environment<FloatDuration<Clock>> measure_environment() {
+                ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);
                 static Environment<FloatDuration<Clock>>* env = nullptr;
                 if (env) {
                     return *env;
@@ -8474,14 +8475,17 @@ namespace clara {
 namespace TextFlow {
 
 inline auto isWhitespace(char c) -> bool {
+	ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);
 	static std::string chars = " \t\n\r";
 	return chars.find(c) != std::string::npos;
 }
 inline auto isBreakableBefore(char c) -> bool {
+	ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);
 	static std::string chars = "[({<|";
 	return chars.find(c) != std::string::npos;
 }
 inline auto isBreakableAfter(char c) -> bool {
+	ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);
 	static std::string chars = "])}>.,:;*+-=&/\\";
 	return chars.find(c) != std::string::npos;
 }

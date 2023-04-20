@@ -61,12 +61,12 @@ void CoreInit()
 }
 void CoreDeinit()
 {
-#if ION_CLEAN_EXIT
 	ION_ACCESS_GUARD_WRITE_BLOCK(core::gGuard);
 	if (1 != core::gIsInitialized--)
 	{
 		return;
 	}
+#if ION_CLEAN_EXIT
 	core::gInstance.Deinit();
 #endif
 }

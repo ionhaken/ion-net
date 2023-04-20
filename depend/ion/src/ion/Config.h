@@ -59,22 +59,43 @@
 	#define ION_CONFIG_FAST_MATH 0
 #endif
 
-// Enables memory arena resources. To get accurate MSVC memory diagnostics you should disable this and ION_CONFIG_TEMPORARY_ALLOCATOR
-// as both features store blocks to their own memory pages.
+// Enables concurrency features such as job scheduling
+#ifndef ION_CONFIG_CONCURRENCY
+	#define ION_CONFIG_CONCURRENCY 1
+#endif
+
+// Enable overriding of new operator for memory tracking
+#ifndef ION_CONFIG_OVERRIDE_NEW
+	#define ION_CONFIG_OVERRIDE_NEW 1
+#endif
+
+// Enables memory arena resources. To get accurate MSVC memory diagnostics you should disable this, ION_CONFIG_GLOBAL_MEMORY_POOL and
+// ION_CONFIG_TEMPORARY_ALLOCATOR as both features store blocks to their own memory pages.
 #ifndef ION_CONFIG_MEMORY_RESOURCES
-	#ifndef __SANITIZE_ADDRESS__
+	#if !defined(__SANITIZE_ADDRESS__)
 		#define ION_CONFIG_MEMORY_RESOURCES 1
 	#else
 		#define ION_CONFIG_MEMORY_RESOURCES 0
 	#endif
 #endif
 
-// Enables temporary memory allocatr
+// Enables thread-local temporary memory allocator
 #ifndef ION_CONFIG_TEMPORARY_ALLOCATOR
-	#ifndef __SANITIZE_ADDRESS__
+	#if !defined(__SANITIZE_ADDRESS__) && ION_CONFIG_CONCURRENCY
 		#define ION_CONFIG_TEMPORARY_ALLOCATOR 1
 	#else
 		#define ION_CONFIG_TEMPORARY_ALLOCATOR 0
+	#endif
+#endif
+
+// Enables global memory pool
+// - Requires overriding of new
+// - This feature is useful only when memory resources are active or expecting concurrency
+#ifndef ION_CONFIG_GLOBAL_MEMORY_POOL
+	#if !defined(__SANITIZE_ADDRESS__) && ION_CONFIG_OVERRIDE_NEW && (ION_CONFIG_MEMORY_RESOURCES || ION_CONFIG_CONCURRENCY)
+		#define ION_CONFIG_GLOBAL_MEMORY_POOL 1
+	#else
+		#define ION_CONFIG_GLOBAL_MEMORY_POOL 0
 	#endif
 #endif
 
@@ -168,7 +189,7 @@
 
 // Enables memory leak tracking
 #ifndef ION_MEMORY_TRACKER
-	#define ION_MEMORY_TRACKER ION_CONFIG_ERROR_CHECKING
+	#define ION_MEMORY_TRACKER (ION_CONFIG_ERROR_CHECKING && ION_CONFIG_OVERRIDE_NEW)
 #endif
 
 // Clean exit expects program to be correctly destructed before exit.
@@ -183,7 +204,7 @@
 
 // Profiling
 #ifndef ION_PROFILER_BUFFER_SIZE_PER_THREAD
-	#if ION_CONFIG_DEV_TOOLS && ION_EXTERNAL_JSON
+	#if ION_CONFIG_DEV_TOOLS && ION_EXTERNAL_JSON && ION_CONFIG_CONCURRENCY
 		#if ION_PLATFORM_ANDROID
 			#define ION_PROFILER_BUFFER_SIZE_PER_THREAD 32 * 1024
 		#else

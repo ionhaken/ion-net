@@ -137,5 +137,9 @@ void Stats(MemoryStats* stats = nullptr);
 
 void PrintStats(bool breakOnLeaks, Layer layer);
 
+void EnableWaitUserOnLeak();
+
+void EnableTracking();
+
 }  // namespace memory_tracker
 }  // namespace ion

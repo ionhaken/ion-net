@@ -789,7 +789,7 @@ public:
 						  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,
 						  bool broadcast, NetMode connectionMode);
 
-	void ClearBufferedCommands(void);
+	void ClearBufferedCommands() { ion::NetControlLayer::ClearBufferedCommands(mPeer->mControl); }
 	void AddPacketToProducer(ion::NetPacket* p) { mPeer->mControl.mPacketReturnQueue.Enqueue(std::move(p)); }
 
 	NetPacket* AllocPacket(unsigned dataSize);

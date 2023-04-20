@@ -20,10 +20,10 @@
 #include <ion/debug/MemoryTracker.h>
 #include <ion/debug/Profiling.h>
 
-#include <ion/memory/Memory.h>
-#include <ion/memory/NativeAllocator.h>
-#include <ion/memory/MonotonicBufferResource.h>
 #include <ion/memory/GlobalMemoryPool.h>
+#include <ion/memory/Memory.h>
+#include <ion/memory/MonotonicBufferResource.h>
+#include <ion/memory/NativeAllocator.h>
 
 #include <ion/concurrency/Thread.h>
 
@@ -76,19 +76,31 @@ ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* Malloc(size_t size,
 																		* function definition [-Wgcc-compat] ION_ATTRIBUTE_MALLOC*/
 {
 	ION_PROFILER_SCOPE(Memory, "Memory alloc");
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
 	return GlobalMemoryAllocate(Thread::GetId(), size, alignment);
+#else
+	return ion::NativeAlignedMalloc(size, alignment);
+#endif
 }
 
 ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* Realloc(void* ptr, size_t size)
 {
 	ION_PROFILER_SCOPE(Memory, "Memory alloc");
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
 	return GlobalMemoryReallocate(Thread::GetId(), ptr, size);
+#else
+	return ion::NativeRealloc(ptr, size);
+#endif
 }
 
 void Free(void* ptr)
 {
 	ION_PROFILER_SCOPE(Memory, "Memory free");
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
 	GlobalMemoryDeallocate(Thread::GetId(), ptr);
+#else
+	ion::NativeAlignedFree(ptr);
+#endif
 }
 
 ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* NativeAlignedMalloc(size_t size, size_t alignment)
@@ -220,88 +232,80 @@ void TrackedNativeAlignedFree(void* pointer, MemTag)
 
 }  // namespace detail
 
-inline void MemInit()
-{
-	GlobalMemoryInit();
-}
-
-void MemDeinit()
-{
-	GlobalMemoryDeinit();
-}
 }  // namespace ion
 
+#if ION_CONFIG_OVERRIDE_NEW
 [[nodiscard]] void* operator new(std::size_t s) noexcept(false)
 {
-#if ION_MEMORY_TRACKER
+	#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedMalloc(s, ion::detail::StdAlignment<uint8_t>(), ion::detail::GetMemoryTag());
-#else
+	#else
 	return ion::detail::Malloc(s, ion::detail::StdAlignment<uint8_t>());
-#endif
+	#endif
 }
 
 [[nodiscard]] void* operator new[](std::size_t s) noexcept(false)
 {
-#if ION_MEMORY_TRACKER
+	#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedMalloc(s, ion::detail::StdAlignment<uint8_t>(), ion::detail::GetMemoryTag());
-#else
+	#else
 	return ion::detail::Malloc(s, ion::detail::StdAlignment<uint8_t>());
-#endif
+	#endif
 }
 
 void operator delete(void* p) noexcept
 {
-#if ION_MEMORY_TRACKER
+	#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
-#else
+	#else
 	return ion::detail::Free(p);
-#endif
+	#endif
 }
 
 void operator delete(void* p, size_t) noexcept
 {
-#if ION_MEMORY_TRACKER
+	#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
-#else
+	#else
 	return ion::detail::Free(p);
-#endif
+	#endif
 }
 
 void operator delete[](void* p) noexcept
 {
-#if ION_MEMORY_TRACKER
+	#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
-#else
+	#else
 	return ion::detail::Free(p);
-#endif
+	#endif
 }
 
-#if (__cplusplus >= 201703L)
+	#if (__cplusplus >= 201703L)
 [[nodiscard]] void* operator new(std::size_t n, std::align_val_t align) noexcept(false)
 {
-	#if ION_MEMORY_TRACKER
+		#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedMalloc(n, static_cast<size_t>(align), ion::detail::GetMemoryTag());
-	#else
+		#else
 	return ion::detail::Malloc(n, static_cast<size_t>(align));
-	#endif
+		#endif
 }
 
 [[nodiscard]] void* operator new[](std::size_t n, std::align_val_t align) noexcept(false)
 {
-	#if ION_MEMORY_TRACKER
+		#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedMalloc(n, static_cast<size_t>(align), ion::detail::GetMemoryTag());
-	#else
+		#else
 	return ion::detail::Malloc(n, static_cast<size_t>(align));
-	#endif
+		#endif
 }
 
 void operator delete(void* const p, std::align_val_t const) noexcept
 {
-	#if ION_MEMORY_TRACKER
+		#if ION_MEMORY_TRACKER
 	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
-	#else
+		#else
 	return ion::detail::Free(p);
-	#endif
+		#endif
 }
+	#endif
 #endif
-// #endif

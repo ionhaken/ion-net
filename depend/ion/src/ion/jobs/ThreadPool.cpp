@@ -36,13 +36,13 @@ ion::ThreadPool::ThreadPool(UInt hwConcurrency)
 	mNumAvailableLongTasks(0),
 	mAreCompanionsActive(true)
 {
-	ION_LOG_INFO_FMT("hardware concurrency: %u, %d workers, %d queues", hwConcurrency, GetWorkerCount(), GetQueueCount());
+	ION_LOG_FMT_IMMEDIATE("hardware concurrency: %u, %d workers, %d queues", hwConcurrency, GetWorkerCount(), GetQueueCount());
 
 	if (hwConcurrency > MaxQueues)
 	{
-		ION_LOG_INFO("HW concurrency more than supported queues");
+		ION_LOG_IMMEDIATE("HW concurrency more than supported queues");
 	}
-	ION_ASSERT(mNumWorkerQueues > 0, "Always have at least one queue");
+	ION_ASSERT_FMT_IMMEDIATE(mNumWorkerQueues > 0, "Always have at least one queue");
 
 	mThreads.Reserve(mNumWorkers);
 	mCompanionThreads.Reserve(2u * mNumWorkerQueues);
@@ -74,7 +74,7 @@ ion::ThreadPool::ThreadPool(UInt hwConcurrency)
 		}
 	} while (isAdding);
 
-	ION_ASSERT(mNumWorkers == workerIndex, "TODO");
+	ION_ASSERT_FMT_IMMEDIATE(mNumWorkers == workerIndex, "TODO");
 }
 ION_SECTION_END
 
@@ -84,14 +84,15 @@ ion::ThreadPool::~ThreadPool()
 	JOB_SCHEDULER_STATS(double totalIdleTime = 0; double totalTime = mTimer.GetSeconds(); for (int i = 0; i < mTaskQueues.Size(); i++) {
 		if (mTaskQueues[i].runOwn > 0)
 		{
-			ION_LOG_INFO_FMT("%i %.2f Own=%d CondWait=%d Steal empty=%d locked=%d success=%d idle=%f s", i,
+			ION_LOG_FMT_IMMEDIATE("%i %.2f Own=%d CondWait=%d Steal empty=%d locked=%d success=%d idle=%f s", i,
 					   static_cast<float>(mTaskQueues[i].runOwn) / static_cast<float>(mTaskQueues[i].stealSuccess + mTaskQueues[i].runOwn),
 					   ion::UInt(mTaskQueues[i].runOwn), ion::UInt(mTaskQueues[i].condWait), ion::UInt(mTaskQueues[i].stealFailed),
 					   ion::UInt(mTaskQueues[i].stealLocked), ion::UInt(mTaskQueues[i].stealSuccess), mTaskQueues[i].idleTime);
 			totalIdleTime += mTaskQueues[i].idleTime;
 		}
 	} double idleTimePerWorker = totalIdleTime / mNumWorkers;
-						ION_LOG_INFO("Total idle time/worker " << idleTimePerWorker << " seconds (" << (1.0 - idleTimePerWorker / totalTime) * 100
+						ION_LOG_FMT_IMMEDIATE("Total idle time/worker " << idleTimePerWorker << " seconds ("
+																		<< (1.0 - idleTimePerWorker / totalTime) * 100
 													  << "%)"););
 }
 ION_SECTION_END

@@ -83,7 +83,9 @@ public:
 		// IdPool allocates memory only when freeing ids, so it's safe to reserve id before memory pool is ready
 		T id = mIds.Reserve();
 		ion::Thread::mTLS.mId = id;
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
 		GlobalMemoryThreadInit(id);
+#endif
 		ProcessFreesInternal();
 		mMutex.Unlock();
 		return id;
@@ -118,7 +120,9 @@ private:
 			mIds.Free(id);
 			if (id != 0)
 			{
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
 				GlobalMemoryThreadDeinit(id);
+#endif
 			}
 		}
 		mFreeingIds.Clear();
@@ -180,27 +184,8 @@ void ion::Thread::Init(ion::Thread::QueueIndex index, ion::Thread::Priority prio
 	InitInternal(index, priority);
 }
 
-void ion::Thread::FreeHeaps()
-{
-#if ION_CLEAN_EXIT
-	if (gThreadIdPool.load()->ProcessFrees())
-	{
-	#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
-		{
-			ion::MemoryScope scope(ion::tag::Profiling);
-			ProfilingDeinit();
-		}
-	#endif
-		ion::MemoryScope memoryScope(ion::tag::Core);
-		delete gThreadIdPool.load();
-		gThreadIdPool.store(nullptr);
-	}
-#endif
-}
-
 void ion::Thread::Deinit()
 {
-#if ION_CLEAN_EXIT
 	ion::FPControl::Validate();
 	ION_ASSERT(mTLS.mId != ~static_cast<UInt>(0), "Thread not initialized");
 	ION_ASSERT(isInitialized, "Threading not initialized");
@@ -214,7 +199,6 @@ void ion::Thread::Deinit()
 		ion::temporary::ThreadDeinit(mTLS.mTemporaryMemory);
 		mTLS.mTemporaryMemory = nullptr;
 	}
-#endif
 #endif
 }
 
@@ -463,3 +447,52 @@ void ion::Thread::YieldCPU() { ion::platform::Yield(); }
 #if ION_THREAD_WAIT_AFTER_TERMINATE
 ion::ThreadSynchronizer& ion::Thread::Synchronizer() { return gThreadIdPool.load()->mSynchronizer; }
 #endif
+
+
+namespace ion::Thread
+{
+ION_ACCESS_GUARD_STATIC(gGuard);
+std::atomic<int> gIsInitialized = 0;
+}
+
+void ion::Thread::InitMain()
+{
+	ION_ACCESS_GUARD_WRITE_BLOCK(gGuard);
+	if (0 != gIsInitialized++)
+	{
+		return;
+	}
+#if ION_CONFIG_CONCURRENCY
+	#if ION_CONFIG_TEMPORARY_ALLOCATOR
+	ion::TemporaryInit();
+	#endif
+	ion::Thread::Init(0);
+#endif
+}
+
+void ion::Thread::DeinitMain()
+{
+	ION_ACCESS_GUARD_WRITE_BLOCK(gGuard);
+	if (1 != gIsInitialized--)
+	{
+		return;
+	}
+#if ION_CONFIG_CONCURRENCY
+	ion::Thread::Deinit();
+	if (gThreadIdPool.load()->ProcessFrees())
+	{
+#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
+		{
+			ion::MemoryScope scope(ion::tag::Profiling);
+			ProfilingDeinit();
+		}
+#endif
+		ion::MemoryScope memoryScope(ion::tag::Core);
+		delete gThreadIdPool.load();
+		gThreadIdPool.store(nullptr);
+	}
+#if ION_CONFIG_TEMPORARY_ALLOCATOR
+	ion::TemporaryDeinit();
+#endif
+#endif
+}

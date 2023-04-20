@@ -18,6 +18,8 @@ void Trigger(NetControl& control);
 void StopUpdating(NetControl& control);
 void Deinit(NetControl& control);
 
+void ClearBufferedCommands(NetControl& control);
+
 void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections, ion::TimeMS now);
 
 void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections,

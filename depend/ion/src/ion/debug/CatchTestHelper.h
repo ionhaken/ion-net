@@ -42,11 +42,6 @@ int main(int argc, char* argv[])
 {
 	ion::Engine e;
 
-	#if !ION_BUILD_DEBUG
-	// Catch2 shows in memory leaks
-	ion::memory_tracker::SetFatalMemoryLeakLimit(1024);
-	#endif
-
 	ion::option_parser::ParseArgs(argc, argv);
 	int numFailed = 0;
 	ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);  // Don't care about Catch2 leaks

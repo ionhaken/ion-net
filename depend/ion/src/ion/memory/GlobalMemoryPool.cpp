@@ -14,17 +14,19 @@
  * limitations under the License.
  */
 
-#include <ion/container/Array.h>
-#include <ion/container/ForEach.h>
+#include <ion/Base.h>
+#if ION_CONFIG_GLOBAL_MEMORY_POOL
+	#include <ion/container/Array.h>
+	#include <ion/container/ForEach.h>
 
-#include <ion/memory/GlobalMemoryPool.h>
-#include <ion/memory/NativeAllocator.h>
-#include <ion/memory/TLSFResource.h>
+	#include <ion/memory/GlobalMemoryPool.h>
+	#include <ion/memory/NativeAllocator.h>
+	#include <ion/memory/TLSFResource.h>
 
-#include <ion/concurrency/MPSCQueue.h>
-#include <ion/concurrency/Mutex.h>
+	#include <ion/concurrency/MPSCQueue.h>
+	#include <ion/concurrency/Mutex.h>
 
-#include <ion/core/Engine.h>
+	#include <ion/core/Engine.h>
 
 namespace ion
 {
@@ -35,40 +37,40 @@ namespace
 constexpr size_t NumBuckets = 512;
 constexpr size_t NumElemsPerBucket = 512;
 
-constexpr size_t MaxGlobalMemoryBlockSize = 128*1024;
+constexpr size_t MaxGlobalMemoryBlockSize = 128 * 1024;
 
 struct Resource
 {
-#if ION_CONFIG_MEMORY_RESOURCES == 1
+	#if ION_CONFIG_MEMORY_RESOURCES == 1
 	TLSFResource<MonotonicBufferResource<64 * 1024, ion::tag::External, ion::NativeAllocator<uint8_t>>, ion::tag::External> mTLSF;
-#endif
+	#endif
 	MPSCQueue<void*, ion::NativeAllocator<char>> mFreeElems;
 
 	inline void* Allocate(size_t size)
 	{
-#if ION_CONFIG_MEMORY_RESOURCES == 1
+	#if ION_CONFIG_MEMORY_RESOURCES == 1
 		return mTLSF.Allocate(size, 8);
-#else
+	#else
 		return ion::NativeMalloc(size);
-#endif
+	#endif
 	}
 
 	inline void* Reallocate(void* ptr, size_t size)
 	{
-#if ION_CONFIG_MEMORY_RESOURCES == 1
+	#if ION_CONFIG_MEMORY_RESOURCES == 1
 		return mTLSF.Reallocate(ptr, size);
-#else
+	#else
 		return ion::NativeRealloc(ptr, size);
-#endif
+	#endif
 	}
 
 	inline void Deallocate(void* ptr, [[maybe_unused]] size_t size)
 	{
-#if ION_CONFIG_MEMORY_RESOURCES == 1
+	#if ION_CONFIG_MEMORY_RESOURCES == 1
 		mTLSF.Deallocate(ptr, size);
-#else
+	#else
 		return ion::NativeFree(ptr);
-#endif
+	#endif
 	}
 
 	inline void DeferDeallocate(void* ptr) { mFreeElems.Enqueue(ptr); }
@@ -162,19 +164,18 @@ void* InitBlock(void* ptr, size_t size, size_t alignment, uint16_t blockThreadIn
 
 static Mutex gPoolMutex;
 static Pool* gPool;
-#if ION_CLEAN_EXIT
+	#if ION_CLEAN_EXIT
 static std::atomic<int64_t> gNumAllocations;
-#endif
+	#endif
 
 }  // namespace
-
 
 void GlobalMemoryInit()
 {
 	gPool = Construct<Pool>();
-#if ION_CLEAN_EXIT
+	#if ION_CLEAN_EXIT
 	gNumAllocations = 0;
-#endif
+	#endif
 }
 
 void GlobalMemoryThreadInit(UInt index)
@@ -205,7 +206,7 @@ void GlobalMemoryThreadDeinit(UInt index)
 
 void GlobalMemoryDeinit()
 {
-#if ION_CLEAN_EXIT
+	#if ION_CLEAN_EXIT
 	AutoLock<Mutex> lock(gPoolMutex);
 	if (gPool)
 	{
@@ -233,11 +234,11 @@ void GlobalMemoryDeinit()
 		}
 		else
 		{
-			ION_LOG_FMT_IMMEDIATE("Delaying memory purge; %li allocations left in global memory pool", long(gNumAllocations));
+			// ION_LOG_FMT_IMMEDIATE("Delaying memory purge; %li allocations left in global memory pool", long(gNumAllocations));
 			ion::memory_tracker::PrintStats(true, ion::memory_tracker::Layer::Global);
 		}
 	}
-#endif
+	#endif
 }
 
 void* GlobalMemoryAllocate(UInt index, size_t size, size_t alignment)
@@ -255,9 +256,9 @@ void* GlobalMemoryAllocate(UInt index, size_t size, size_t alignment)
 
 		gPool->mTlPool[bucketIndex]->mResources[elemIndex]->ProcessDeferDeallocations();
 		ptr = gPool->mTlPool[bucketIndex]->mResources[elemIndex]->Allocate(allocationSize);
-#if ION_CLEAN_EXIT
+	#if ION_CLEAN_EXIT
 		gNumAllocations++;
-#endif
+	#endif
 	}
 	else
 	{
@@ -298,16 +299,18 @@ void GlobalMemoryDeallocate(UInt index, void* userPtr)
 			gPool->mTlPool[bucketIndex]->mResources[elemIndex]->DeferDeallocate(ptr);
 		}
 
-#if ION_CLEAN_EXIT
+	#if ION_CLEAN_EXIT
 		gNumAllocations--;
-		if (gNumAllocations == 0 && ion::Engine::IsDynamicInitExit())
+		if (gNumAllocations == 0 &&
+			// Early deinit only when doing dynamic exit
+			ion::Engine::IsDynamicInitExit() && ion::Engine::IsDynamicInitDone())
 		{
-#if ION_MEMORY_TRACKER
+		#if ION_MEMORY_TRACKER
 			ION_LOG_IMMEDIATE("External memory freed.");
-#endif
-			MemDeinit();
+		#endif
+			GlobalMemoryDeinit();
 		}
-#endif
+	#endif
 	}
 }
 
@@ -316,7 +319,7 @@ void* GlobalMemoryReallocate(UInt threadIndex, void* userPtr, size_t size)
 	BlockHeader* headerPtr = static_cast<BlockHeader*>(userPtr) - 1;
 	void* ptr = static_cast<char*>(userPtr) - headerPtr->mOffset;
 	uint8_t alignment = headerPtr->mAlignment;
-	ION_ASSERT_FMT_IMMEDIATE(headerPtr->mAlignment * 8 <= 16, "Invalid alignment for realloc");	
+	ION_ASSERT_FMT_IMMEDIATE(headerPtr->mAlignment * 8 <= 16, "Invalid alignment for realloc");
 	if (headerPtr->mThreadId == uint16_t(-1))
 	{
 		threadIndex = uint16_t(-1);
@@ -362,3 +365,4 @@ void* GlobalMemoryReallocate(UInt threadIndex, void* userPtr, size_t size)
 }
 
 }  // namespace ion
+#endif

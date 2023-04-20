@@ -485,12 +485,13 @@ void BasePeer::Shutdown(unsigned int blockDuration, unsigned char orderingChanne
 
 	ion::NetRemoteStoreLayer::Deinit(mPeer->mRemoteStore, mPeer->mControl, now);
 	ion::NetReceptionLayer::Reset(mPeer->mReception, mPeer->mControl);
-	ClearBufferedCommands();
 
 	ion::NetControlLayer::Deinit(mPeer->mControl);
 
 	// Free any packets the user didn't deallocate
 	mPeer->mControl.mPacketReturnQueue.DequeueAll([&](NetPacket* packet) { DeallocatePacket(packet); });
+
+	ClearBufferedCommands();
 
 	NetReceptionLayer::ClearBanList(mPeer->mReception, mPeer->mControl);
 }
@@ -1396,11 +1397,6 @@ bool BasePeer::IsIPV6Only()
 	return NetRemoteStoreLayer::IsIPV6Only(mPeer->mRemoteStore);
 }
 
-void BasePeer::ClearBufferedCommands()
-{
-	mPeer->mControl.mBufferedCommands.DequeueAll([&](ion::NetCommandPtr& bcs)
-												 { ion::DeleteArenaPtr(&mPeer->mControl.mMemoryResource, bcs); });
-}
 
 void BasePeer::ClearConnectionRequest(const ion::RequestedConnection& rcs)
 {

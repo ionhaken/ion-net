@@ -19,12 +19,13 @@
 #include <ion/net/NetControlLayer.h>
 #include <ion/net/NetInterface.h>
 #include <ion/net/NetMemory.h>
-#include <ion/net/NetSendCommand.h>
 #include <ion/net/NetReceptionLayer.h>
 #include <ion/net/NetRemote.h>
 #include <ion/net/NetRemoteStoreLayer.h>
 #include <ion/net/NetRequestedConnections.h>
+#include <ion/net/NetSendCommand.h>
 #include <ion/net/NetTimeSync.h>
+#include <ion/net/ionnet.h>
 
 #include <ion/debug/AccessGuard.h>
 
@@ -36,33 +37,25 @@
 
 namespace ion
 {
-
-enum StartupResult
+enum class NetConnectionAttemptResult : int
 {
-	RAKNET_STARTED,
-	RAKNET_ALREADY_STARTED,
-	INVALID_SOCKET_DESCRIPTORS,
-	INVALID_MAX_CONNECTIONS,
-	SOCKET_FAMILY_NOT_SUPPORTED,
-	SOCKET_PORT_ALREADY_IN_USE,
-	SOCKET_FAILED_TO_BIND,
-	SOCKET_FAILED_TEST_SEND,
-	PORT_CANNOT_BE_ZERO,
-	FAILED_TO_CREATE_NETWORK_THREAD,
-	STARTUP_OTHER_FAILURE
+	CannotResolveDomainName = ION_NET_CODE_CANNOT_RESOLVE_DOMAIN_NAME,
+	AlreadyConnectedToEndpoint = ION_NET_CODE_ALREADY_CONNECTED_TO_ENDPOINT,
+	NoFreeConnections = ION_NET_CODE_NO_FREE_CONNECTIONS,
+	InvalidParameter = ION_NET_CODE_INVALID_PARAMETER,
+	Started = ION_NET_CODE_CONNECTION_ATTEMPT_STARTED,
+	AlreadyInProgress = ION_NET_CODE_CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS
 };
 
-
-
-enum ConnectionAttemptResult
+enum class NetStartupResult : int
 {
-	CONNECTION_ATTEMPT_STARTED,
-	INVALID_PARAMETER,
-	CANNOT_RESOLVE_DOMAIN_NAME,
-	ALREADY_CONNECTED_TO_ENDPOINT,
-	NO_FREE_CONNECTIONS,
-	CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS,
-	SECURITY_INITIALIZATION_FAILED
+	InvalidSocketDescriptors = ION_NET_CODE_INVALID_SOCKET_DESCRIPTORS,
+	InvalidMaxConnections = ION_NET_CODE_INVALID_MAX_CONNECTIONS,
+	SocketFailedToBind = ION_NET_CODE_SOCKET_FAILED_TO_BIND,
+	SocketFailedTestSend = ION_NET_CODE_SOCKET_FAILED_TEST_SEND,
+	FailedToCreateNetworkThread = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD,
+	Started = ION_NET_CODE_STARTED,
+	AlreadyStarted = ION_NET_CODE_ALREADY_STARTED,
 };
 
 /// Returned from BasePeer::GetConnectionState()
@@ -101,7 +94,7 @@ class ION_EXPORT BasePeer
 {
 public:
 	/// Constructor
-	BasePeer();
+	BasePeer() {}
 	// Read messages from incoming message queue. Returns null when out of messages
 	ion::NetPacket* Receive()
 	{
@@ -111,31 +104,9 @@ public:
 		return packet;
 	}
 	/// Destructor
-	virtual ~BasePeer();
+	virtual ~BasePeer() {}
 
-	// --------------------------------------------------------------------------------------------Major Low Level Functions - Functions
-	// needed by most users--------------------------------------------------------------------------------------------
-	/// \brief Starts the network threads and opens the listen port.
-	/// \details You must call this before calling Connect().
-	/// \note Multiple calls while already active are ignored.  To call this function again with different settings, you must first call
-	/// Shutdown(). \note Call SetMaximumIncomingConnections if you want to accept incoming connections. \param[in] maxConnections Maximum
-	/// number of connections between this instance of NetBasePeer and another instance of NetBasePeer. Required so that the network can preallocate
-	/// and for thread safety. A pure client would set this to 1.  A pure server would set it to the number of allowed clients.A hybrid
-	/// would set it to the sum of both types of connections. \param[in] localPort The port to listen for connections on. On linux the
-	/// system may be set up so thast ports under 1024 are restricted for everything but the root user. Use a higher port for maximum
-	/// compatibility. \param[in] socketDescriptors An array of NetSocketDescriptor structures to force RakNet to listen on a particular IP
-	/// address or port (or both).  Each NetSocketDescriptor will represent one unique socket.  Do not pass redundant structures.  To listen on
-	/// a specific port, you can pass NetSocketDescriptor(mPort,0); such as for a server.  For a client, it is usually OK to just pass
-	/// NetSocketDescriptor(); However, on the XBOX be sure to use IPPROTO_VDP \param[in] socketDescriptorCount The size of the \a
-	/// socketDescriptors array.  Pass 1 if you are not sure what to pass. \param[in] threadPriority Passed to the thread creation routine.
-	/// Use THREAD_PRIORITY_NORMAL for Windows. For Linux based systems, you MUST pass something reasonable based on the thread priorities
-	/// for your application. \return RAKNET_STARTED on success, otherwise appropriate failure enumeration.
-	StartupResult Startup(const ion::NetStartupParameters&);
-
-	void DisableSecurity()
-	{
-		mPeer->mRemoteStore.mDataTransferSecurity = NetDataTransferSecurity::Disabled;
-	}
+	void DisableSecurity() { mPeer->mRemoteStore.mDataTransferSecurity = NetDataTransferSecurity::ReplayProtectionAndChecksum; }
 
 	/// \brief This is useful if you have a fixed-address internal server behind a LAN.
 	///
@@ -184,57 +155,7 @@ public:
 	/// \param[in,out] passwordDataLength Maximum size of the passwordData array.  Modified to hold the number of bytes actually written.
 	void GetIncomingPassword(char* passwordData, int* passwordDataLength);
 
-	/// \brief Connect to the specified host (ip or domain name) and server port.
-	/// \details Calling Connect and not calling SetMaximumIncomingConnections acts as a dedicated client.
-	/// Calling both acts as a true peer.
-	///
-	/// This is a non-blocking connection.
-	///
-	/// The connection is successful when GetConnectionState() returns IS_CONNECTED or Receive() gets a message with the type identifier
-	/// NetMessageId::ConnectionRequestAccepted. If the connection is not successful, such as a rejected connection or no response then neither of
-	/// these things will happen. \pre Requires that you first call Startup(). \param[in] host Either a dotted IP address or a domain name.
-	/// \param[in] remotePort Port to connect to on the remote machine.
-	/// \param[in] passwordData A data block that must match the data block on the server passed to SetIncomingPassword().  This can be a
-	/// string or can be a stream of data.  Use 0 for no password. \param[in] passwordDataLength The length in bytes of passwordData.
-	/// \param[in] publicKey The public key the server is using. If 0, the server is not using security. If non-zero, the publicKeyMode
-	/// member determines how to connect \param[in] connectionSocketIndex Index into the array of socket descriptors passed to
-	/// socketDescriptors in NetBasePeer::Startup() to determine the one to send on. \param[in] sendConnectionAttemptCount Number of datagrams
-	/// to send to the other system to try to connect. \param[in] timeBetweenSendConnectionAttemptsMS Time to elapse before a datagram is
-	/// sent to the other system to try to connect. After sendConnectionAttemptCount number of attempts, NetMessageId::ConnectionAttemptFailed is
-	/// returned. Under low bandwidth conditions with multiple simultaneous outgoing connections, this value should be raised to 1000 or
-	/// higher, or else the MTU detection can overrun the available bandwidth. \param[in] timeoutTime Time to elapse before dropping the
-	/// connection if a reliable message could not be sent. 0 to use the default value from SetTimeoutTime(NetUnassignedSocketAddress);
-	/// \return CONNECTION_ATTEMPT_STARTED on successful initiation. Otherwise, an appropriate enumeration indicating failure. \note
-	/// CONNECTION_ATTEMPT_STARTED does not mean you are already connected! \note It is possible to immediately get back
-	/// NetMessageId::ConnectionAttemptFailed if you exceed the maxConnections parameter passed to Startup(). This could happen if you call
-	/// CloseConnection() with sendDisconnectionNotificaiton true, then immediately call Connect() before the connection has closed.
-	ConnectionAttemptResult Connect(const char* host, unsigned short remotePort, const char* passwordData, int passwordDataLength,
-									ion::NetSecure::PublicKey* publicKey = 0, unsigned connectionSocketIndex = 0,
-									unsigned sendConnectionAttemptCount = 6, unsigned timeBetweenSendConnectionAttemptsMS = 1000,
-									ion::TimeMS timeoutTime = 0);
 
-	ConnectionAttemptResult Connect(ion::ConnectTarget& target, const char* passwordData, int passwordDataLength,
-									ion::NetSecure::PublicKey* publicKey = 0, unsigned connectionSocketIndex = 0,
-									unsigned sendConnectionAttemptCount = 6, unsigned timeBetweenSendConnectionAttemptsMS = 1000,
-									ion::TimeMS timeoutTime = 0);
-
-	/// \brief Connect to the specified host (ip or domain name) and server port.
-	/// \param[in] host Either a dotted IP address or a domain name.
-	/// \param[in] remotePort Which port to connect to on the remote machine.
-	/// \param[in] passwordData A data block that must match the data block on the server passed to SetIncomingPassword().  This can be a
-	/// string or can be a stream of data.  Use 0 for no password. \param[in] passwordDataLength The length in bytes of passwordData.
-	/// \param[in] socket A bound socket returned by another instance of BasePeer.
-	/// \param[in] sendConnectionAttemptCount Number of datagrams to send to the other system to try to connect.
-	/// \param[in] timeBetweenSendConnectionAttemptsMS Time to elapse before a datagram is sent to the other system to try to connect. After
-	/// sendConnectionAttemptCount number of attempts, NetMessageId::ConnectionAttemptFailed is returned.. Under low bandwidth conditions with
-	/// multiple simultaneous outgoing connections, this value should be raised to 1000 or higher, or else the MTU detection can overrun the
-	/// available bandwidth. \param[in] timeoutTime Time to elapse before dropping the connection if a reliable message could not be sent. 0
-	/// to use the default from SetTimeoutTime(NetUnassignedSocketAddress); \return CONNECTION_ATTEMPT_STARTED on successful initiation.
-	/// Otherwise, an appropriate enumeration indicating failure. \note CONNECTION_ATTEMPT_STARTED does not mean you are already connected!
-	ConnectionAttemptResult ConnectWithSocket(const char* host, unsigned short remotePort, const char* passwordData, int passwordDataLength,
-											  NetSocket* socket, ion::NetSecure::PublicKey* publicKey = 0,
-											  unsigned sendConnectionAttemptCount = 6, unsigned timeBetweenSendConnectionAttemptsMS = 1000,
-											  ion::TimeMS timeoutTime = 0);
 
 	/* /// \brief Connect to the specified network ID (Platform specific console function)
 	/// \details Does built-in NAT traversal
@@ -245,12 +166,10 @@ public:
 	//bool Console2LobbyConnect( void *networkServiceId, const char *passwordData, int passwordDataLength );*/
 
 	/// \brief Stops the network threads and closes all connections.
-	/// \param[in] blockDuration Wait time(milli seconds) for all remaining messages to go out, including NetMessageId::DisconnectionNotification.  If
-	/// 0, it doesn't wait at all. \param[in] orderingChannel Channel on which NetMessageId::DisconnectionNotification will be sent, if blockDuration
-	/// > 0. \param[in] disconnectionNotificationPriority Priority of sending NetMessageId::DisconnectionNotification. If set to 0, the disconnection
-	/// notification won't be sent.
-	void Shutdown(unsigned int blockDuration, unsigned char orderingChannel = 0,
-				  NetPacketPriority disconnectionNotificationPriority = NetPacketPriority::Low);
+	/// \param[in] blockDuration Wait time(milli seconds) for all remaining messages to go out, including
+	/// NetMessageId::DisconnectionNotification.  If 0, it doesn't wait at all. \param[in] orderingChannel Channel on which
+	/// NetMessageId::DisconnectionNotification will be sent, if blockDuration > 0. \param[in] disconnectionNotificationPriority Priority of
+	/// sending NetMessageId::DisconnectionNotification. If set to 0, the disconnection notification won't be sent.
 
 	/// \brief Returns true if the network thread is running.
 	/// \return True if the network thread is running, False otherwise
@@ -376,9 +295,9 @@ public:
 	/// \brief Close the connection to another host (if we initiated the connection it will disconnect, if they did it will kick them out).
 	/// \details This method closes the connection irrespective of who initiated the connection.
 	/// \param[in] target Which system to close the connection to.
-	/// \param[in] sendDisconnectionNotification True to send NetMessageId::DisconnectionNotification to the recipient.  False to close it silently.
-	/// \param[in] channel Which ordering channel to send the disconnection notification on, if any
-	/// \param[in] disconnectionNotificationPriority Priority to send NetMessageId::DisconnectionNotification on.
+	/// \param[in] sendDisconnectionNotification True to send NetMessageId::DisconnectionNotification to the recipient.  False to close it
+	/// silently. \param[in] channel Which ordering channel to send the disconnection notification on, if any \param[in]
+	/// disconnectionNotificationPriority Priority to send NetMessageId::DisconnectionNotification on.
 	void CloseConnection(const NetAddressOrRemoteRef& target, bool sendDisconnectionNotification, unsigned char orderingChannel = 0,
 						 NetPacketPriority disconnectionNotificationPriority = NetPacketPriority::Low);
 
@@ -438,13 +357,10 @@ public:
 
 	/// \brief Allows a previously banned IP to connect.
 	/// param[in] Dotted IP address. You can use * as a wildcard. An IP such as 128.0.0.* will ban all IP addresses starting with 128.0.0.
-	void RemoveFromBanList(const char* IP) { NetReceptionLayer::RemoveFromBanList(mPeer->mReception, mPeer->mControl, IP);
-
-	}
+	void RemoveFromBanList(const char* IP) { NetReceptionLayer::RemoveFromBanList(mPeer->mReception, mPeer->mControl, IP); }
 
 	/// \brief Allows all previously banned IPs to connect.
 	void ClearBanList(void) { NetReceptionLayer::ClearBanList(mPeer->mReception, mPeer->mControl); }
-
 
 	/// \brief Returns true or false indicating if a particular IP is banned.
 	/// \param[in] IP Dotted IP address.
@@ -462,24 +378,8 @@ public:
 	/// connection slots. \param[in] b True to limit connections from the same ip to at most 1 per 100 milliseconds.
 	inline void SetLimitIPConnectionFrequency(bool b) { mPeer->mRemoteStore.mLimitConnectionFrequencyFromTheSameIP = b; }
 
-	// --------------------------------------------------------------------------------------------Pinging Functions - Functions dealing
-	// with the automatic ping mechanism--------------------------------------------------------------------------------------------
-	/// Send a ping to the specified connected system.
-	/// \pre The sender and recipient must already be started via a successful call to Startup()
-	/// \param[in] target Which system to ping
-	void Ping(const NetSocketAddress& target);
 
-	/// \brief Send a ping to the specified unconnected system.
-	/// \details The remote system, if it is Initialized, will respond with ID_PONG followed by sizeof(ion::TimeMS) containing the system
-	/// time the ping was sent. Default is 4 bytes - See __GET_TIME_64BIT in RakNetTypes.h System should reply with ID_PONG if it is active
-	/// \param[in] host Either a dotted IP address or a domain name.  Can be 255.255.255.255 for LAN broadcast.
-	/// \param[in] remotePort Which port to connect to on the remote machine.
-	/// \param[in] onlyReplyOnAcceptingConnections Only request a reply if the remote system is accepting connections
-	/// \param[in] connectionSocketIndex Index into the array of socket descriptors passed to socketDescriptors in NetBasePeer::Startup() to
-	/// send on. \return true on success, false on failure (unknown hostname)
-	bool Ping(ion::ConnectTarget& target, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex = 0);
 
-	bool Ping(const char* host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex = 0);
 
 	/// \brief Returns the average of all ping times read for the specific system or -1 if none read yet
 	/// \param[in] systemAddress Which system we are referring to
@@ -560,10 +460,9 @@ public:
 	const NetGUID GetGuidFromSystemAddress(const NetSocketAddress& input);
 
 	/// \brief Gives the system address of a connected system, given its GUID.
-	/// The GUID will be the same on all systems connected to that instance of NetBasePeer, even if the external system addresses are different.
-	/// Currently O(log(n)), but this may be improved in the future
-	/// If \a input is NetGuidUnassigned, NetUnassignedSocketAddress is returned.
-	/// \param[in] input The NetGUID of the target system.
+	/// The GUID will be the same on all systems connected to that instance of NetBasePeer, even if the external system addresses are
+	/// different. Currently O(log(n)), but this may be improved in the future If \a input is NetGuidUnassigned, NetUnassignedSocketAddress
+	/// is returned. \param[in] input The NetGUID of the target system.
 	NetSocketAddress GetSystemAddressFromGuid(const NetGUID& input)
 	{
 		return NetRemoteStoreLayer::GetSocketAddressThreadSafe(mPeer->mRemoteStore, input);
@@ -699,7 +598,6 @@ public:
 	/// The additional random time to delay sends.
 	void ApplyNetworkSimulator(const ion::NetworkSimulatorSettings& settings);
 
-	
 	/// Returns if you previously called ApplyNetworkSimulator
 	/// \return If you previously called ApplyNetworkSimulator
 	bool IsNetworkSimulatorActive(void);
@@ -739,12 +637,6 @@ public:
 	// --------------------------------------------------------------------------------------------EVERYTHING AFTER THIS COMMENT IS FOR
 	// INTERNAL USE ONLY--------------------------------------------------------------------------------------------
 
-
-
-	static void PreUpdate(NetInterface& net, ion::JobScheduler* js = nullptr);
-
-	static bool PostUpdate(NetInterface& net, ion::JobScheduler* js = nullptr);
-
 	/// \internal
 	bool SendOutOfBand(const char* host, unsigned short remotePort, const char* data, uint32_t dataLength,
 					   unsigned connectionSocketIndex = 0);
@@ -755,12 +647,6 @@ public:
 
 	// Private methods are unprotected as data is being moved to systems
 
-	// Two versions needed because some buggy compilers strip the last parameter if unused, and crashes
-	ConnectionAttemptResult SendConnectionRequest(ion::ConnectTarget& target, const char* passwordData, int passwordDataLength,
-												  ion::NetSecure::PublicKey* publicKey, unsigned connectionSocketIndex,
-												  unsigned int extraData, unsigned sendConnectionAttemptCount,
-												  unsigned timeBetweenSendConnectionAttemptsMS, ion::TimeMS timeoutTime,
-												  NetSocket* socket = nullptr);
 
 	ion::NetRemoteSystem* GetRemoteFromSocketAddress(const ion::NetSocketAddress& systemAddress, bool calledFromNetworkThread,
 													 bool onlyActive)
@@ -789,15 +675,11 @@ public:
 						  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,
 						  bool broadcast, NetMode connectionMode);
 
-	void ClearBufferedCommands() { ion::NetControlLayer::ClearBufferedCommands(mPeer->mControl); }
 	void AddPacketToProducer(ion::NetPacket* p) { mPeer->mControl.mPacketReturnQueue.Enqueue(std::move(p)); }
 
 	NetPacket* AllocPacket(unsigned dataSize);
 
-
 	void ClearConnectionRequest(const ion::RequestedConnection& rcs);
-
-	unsigned int GetRakNetSocketFromUserConnectionSocketIndex(unsigned int userIndex) const;
 
 	//
 	// Security section
@@ -808,13 +690,8 @@ public:
 	// accepted.
 	ion::NetVector<ion::String> securityExceptionList;
 
-
-
-
-
 protected:
 	ion::NetPtr<ion::NetInterface> mPeer;
-
 };
 
 }  // namespace ion

@@ -53,63 +53,101 @@ using QueueIndex = ion::UInt;
 
 static constexpr QueueIndex NoQueueIndex = (std::numeric_limits<QueueIndex>::max)();
 
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
+  ION_MEMORY_TRACKER
 struct ThreadLocalStore
 {
 	ThreadLocalStore();
+	#if ION_CONFIG_JOB_SCHEDULER
 	BaseJob* mJob = nullptr;
-#if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
+	#endif
+	#if ION_CONFIG_TEMPORARY_ALLOCATOR
 	ion::temporary::BytePool* mTemporaryMemory = nullptr;
-#endif
+	#endif
+	#if ION_CONFIG_JOB_SCHEDULER
 	uint64_t mRandState[2] = {0};
+	#endif
+	#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
 	UInt mId = ~static_cast<UInt>(0);
+	#endif
+	#if ION_CONFIG_JOB_SCHEDULER
 	QueueIndex mQueueIndex = 0;
+	#endif
 
 	// Debug features
-#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
+	#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
 	ProfilingBuffer* mProfiling = nullptr;
-#endif
-#if ION_MEMORY_TRACKER
+	#endif
+	#if ION_MEMORY_TRACKER
 	ion::MemTag mMemoryTag = ion::tag::Unset;
-#endif
+	#endif
 	~ThreadLocalStore();
 };
 
 extern thread_local ThreadLocalStore mTLS;
+#endif
 
 void Init(QueueIndex index = NoQueueIndex, Priority priority = Priority::Normal);
 
 void Deinit();
 
-inline QueueIndex GetQueueIndex() { return mTLS.mQueueIndex; }
-inline BaseJob* GetCurrentJob() { return mTLS.mJob; }
+inline QueueIndex GetQueueIndex()
+{
+#if ION_CONFIG_JOB_SCHEDULER
+	return mTLS.mQueueIndex;
+#else
+	return 0;
+#endif
+}
+inline BaseJob* GetCurrentJob()
+{
+#if ION_CONFIG_JOB_SCHEDULER
+	return mTLS.mJob;
+#else
+	return nullptr;
+#endif
+}
 #if ION_MEMORY_TRACKER
 inline ion::MemTag& MemoryTag() { return Thread::mTLS.mMemoryTag; }
 #endif
 
-inline UInt GetId() { return mTLS.mId; }
+inline UInt GetId()
+{
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
+	return mTLS.mId;
+#else
+	return 0;
+#endif
+}
 
-#if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
+#if ION_CONFIG_TEMPORARY_ALLOCATOR
 ion::temporary::BytePool& InitTemporaryMemory();
 #endif
 
-#if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
+#if ION_CONFIG_TEMPORARY_ALLOCATOR
 inline ion::temporary::BytePool& GetTemporaryPool() { return mTLS.mTemporaryMemory ? *mTLS.mTemporaryMemory : InitTemporaryMemory(); }
 #endif
 
 bool IsReady();
 
 // TODO: Move to private
-inline void SetCurrentJob(BaseJob* const job)
+inline void SetCurrentJob([[maybe_unused]] BaseJob* const job)
 {
+#if ION_CONFIG_JOB_SCHEDULER
 	ION_ASSERT(job == nullptr || mTLS.mJob != job, "Job already set");
 	mTLS.mJob = job;
+#endif
 }
 
+#if ION_CONFIG_JOB_SCHEDULER
 inline uint64_t* GetRandState()
 {
 	ION_ASSERT(mTLS.mRandState[0] != 0 && mTLS.mRandState[1] != 0, "Thread " << mTLS.mId << " not initialized");
 	return mTLS.mRandState;
 }
+#else
+uint64_t* GetRandState();
+#endif
 
 unsigned int GetFPControlWord();
 
@@ -139,8 +177,6 @@ void DeinitMain();
 void OnEngineRestart();
 
 void InitInternal(QueueIndex index, Priority priority);
-
-void InitThreadIdPool();
 
 #if ION_THREAD_WAIT_AFTER_TERMINATE
 ion::ThreadSynchronizer& Synchronizer();

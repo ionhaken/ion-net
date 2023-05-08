@@ -4,7 +4,7 @@ project(ion-net)
 
 set( ION_NET_HEADERFILES ${PROJECT_SOURCE_DIR}/src) #This name doesn't follow CMake conventions but for retro compatibility I'll let it there.
 
-set(ION_NET_COMMON_LIBS ion-net-lib-static)
+set(ION_NET_COMMON_LIBS ion_net)
 
 MACRO(GETCURRENTFOLDER)#Gets the current foldername without the path
 	string(REGEX REPLACE
@@ -96,8 +96,55 @@ set( ION_NET_INCLUDE_DIRS
 	${PROJECT_SOURCE_DIR}/depend/ion/src
 	${PROJECT_SOURCE_DIR}/depend/ion/3rdparty)
 
-add_subdirectory(lib)
+#add_subdirectory(lib)
+
+FILE(GLOB_RECURSE ALL_HEADER_SRCS ${PROJECT_SOURCE_DIR}/src/*.h)
+FILE(GLOB_RECURSE ALL_CPP_SRCS ${PROJECT_SOURCE_DIR}/src/*.cpp)
+FILE(GLOB_RECURSE ALL_C_SRCS ${PROJECT_SOURCE_DIR}/src/*.c)
+
+
+add_library(ion-net STATIC ${ALL_CPP_SRCS} ${ALL_HEADER_SRCS} ${ALL_C_SRCS})
+
+source_group(TREE ${PROJECT_SOURCE_DIR}/src/ion FILES ${ALL_CPP_SRCS} ${ALL_HEADER_SRCS} ${ALL_C_SRCS})
+
+include_directories( ${ION_NET_INCLUDE_DIRS} ) 
+
+
+IF(WIN32 AND NOT UNIX)
+	SET( CMAKE_CXX_FLAGS "/D WIN32 /D _RAKNET_LIB /D _CRT_NONSTDC_NO_DEPRECATE /D _CRT_SECURE_NO_DEPRECATE /GS- /GR- /EHsc")
+ENDIF(WIN32 AND NOT UNIX)
+
+IF(WIN32 AND NOT UNIX)
+	target_link_libraries (ion-net ${ION_NET_LIBRARY_LIBS})
+
+	IF(NOT ${CMAKE_GENERATOR} STREQUAL "MSYS Makefiles")
+
+		IF( MSVC10 OR MSVC11 OR MSVC12 OR MSVC14 )
+			set_target_properties(ion-net PROPERTIES STATIC_LIBRARY_FLAGS "/NODEFAULTLIB:\"LIBCD.lib LIBCMTD.lib MSVCRT.lib\"" )
+		ELSE()
+			set_target_properties(ion-net PROPERTIES STATIC_LIBRARY_FLAGS "/NODEFAULTLIB:&quot;LIBCD.lib LIBCMTD.lib MSVCRT.lib&quot;" )
+		ENDIF()
+				
+	ENDIF(NOT ${CMAKE_GENERATOR} STREQUAL "MSYS Makefiles")
+
+ELSE(WIN32 AND NOT UNIX)
+	target_link_libraries (ion-net ${ION_NET_LIBRARY_LIBS})
+	INSTALL(TARGETS ion-net DESTINATION ${PROJECT_SOURCE_DIR}/lib/lib-static)
+ENDIF(WIN32 AND NOT UNIX)
+
+target_compile_features(ion-net PRIVATE cxx_std_20)
+if(MSVC)
+	target_compile_options(ion-net PRIVATE "/MP")
+endif()
+	
+install(TARGETS ion-net 
+        ARCHIVE DESTINATION ${CMAKE_PREFIX_PATH}/lib
+    )
+
+set_target_properties(ion-net PROPERTIES FOLDER "Lib")
+
 
 add_subdirectory(benchmark)
 add_subdirectory(fuzzer)
 add_subdirectory(depend)
+

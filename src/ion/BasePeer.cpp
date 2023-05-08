@@ -49,24 +49,7 @@
 namespace ion
 {
 
-bool ResolveTarget(ion::ConnectTarget& target, NetSocket& socket)
-{
-	bool isOk = true;
-	if (!target.mResolvedAddress.IsAssigned() || target.mResolvedAddress.GetIPVersion() != socket.mBoundAddress.GetIPVersion())
-	{
-		target.mResolvedAddress = NetSocketAddress(target.mHost, target.mRemotePort, socket.mBoundAddress.GetIPVersion());
-		isOk = target.mResolvedAddress.IsAssigned();
-	}
-#if ION_PLATFORM_ANDROID && !defined(_FINAL)
-	// https://developer.android.com/studio/run/emulator-networking.html
-	// Special alias to your host loopback interface
-	if (isOk && target.mResolvedAddress.IsLoopback())
-	{
-		target.mResolvedAddress = NetSocketAddress("10.0.2.2", target.mResolvedAddress.GetPort());
-	}
-#endif
-	return isOk;
-}
+
 
 NetPacket* BasePeer::AllocPacket(unsigned dataSize)
 {
@@ -78,89 +61,8 @@ NetPacket* BasePeer::AllocPacket(unsigned dataSize)
 	return p;
 }
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Constructor
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-BasePeer::BasePeer() {}
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Destructor
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-BasePeer::~BasePeer() {}
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// \brief Starts the network threads, opens the listen port.
-// You must call this before calling Connect().
-// Multiple calls while already active are ignored.  To call this function again with different settings, you must first call Shutdown().
-// \note Call SetMaximumIncomingConnections if you want to accept incoming connections
-// \param[in] maxConnections The maximum number of connections between this instance of NetBasePeer and another instance of NetBasePeer. Required so
-// the network can preallocate and for thread safety. A pure client would set this to 1.  A pure server would set it to the number of
-// allowed clients.- A hybrid would set it to the sum of both types of connections \param[in] localPort The port to listen for connections
-// on. \param[in] _threadSleepTimer How many ms to Sleep each internal update cycle. With new congestion control, the best results will be
-// obtained by passing 10. \param[in] socketDescriptors An array of NetSocketDescriptor structures to force RakNet to listen on a particular IP
-// address or port (or both).  Each NetSocketDescriptor will represent one unique socket.  Do not pass redundant structures.  To listen on a
-// specific port, you can pass &socketDescriptor, 1NetSocketDescriptor(mPort,0); such as for a server.  For a client, it is usually OK to just
-// pass NetSocketDescriptor(); \param[in] socketDescriptorCount The size of the \a socketDescriptors array.  Pass 1 if you are not sure what to
-// pass. \return False on failure (can't create socket or thread), true on success.
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-StartupResult BasePeer::Startup(const ion::NetStartupParameters& parameters)
-{
-	ION_NET_API_CHECK(parameters.mNetSocketDescriptors && parameters.mNetSocketDescriptorCount >= 1, INVALID_SOCKET_DESCRIPTORS,
-					  "Invalid socket descriptors");
-	ION_NET_API_CHECK(parameters.mMaxConnections > 0, INVALID_MAX_CONNECTIONS, "Invalid max connection count");
-	if (mPeer->mControl.mIsActive)
-	{
-		return RAKNET_ALREADY_STARTED;
-	}
-
-	memset(mPeer->mSecretKey.data, 0xAA, ion::NetSecure::SecretKeyLength);
-	ion::NetControlLayer::Init(*mPeer.Get(), parameters);
-
-	NetRemoteStoreLayer::Init(mPeer->mRemoteStore, parameters, mPeer->mControl.mMemoryResource);
-	NetRemoteStoreLayer::FillIPList(mPeer->mRemoteStore);
-	mPeer->mRemoteStore.mFirstExternalID = NetUnassignedSocketAddress;
-
-	ClearBufferedCommands();
-	ion::NetReceptionLayer::Reset(mPeer->mReception, mPeer->mControl);
-
-	StartupResult result = RAKNET_STARTED;
-	switch (ion::NetConnectionLayer::BindSockets(mPeer->mConnections, mPeer->mControl.mMemoryResource, parameters))
-	{
-	case NetBindResult::Success:
-	{
-		for (unsigned i = 0; i < NetMaximumNumberOfInternalIds; i++)
-		{
-			if (mPeer->mRemoteStore.mIpList[i] == NetUnassignedSocketAddress)
-			{
-				break;
-			}
-			unsigned short port = mPeer->mConnections.mSocketList[0]->mBoundAddress.GetPort();
-			mPeer->mRemoteStore.mIpList[i].SetPortHostOrder(port);
-		}
-		if (!NetControlLayer::StartUpdating(mPeer->mControl, mPeer->mReception, parameters.mUpdateThreadPriority))
-		{
-			result = FAILED_TO_CREATE_NETWORK_THREAD;
-		}
-		else if (!NetConnectionLayer::StartThreads(mPeer->mConnections, mPeer->mReception, mPeer->mControl, parameters))
-		{
-			result = FAILED_TO_CREATE_NETWORK_THREAD;
-		}
-		break;
-	}
-	case NetBindResult::FailedToBind:
-		result = SOCKET_FAILED_TO_BIND;
-		break;
-	case NetBindResult::FailedToSendTest:
-		result = SOCKET_FAILED_TEST_SEND;
-		break;
-	}
-
-	if (result != RAKNET_STARTED)
-	{
-		Shutdown(1);
-	}
-	return result;
-}
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void BasePeer::AddToSecurityExceptionList(const char* ip)
@@ -332,169 +234,13 @@ void BasePeer::GetIncomingPassword(char* passwordData, int* passwordDataLength)
 		memcpy(passwordData, mPeer->mReception.mIncomingPassword, *passwordDataLength);
 }
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Description:
-// Call this to connect to the specified host (ip or domain name) and server port.
-// Calling Connect and not calling SetMaximumIncomingConnections acts as a dedicated client.  Calling both acts as a true peer.
-// This is a non-blocking connection.  You know the connection is successful when IsConnected() returns true
-// or receive gets a packet with the type identifier NetMessageId::ConnectionRequestAccepted.  If the connection is not
-// successful, such as rejected connection or no response then neither of these things will happen.
-// Requires that you first call Initialize
-//
-// Parameters:
-// host: Either a dotted IP address or a domain name
-// remotePort: Which port to connect to on the remote machine.
-// passwordData: A data block that must match the data block on the server.  This can be just a password, or can be a stream of data
-// passwordDataLength: The length in bytes of passwordData
-//
-// Returns:
-// True on successful initiation. False on incorrect parameters, internal error, or too many existing peers
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-ConnectionAttemptResult BasePeer::Connect(ion::ConnectTarget& target, const char* passwordData, int passwordDataLength,
-										  ion::NetSecure::PublicKey* publicKey, unsigned connectionSocketIndex,
-										  unsigned sendConnectionAttemptCount, unsigned timeBetweenSendConnectionAttemptsMS,
-										  ion::TimeMS timeoutTime)
-{
-	ION_NET_API_CHECK(IsActive(), INVALID_PARAMETER, "Invalid state");
-	ION_NET_API_CHECK(target.mHost != 0, INVALID_PARAMETER, "Invalid host");
-	ION_NET_API_CHECK(connectionSocketIndex < mPeer->mConnections.mSocketList.Size(), INVALID_PARAMETER, "Invalid socket");
-	ION_NET_API_CHECK(target.mRemotePort != 0, INVALID_PARAMETER, "Invalid port");
 
-	connectionSocketIndex = GetRakNetSocketFromUserConnectionSocketIndex(connectionSocketIndex);
 
-	if (passwordDataLength > 255)
-		passwordDataLength = 255;
-
-	if (passwordData == 0)
-		passwordDataLength = 0;
-
-	// Not threadsafe but it's not important enough to lock.  Who is going to change the password a lot during runtime?
-	// It won't overflow at least because outgoingPasswordLength is an unsigned char
-	//	if (passwordDataLength>0)
-	//		memcpy(outgoingPassword, passwordData, passwordDataLength);
-	//	outgoingPasswordLength=(unsigned char) passwordDataLength;
-
-	// 04/02/09 - Can't remember why I disabled connecting to self, but it seems to work
-	// Connecting to ourselves in the same instance of the program?
-	//	if ( ( strcmp( host, "127.0.0.1" ) == 0 || strcmp( host, "0.0.0.0" ) == 0 ) && remotePort == mSystemAddress[0].port )
-	//		return false;
-
-	return SendConnectionRequest(target, passwordData, passwordDataLength, publicKey, connectionSocketIndex, 0, sendConnectionAttemptCount,
-								 timeBetweenSendConnectionAttemptsMS, timeoutTime);
-}
-
-ConnectionAttemptResult BasePeer::Connect(const char* host, unsigned short remotePort, const char* passwordData, int passwordDataLength,
-										  ion::NetSecure::PublicKey* publicKey, unsigned connectionSocketIndex,
-										  unsigned sendConnectionAttemptCount, unsigned timeBetweenSendConnectionAttemptsMS,
-										  ion::TimeMS timeoutTime)
-{
-	ion::ConnectTarget target{host, remotePort};
-	return Connect(target, passwordData, passwordDataLength, publicKey, connectionSocketIndex, sendConnectionAttemptCount,
-				   timeBetweenSendConnectionAttemptsMS, timeoutTime);
-}
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-ConnectionAttemptResult BasePeer::ConnectWithSocket(const char* host, unsigned short remotePort, const char* passwordData,
-													int passwordDataLength, NetSocket* socket, ion::NetSecure::PublicKey* publicKey,
-													unsigned sendConnectionAttemptCount, unsigned timeBetweenSendConnectionAttemptsMS,
-													ion::TimeMS timeoutTime)
-{
-	ION_ASSERT(IsActive(), "Not active");
-	if (host == 0 || socket == 0)
-		return INVALID_PARAMETER;
 
-	if (passwordDataLength > 255)
-		passwordDataLength = 255;
 
-	if (passwordData == 0)
-		passwordDataLength = 0;
-	ion::ConnectTarget target{host, remotePort};
-	return SendConnectionRequest(target, passwordData, passwordDataLength, publicKey, 0, 0, sendConnectionAttemptCount,
-								 timeBetweenSendConnectionAttemptsMS, timeoutTime, socket);
-}
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Description:
-// Stops the network threads and close all connections.  Multiple calls are ok.
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::Shutdown(unsigned int blockDuration, unsigned char orderingChannel, NetPacketPriority disconnectionNotificationPriority)
-{
-	bool IsUpdateThreadRunning = mPeer->mControl.mUpdateMode != NetPeerUpdateMode::User;
-	const unsigned int systemListSize = mPeer->mRemoteStore.mMaximumNumberOfPeers;
-
-	// This needs to be done first to make sure all disconnects are sent and acked before shutdown can continue
-	ion::TimeMS now = ion::SteadyClock::GetTimeMS();
-	if (blockDuration > 0)
-	{
-		for (unsigned int i = 1; i <= systemListSize; i++)
-		{
-			// remoteSystemList in user thread
-			if (mPeer->mRemoteStore.mRemoteSystemList[i].mMode != NetMode::Disconnected)
-			{
-				NetControlLayer::CloseConnectionInternal(mPeer->mControl, mPeer->mRemoteStore, mPeer->mConnections,
-														 mPeer->mRemoteStore.mRemoteSystemList[i].mId.load(), true, !IsUpdateThreadRunning,
-														 orderingChannel, disconnectionNotificationPriority);
-			}
-		}
-
-		bool anyActive = false;
-		ion::TimeMS startWaitingTime = now;
-		while (TimeSince(now, startWaitingTime) < blockDuration)
-		{
-			anyActive = false;
-			for (unsigned int j = 1; j <= systemListSize; j++)
-			{
-				// remoteSystemList in user thread
-				if (mPeer->mRemoteStore.mRemoteSystemList[j].mMode != NetMode::Disconnected)
-				{
-					anyActive = true;
-					break;
-				}
-			}
-
-			// If this system is out of packets to send, then stop waiting
-			if (anyActive == false)
-				break;
-
-			if (IsUpdateThreadRunning)
-			{
-				ion::NetControlLayer::Trigger(mPeer->mControl);
-				ion::Thread::Sleep(ion::NetUpdateInterval * 1000);
-			}
-			else
-			{
-				PreUpdate(*mPeer.Get());
-				PostUpdate(*mPeer.Get());
-			}
-			now = ion::SteadyClock::GetTimeMS();
-		}
-		if (anyActive)
-		{
-			ION_DBG("Could not disconnect all remotes gracefully in " << blockDuration << "ms");
-		}
-	}
-
-	ion::NetControlLayer::StopUpdating(mPeer->mControl);
-
-	// Send thread might leak memory if stopping while there's active data sending, thus,
-	// update threads must be stopped before socket threads.
-	ion::NetConnectionLayer::StopThreads(mPeer->mConnections);
-
-	ion::NetConnectionLayer::Reset(mPeer->mConnections, mPeer->mControl.mMemoryResource);
-
-	ion::NetRemoteStoreLayer::Deinit(mPeer->mRemoteStore, mPeer->mControl, now);
-	ion::NetReceptionLayer::Reset(mPeer->mReception, mPeer->mControl);
-
-	ion::NetControlLayer::Deinit(mPeer->mControl);
-
-	// Free any packets the user didn't deallocate
-	mPeer->mControl.mPacketReturnQueue.DequeueAll([&](NetPacket* packet) { DeallocatePacket(packet); });
-
-	ClearBufferedCommands();
-
-	NetReceptionLayer::ClearBanList(mPeer->mReception, mPeer->mControl);
-}
 
 //-----------------------------------------------------------------------------
 // Description:
@@ -757,71 +503,10 @@ void BasePeer::GetSystemListInternal(NetVector<NetSocketAddress>& addresses, Net
 bool BasePeer::IsBanned(const char* IP) { return IsBanned(IP, ion::SteadyClock::GetTimeMS()) != NetBanStatus::NotBanned; }
 
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Description:
-// Send a ping to the specified connected system.
-//
-// Parameters:
-// target - who to ping
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::Ping(const NetSocketAddress& address)
-{
-	// Need to go as buffered command due to ping tracker
-	auto bcs(ion::MakeArenaPtr<ion::NetCommand>(&mPeer->mControl.mMemoryResource, address));
-	if (bcs.Get() == nullptr)
-	{
-		ion::NotifyOutOfMemory();
-		return;
-	}
-	bcs->mCommand = ion::NetCommandType::PingAddress;
-	mPeer->mControl.mBufferedCommands.Enqueue(std::move(bcs));
-}
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Description:
-// Send a ping to the specified unconnected system.
-// The remote system, if it is Initialized, will respond with NetMessageId::UnconnectedPong.
-// The final ping time will be encoded in the following sizeof(ion::TimeMS) bytes.  (Default is 4 bytes - See __GET_TIME_64BIT in
-// RakNetTypes.h
-//
-// Parameters:
-// host: Either a dotted IP address or a domain name.  Can be 255.255.255.255 for LAN broadcast.
-// remotePort: Which port to connect to on the remote machine.
-// onlyReplyOnAcceptingConnections: Only request a reply if the remote system has open connections
-// connectionSocketIndex Index into the array of socket descriptors passed to socketDescriptors in BasePeer::Startup() to send on.
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-bool BasePeer::Ping(const char* host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex)
-{
-	ion::ConnectTarget target{host, remotePort};
-	return Ping(target, onlyReplyOnAcceptingConnections, connectionSocketIndex);
-}
 
 
-bool BasePeer::Ping(ion::ConnectTarget& target, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex)
-{
-	ION_NET_API_CHECK(target.mHost != 0, false, "Invalid host");
-	ION_NET_API_CHECK(target.mRemotePort != 0, false, "Invalid host");
-	ION_NET_API_CHECK(connectionSocketIndex < mPeer->mConnections.mSocketList.Size(), false, "Invalid socket");
 
-	// No timestamp for 255.255.255.255
-	unsigned int realIndex = GetRakNetSocketFromUserConnectionSocketIndex(connectionSocketIndex);
-	if (!ResolveTarget(target, *mPeer->mConnections.mSocketList[realIndex]))
-	{
-		return false;
-	}
-	NetRawSendCommand pingMessage(*mPeer->mConnections.mSocketList[realIndex]);
-	{
-		ByteWriter writer(pingMessage.Writer());
-		writer.Process(onlyReplyOnAcceptingConnections ? NetMessageId::UnconnectedPingOpenConnections : NetMessageId::UnconnectedPing);
-		writer.Process(NetUnconnectedHeader);
-		ion::Time time = ion::SteadyClock::GetTimeMS();
-		writer.Process(time);
-		writer.Process(GetMyGUID());
-	}
-	pingMessage.Dispatch(target.mResolvedAddress);
-	
-	return true;
-}
+
 
 void BasePeer::SetTimeSynchronization(const NetAddressOrRemoteRef& systemIdentifier, ion::GlobalClock* srcClock)
 {
@@ -1073,7 +758,7 @@ void BasePeer::SetUnreliableTimeout([[maybe_unused]] ion::TimeMS timeoutMS) { IO
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void BasePeer::SendTTL(const char* host, unsigned short remotePort, int ttl, unsigned connectionSocketIndex)
 {
-	unsigned int realIndex = GetRakNetSocketFromUserConnectionSocketIndex(connectionSocketIndex);
+	unsigned int realIndex = ion_net_user_index_to_socket_index((ion_net_peer)mPeer.Get(), connectionSocketIndex);
 	NetRawSendCommand ttlMessage(*mPeer->mConnections.mSocketList[realIndex]);
 	{
 		ByteWriter writer(ttlMessage.Writer());
@@ -1172,7 +857,7 @@ bool BasePeer::SendOutOfBand(const char* host, unsigned short remotePort, const 
 
 	// 34 bytes
 
-	unsigned int realIndex = GetRakNetSocketFromUserConnectionSocketIndex(connectionSocketIndex);
+	unsigned int realIndex = ion_net_user_index_to_socket_index((ion_net_peer)mPeer.Get(),connectionSocketIndex);
 	NetRawSendCommand cmd(*mPeer->mConnections.mSocketList[realIndex], dataLength + 16);
 
 	// ion::BitStream bitStream;
@@ -1198,94 +883,6 @@ bool BasePeer::SendOutOfBand(const char* host, unsigned short remotePort, const 
 unsigned int BasePeer::GetReceiveBufferSize(void) { return static_cast<unsigned int>(mPeer->mControl.mPacketReturnQueue.Size()); }
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-ConnectionAttemptResult BasePeer::SendConnectionRequest(ion::ConnectTarget& target, const char* passwordData, int passwordDataLength,
-														ion::NetSecure::PublicKey* /* #TODO Support sharing public key before connection */,
-														unsigned connectionSocketIndex, unsigned int extraData,
-														unsigned sendConnectionAttemptCount, unsigned timeBetweenSendConnectionAttemptsMS,
-														ion::TimeMS timeoutTime, NetSocket* socket)
-{
-	ION_NET_API_CHECK(timeoutTime <= ion::NetFailureConditionTimeout, INVALID_PARAMETER,
-					  "Request connection timeout will be limited to remote failure condition timeout");
-	ION_NET_API_CHECK((passwordDataLength > 0 && passwordDataLength <= 256) || (passwordDataLength == 0 && passwordData == nullptr),
-					  INVALID_PARAMETER, "Invalid password");
-	ION_NET_API_CHECK(target.mRemotePort != 0, INVALID_PARAMETER, "Invalid port");
-	if (!ResolveTarget(target, *mPeer->mConnections.mSocketList[connectionSocketIndex]))
-	{
-		ION_DBG("Cannot resolve domain name;host="
-				<< target.mHost << ";port=" << target.mRemotePort
-				<< ";IPv=" << mPeer->mConnections.mSocketList[connectionSocketIndex]->mBoundAddress.GetIPVersion()
-												   << ";bound=" << mPeer->mConnections.mSocketList[connectionSocketIndex]->mBoundAddress);
-		return CANNOT_RESOLVE_DOMAIN_NAME;
-	}
-
-	// Already connected?
-	bool hasFreeConnections = false;
-	for (unsigned int i = 1; i <= mPeer->mRemoteStore.mMaximumNumberOfPeers; i++)
-	{
-		if (mPeer->mRemoteStore.mRemoteSystemList[i].mMode != NetMode::Disconnected)
-		{
-			if (mPeer->mRemoteStore.mRemoteSystemList[i].mAddress == target.mResolvedAddress)
-			{
-				return ALREADY_CONNECTED_TO_ENDPOINT;
-			}
-		}
-		else
-		{
-			hasFreeConnections = true;
-		}
-	}
-
-	if (!hasFreeConnections)
-	{
-		return NO_FREE_CONNECTIONS;
-	}
-
-	ConnectionAttemptResult result = CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS;
-#if ION_NET_FEATURE_STREAMSOCKET
-	if (((RNS2_Berkley*)(socketList[connectionSocketIndex]))->binding.type == SOCK_STREAM)
-	{
-		auto* socketLayer = (RNS2_Berkley*)socketList[connectionSocketIndex];
-		if (socketLayer->streamSocket)
-		{
-			return ALREADY_CONNECTED_TO_ENDPOINT;
-		}
-		ION_LOG_INFO("Started connecting to " << systemAddress);
-		if (ion::SocketLayer::ConnectSocket(*socketLayer, systemAddress))
-		{
-			socketLayer->streamSocket = socketLayer->mNativeSocket;
-			socketLayer->ConnectingThread(*this, *socketLayer, systemAddress);
-			return CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS;
-		}
-		return CANNOT_RESOLVE_DOMAIN_NAME;
-	}
-#endif
-	mPeer->mConnections.mRequestedConnections.Access(
-	  [&](ion::RequestedConnections& data)
-	  {
-		  if (data.mRequests.Find(target.mResolvedAddress) == data.mRequests.End())
-		  {
-			  ion::RequestedConnection rcs;
-
-			  rcs.systemAddress = target.mResolvedAddress;
-			  rcs.nextRequestTime = ion::SteadyClock::GetTimeMS();
-			  rcs.requestsMade = 0;
-			  rcs.socket = socket;
-			  rcs.extraData = extraData;
-			  rcs.socketIndex = connectionSocketIndex;
-			  rcs.actionToTake = ion::RequestedConnection::CONNECT;
-			  rcs.sendConnectionAttemptCount = sendConnectionAttemptCount;
-			  rcs.timeBetweenSendConnectionAttemptsMS = timeBetweenSendConnectionAttemptsMS;
-			  rcs.mPassword.Resize(passwordDataLength);
-			  ion::NetSecure::Random(rcs.mNonce.Data(), rcs.mNonce.ElementCount);
-			  memcpy(rcs.mPassword.Data(), passwordData, passwordDataLength);
-			  rcs.timeoutTimeMs = timeoutTime;
-			  data.mRequests.Insert(rcs.systemAddress, rcs);
-			  result = CONNECTION_ATTEMPT_STARTED;
-		  }
-	  });
-	return result;
-}
 
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1337,47 +934,7 @@ void BasePeer::SendBufferedList(const char** data, const int* lengths, const int
 }
 
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-unsigned int BasePeer::GetRakNetSocketFromUserConnectionSocketIndex(unsigned int userIndex) const
-{
-	unsigned int i;
-	for (i = 0; i < mPeer->mConnections.mSocketList.Size(); i++)
-	{
-		if (mPeer->mConnections.mSocketList[i]->userConnectionSocketIndex == userIndex)
-		{
-			return i;
-		}
-	}
-	ION_NET_ASSERT("GetRakNetSocketFromUserConnectionSocketIndex failed" && 0);
-	return (unsigned int)-1;
-}
 
-
-void BasePeer::PreUpdate(NetInterface& net, ion::JobScheduler* js)
-{
-	ion::MemoryScope memoryScope(ion::tag::Network);
-	ION_PROFILER_SCOPE(Network, "NetPre");
-	const ion::TimeMS now = ion::SteadyClock::GetTimeMS();
-#if ION_NET_SIMULATOR
-	NetConnectionLayer::UpdateNetworkSim(net.mConnections, now);
-#endif
-
-	ion::NetReceptionLayer::ProcessBufferedPackets(net.mReception, net.mControl, net.mRemoteStore, net.mConnections, js, now);
-}
-
-bool BasePeer::PostUpdate(NetInterface& net, ion::JobScheduler* js)
-{
-	ion::MemoryScope memoryScope(ion::tag::Network);
-	ION_PROFILER_SCOPE(Network, "NetPost");
-	const ion::TimeMS now = ion::SteadyClock::GetTimeMS();
-	ion::NetControlLayer::Process(net.mControl, net.mRemoteStore, net.mConnections, now);
-	ion::NetConnectionLayer::SendOpenConnectionRequests(net.mConnections, net.mControl, net.mRemoteStore, now);
-	ion::NetRemoteStoreLayer::Update(net.mRemoteStore, net.mControl, now, js);
-#if ION_NET_SIMULATOR
-	NetConnectionLayer::UpdateNetworkSim(net.mConnections, now);
-#endif
-	return true;
-}
 
 unsigned BasePeer::GetNumberOfAddresses()
 {

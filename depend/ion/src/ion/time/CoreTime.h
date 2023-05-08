@@ -36,7 +36,7 @@ using SystemTimeUnitDelta = std::make_signed<SystemTimeUnit>::type;
 template <typename T>
 struct DeltaType
 {
-	static_assert(std::numeric_limits<T>::lowest() < 0 && std::numeric_limits<T>::max() > 0, "Type needs specialization");
+	static_assert(std::numeric_limits<T>::lowest() < 0 && (std::numeric_limits<T>::max)() > 0, "Type needs specialization");
 	using type = T;
 };
 
@@ -56,7 +56,7 @@ constexpr DeltaTimeType DeltaTime(Time a, Time b)
 {
 	auto delta = static_cast<DeltaTimeType>(a - b);
 	ION_ASSERT_FMT_IMMEDIATE(  // Check values are in safe range for compare
-	  delta <= std::numeric_limits<DeltaTimeType>::max() / 2 && delta >= std::numeric_limits<DeltaTimeType>::lowest() / 2,
+	  delta <= (std::numeric_limits<DeltaTimeType>::max)() / 2 && delta >= (std::numeric_limits<DeltaTimeType>::lowest)() / 2,
 	  "Too large delta");
 	return delta;
 }

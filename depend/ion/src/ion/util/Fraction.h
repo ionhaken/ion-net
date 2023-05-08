@@ -120,7 +120,7 @@ constexpr Fraction<T> operator*(Fraction<T> lhs, Fraction<T> rhs) noexcept
 		typename Wider<typename Fraction<T>::TUnsigned>::type den;
 		num = static_cast<typename Wider<T>::type>(lhs.Numerator()) * rhs.Numerator();
 		den = static_cast<typename Wider<typename Fraction<T>::TUnsigned>::type>(lhs.Denominator()) * rhs.Denominator();
-		while (num >= std::numeric_limits<T>::max() || den >= std::numeric_limits<T>::max())
+		while (num >= (std::numeric_limits<T>::max)() || den >= (std::numeric_limits<T>::max)())
 		{
 			num >>= 1;
 			den >>= 1;

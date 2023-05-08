@@ -1083,7 +1083,7 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 #if ION_PLATFORM_MICROSOFT
 		if (bindResult == NetBindResult::FailedToBind)
 		{
-			// Sometimes windows will fail if the socket is recreated too quickly
+			// Sometimes Windows will fail if the socket is recreated too quickly
 			ion::Thread::SleepMs(100);
 			bindResult = ion::SocketLayer::BindSocket(*connections.mSocketList[i], bbp);
 		}

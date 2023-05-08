@@ -114,8 +114,8 @@ void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerIns
 
 #endif
 		peerList.Back()->SetMaximumIncomingConnections(1);
-		ion::ConnectionAttemptResult cres = peerList.Back()->Connect("127.0.0.1", 60000, nullptr, 0);
-		REQUIRE(cres == ion::ConnectionAttemptResult::CONNECTION_ATTEMPT_STARTED);
+		ion::NetConnectionAttemptResult cres = peerList.Back()->Connect("127.0.0.1", 60000, nullptr, 0);
+		REQUIRE(cres == ion::NetConnectionAttemptResult::Started);
 	}
 
 	for (int k = 0; k < 100; ++k)

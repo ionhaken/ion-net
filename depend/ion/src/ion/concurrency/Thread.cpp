@@ -59,6 +59,7 @@ EmptyJob gEmptyJob;
 }  // namespace
 thread_local Thread::ThreadLocalStore ion::Thread::mTLS;
 
+#if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
 template <typename T>
 class ThreadIdPool
 {
@@ -138,10 +139,13 @@ private:
 	Mutex mMutex;
 	Vector<T> mFreeingIds;
 };
+#endif
 
+#if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
 // Intentionally raw pointer to extend its scope
 // We want to remove this only in FreeHeaps() - not in any dynamic destructor
 std::atomic<ThreadIdPool<UInt>*> gThreadIdPool = nullptr;
+#endif
 }  // namespace ion
 
 bool isInitialized = false;
@@ -150,8 +154,9 @@ bool ion::Thread::IsReady() { return isInitialized; }
 
 namespace ion
 {
-void Thread::InitThreadIdPool()
+void InitThreadIdPool()
 {
+#if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
 	if (gThreadIdPool.load() == nullptr)
 	{
 		isInitialized = true;
@@ -166,7 +171,26 @@ void Thread::InitThreadIdPool()
 		}
 #endif
 	}
+#endif
 }
+void FreeHeaps()
+{
+#if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
+	if (gThreadIdPool.load()->ProcessFrees())
+	{
+	#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
+		{
+			ion::MemoryScope scope(ion::tag::Profiling);
+			ProfilingDeinit();
+		}
+	#endif
+		ion::MemoryScope memoryScope(ion::tag::Core);
+		delete gThreadIdPool.load();
+		gThreadIdPool.store(nullptr);
+	}
+#endif
+}
+
 }  // namespace ion
 
 void ion::Thread::OnEngineRestart()
@@ -177,22 +201,37 @@ void ion::Thread::OnEngineRestart()
 
 void ion::Thread::Init(ion::Thread::QueueIndex index, ion::Thread::Priority priority)
 {
+#if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
 	ION_ASSERT_FMT_IMMEDIATE(!isInitialized || mTLS.mId == ~static_cast<UInt>(0), "Thread already initialized");
+#endif
 	InitThreadIdPool();
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
+  ION_MEMORY_TRACKER
 	std::memset(&mTLS, 0x0, sizeof(ThreadLocalStore));
+#endif
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
 	gThreadIdPool.load()->Reserve();
+#endif
 	InitInternal(index, priority);
+
 }
 
 void ion::Thread::Deinit()
 {
+#if ION_CONFIG_JOB_SCHEDULER
 	ion::FPControl::Validate();
+#endif
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
 	ION_ASSERT(mTLS.mId != ~static_cast<UInt>(0), "Thread not initialized");
 	ION_ASSERT(isInitialized, "Threading not initialized");
+#endif
+
 #if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
 	mTLS.mProfiling = nullptr;
 #endif
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
 	gThreadIdPool.load()->Free(mTLS.mId);
+#endif
 #if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
 	if (mTLS.mTemporaryMemory)
 	{
@@ -320,21 +359,27 @@ void ion::Thread::SetPriority(ion::Thread::Priority priority)
 
 void ion::Thread::InitInternal(ion::Thread::QueueIndex index, ion::Thread::Priority priority)
 {
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
 	if (mTLS.mId == 0)
 	{
 		SetMainThreadPolicy();
 	}
+#endif
 
+#if ION_CONFIG_JOB_SCHEDULER
 	mTLS.mQueueIndex = index;
 	mTLS.mJob = &gEmptyJob;
+#endif
 #if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
 	mTLS.mProfiling = profiling::Buffer(mTLS.mId, uint8_t(priority));
 #endif
+#if ION_CONFIG_JOB_SCHEDULER
 	{
 		time_t now;
 		time(&now);
 		ion::Random::Seed((static_cast<uint64_t>(std::hash<uint64_t>()(uint64_t(GetId()) ^ uint64_t(now)))), mTLS.mRandState);
 	}
+#endif
 
 	// #TODO: High priority threads should have affinities
 	SetPriority(priority);
@@ -349,12 +394,20 @@ void ion::Thread::InitInternal(ion::Thread::QueueIndex index, ion::Thread::Prior
 		ION_ASSERT(res != -1, "Cannot set ideal processor for index " << index);
 	}
 #endif
+#if ION_CONFIG_JOB_SCHEDULER
 	FPControl::SetMode();
+#endif
 }
 
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
+  ION_MEMORY_TRACKER
 ion::Thread::ThreadLocalStore::ThreadLocalStore() {}
+#endif
 
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
+  ION_MEMORY_TRACKER
 ion::Thread::ThreadLocalStore::~ThreadLocalStore() {}
+#endif
 
 #if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
 ion::temporary::BytePool& ion::Thread::InitTemporaryMemory()
@@ -462,12 +515,10 @@ void ion::Thread::InitMain()
 	{
 		return;
 	}
-#if ION_CONFIG_CONCURRENCY
-	#if ION_CONFIG_TEMPORARY_ALLOCATOR
+#if ION_CONFIG_TEMPORARY_ALLOCATOR
 	ion::TemporaryInit();
-	#endif
-	ion::Thread::Init(0);
 #endif
+	ion::Thread::Init(0);
 }
 
 void ion::Thread::DeinitMain()
@@ -477,22 +528,17 @@ void ion::Thread::DeinitMain()
 	{
 		return;
 	}
-#if ION_CONFIG_CONCURRENCY
 	ion::Thread::Deinit();
-	if (gThreadIdPool.load()->ProcessFrees())
-	{
-#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
-		{
-			ion::MemoryScope scope(ion::tag::Profiling);
-			ProfilingDeinit();
-		}
-#endif
-		ion::MemoryScope memoryScope(ion::tag::Core);
-		delete gThreadIdPool.load();
-		gThreadIdPool.store(nullptr);
-	}
+	FreeHeaps();
 #if ION_CONFIG_TEMPORARY_ALLOCATOR
 	ion::TemporaryDeinit();
 #endif
-#endif
 }
+
+#if ION_CONFIG_JOB_SCHEDULER == 0
+uint64_t* ion::Thread::GetRandState()
+{
+	static thread_local uint64_t randState[2] = {uint64_t(rand()) | 1, uint64_t(rand()) | 1};
+	return randState;
+}
+#endif

@@ -234,7 +234,7 @@ void TrackedNativeAlignedFree(void* pointer, MemTag)
 
 }  // namespace ion
 
-#if ION_CONFIG_OVERRIDE_NEW
+#if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_MEMORY_TRACKER
 [[nodiscard]] void* operator new(std::size_t s) noexcept(false)
 {
 	#if ION_MEMORY_TRACKER

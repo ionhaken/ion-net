@@ -556,9 +556,7 @@ void TracingInit()
 	GlobalMemoryInit();
 #endif
 	CoreInit();
-#if ION_CONFIG_CONCURRENCY
 	Thread::InitMain();
-#endif
 	ION_MEMORY_SCOPE(ion::tag::Debug);
 	tracing::gInstance.Init(64 * 1024);
 }
@@ -571,9 +569,7 @@ void TracingDeinit()
 		return;
 	}
 	tracing::gInstance.Deinit();
-#if ION_CONFIG_CONCURRENCY
 	Thread::DeinitMain();
-#endif
 	CoreDeinit();
 #if ION_CONFIG_GLOBAL_MEMORY_POOL
 	GlobalMemoryDeinit();

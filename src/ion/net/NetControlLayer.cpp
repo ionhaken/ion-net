@@ -14,6 +14,7 @@
 
 #include <ion/time/Clock.h>
 
+#include <ion/net/ionnet.h>
 
 
 namespace ion
@@ -36,14 +37,14 @@ public:
 		if (mInterface.mControl.mIsReceiving)
 		{
 			mInterface.mControl.mIsReceiving = false;
-			BasePeer::PreUpdate(mInterface, &mJs);
+			ion_net_preupdate((ion_net_peer)&mInterface, (ion_job_scheduler)&mJs);
 		}
 		auto now = ion::SteadyClock::GetTimeUS();
 		auto delta = DeltaTime(now, ion::TimeUS(mNextUpdateUs));
 		if (delta >= 0)
 		{
 			mNextUpdateUs = Timer().Advance(ion::NetUpdateInterval * 1000);
-			BasePeer::PostUpdate(mInterface, &mJs);
+			ion_net_postupdate((ion_net_peer)&mInterface, (ion_job_scheduler)&mJs);
 		}
 	}
 
@@ -66,9 +67,9 @@ public:
 				  if (netInterface.mControl.mIsReceiving)
 				  {
 					  netInterface.mControl.mIsReceiving = false;
-					  BasePeer::PreUpdate(netInterface);
+					  ion_net_preupdate((ion_net_peer)&netInterface, (ion_job_scheduler) nullptr);
 				  }
-				  BasePeer::PostUpdate(netInterface);
+				  ion_net_postupdate((ion_net_peer)&netInterface, (ion_job_scheduler)nullptr);
 				  netInterface.mControl.mUpdater.mUpdateWorker->myThreadSynchronizer.TryWaitFor(ion::NetUpdateInterval * 1000);
 			  }
 		  })

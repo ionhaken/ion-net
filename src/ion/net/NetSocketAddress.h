@@ -43,7 +43,7 @@ union ION_EXPORT NetSocketAddress
 		{
 			return (addr4.sin_family == AF_INET) ? 4 : 6;
 		}
-		else 
+		else
 		{
 			return 0;
 		}

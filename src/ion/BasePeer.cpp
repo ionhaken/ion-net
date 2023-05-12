@@ -63,117 +63,6 @@ NetPacket* BasePeer::AllocPacket(unsigned dataSize)
 
 
 
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::AddToSecurityExceptionList(const char* ip)
-{
-	securityExceptionMutex.Lock();
-	securityExceptionList.Add(ion::String(ip));
-	securityExceptionMutex.Unlock();
-}
-
-bool IPAddressMatch(ion::String& string, const char* IP)
-{
-	if (IP == nullptr)
-	{
-		return false;
-	}
-
-	unsigned characterIndex = 0;
-
-	while (characterIndex < string.Length())
-	{
-		if (string.Data()[characterIndex] == IP[characterIndex])
-		{
-			characterIndex++;  // Equal characters
-		}
-		else
-		{
-			if (IP[characterIndex] == 0)
-			{
-				return false;  // End of one of the strings
-			}
-
-			// Characters do not match
-			if (string.Data()[characterIndex] == '*')
-			{
-				return true;  // Domain is banned.
-			}
-			return false;  // Characters do not match and it is not a *
-		}
-	}
-
-	if (IP[characterIndex] == 0)
-	{
-		return true;  // End of the string and the strings match
-	}
-
-	// No match found.
-	return false;
-}
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::RemoveFromSecurityExceptionList(const char* ip)
-{
-	if (securityExceptionList.Size() == 0)
-	{
-		return;
-	}
-
-	if (ip == 0)
-	{
-		securityExceptionMutex.Lock();
-		securityExceptionList.Clear();
-		securityExceptionMutex.Unlock();
-	}
-	else
-	{
-		unsigned i = 0;
-		securityExceptionMutex.Lock();
-		while (i < securityExceptionList.Size())
-		{
-			if (IPAddressMatch(securityExceptionList[i], ip))
-			{
-				securityExceptionList[i] = securityExceptionList[securityExceptionList.Size() - 1];
-				securityExceptionList.Erase(securityExceptionList.Size() - 1);
-			}
-			else
-			{
-				i++;
-			}
-		}
-		securityExceptionMutex.Unlock();
-	}
-}
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-bool BasePeer::IsInSecurityExceptionList(const char* ip)
-{
-	if (securityExceptionList.Size() == 0)
-		return false;
-
-	unsigned i = 0;
-	securityExceptionMutex.Lock();
-	for (; i < securityExceptionList.Size(); i++)
-	{
-		if (IPAddressMatch(securityExceptionList[i], ip))
-		{
-			securityExceptionMutex.Unlock();
-			return true;
-		}
-	}
-	securityExceptionMutex.Unlock();
-	return false;
-}
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Description:
-// Sets how many incoming connections are allowed.  If this is less than the number of players currently connected, no
-// more players will be allowed to connect.  If this is greater than the maximum number of peers allowed, it will be reduced
-// to the maximum number of peers allowed.  Defaults to 0.
-//
-// Parameters:
-// numberAllowed - Maximum number of incoming connections allowed.
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void BasePeer::SetMaximumIncomingConnections(unsigned int numberAllowed)
 {
 	mPeer->mRemoteStore.mMaximumIncomingConnections = SafeRangeCast<uint16_t>(numberAllowed);
@@ -200,39 +89,6 @@ unsigned int BasePeer::GetMaximumIncomingConnections(void) const { return mPeer-
 // - Specify 0 for no password data
 // passwordDataLength: The length in bytes of passwordData
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::SetIncomingPassword(const char* passwordData, int passwordDataLength)
-{
-	// if (passwordDataLength > MAX_OFFLINE_DATA_LENGTH)
-	//	passwordDataLength=MAX_OFFLINE_DATA_LENGTH;
-
-	if (passwordDataLength > 255)
-		passwordDataLength = 255;
-
-	if (passwordData == 0)
-		passwordDataLength = 0;
-
-	// Not threadsafe but it's not important enough to lock.  Who is going to change the password a lot during runtime?
-	// It won't overflow at least because incomingPasswordLength is an unsigned char
-	if (passwordDataLength > 0)
-		memcpy(mPeer->mReception.mIncomingPassword, passwordData, passwordDataLength);
-	mPeer->mReception.mIncomingPasswordLength = (unsigned char)passwordDataLength;
-}
-
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::GetIncomingPassword(char* passwordData, int* passwordDataLength)
-{
-	if (passwordData == 0)
-	{
-		*passwordDataLength = mPeer->mReception.mIncomingPasswordLength;
-		return;
-	}
-
-	if (*passwordDataLength > mPeer->mReception.mIncomingPasswordLength)
-		*passwordDataLength = mPeer->mReception.mIncomingPasswordLength;
-
-	if (*passwordDataLength > 0)
-		memcpy(passwordData, mPeer->mReception.mIncomingPassword, *passwordDataLength);
-}
 
 
 
@@ -242,44 +98,7 @@ void BasePeer::GetIncomingPassword(char* passwordData, int* passwordDataLength)
 
 
 
-//-----------------------------------------------------------------------------
-// Description:
-// Fills the array remoteSystems with the systemAddress of all the systems we are connected to
-//
-// Parameters:
-// remoteSystems (out): An array of SystemAddress structures to be filled with the SystemAddresss of the systems we are connected to
-// - pass 0 to remoteSystems to only get the number of systems we are connected to
-// numberOfSystems (int, out): As input, the size of remoteSystems array.  As output, the number of elements put into the array
-// ----------------------------------------------------------------------------
-bool BasePeer::GetConnectionList(NetSocketAddress* remoteSystems, unsigned short* numberOfSystems) const
-{
-	ION_ASSERT(IsActive(), "Not active");
-	if (numberOfSystems == 0)
-		return false;
 
-	if (mPeer->mRemoteStore.mRemoteSystemList == nullptr)
-	{
-		if (numberOfSystems)
-			*numberOfSystems = 0;
-		return false;
-	}
-
-	NetVector<NetSocketAddress> addresses;
-	NetVector<NetGUID> guids;
-	GetSystemListInternal(addresses, guids);
-	if (remoteSystems)
-	{
-		unsigned short i;
-		for (i = 0; i < *numberOfSystems && i < addresses.Size(); i++)
-			remoteSystems[i] = addresses[i];
-		*numberOfSystems = i;
-	}
-	else
-	{
-		*numberOfSystems = (unsigned short)addresses.Size();
-	}
-	return true;
-}
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // Description:
@@ -302,47 +121,6 @@ bool BasePeer::GetConnectionList(NetSocketAddress* remoteSystems, unsigned short
 
 void BasePeer::SetPacketDataMaxSize([[maybe_unused]] ion::UInt size, [[maybe_unused]] const NetAddressOrRemoteRef& systemIdentifier) {}
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Sends multiple blocks of data, concatenating them automatically.
-//
-// This is equivalent to:
-// ion::BitStream bs;
-// bs.WriteAlignedBytes(block1, blockLength1);
-// bs.WriteAlignedBytes(block2, blockLength2);
-// bs.WriteAlignedBytes(block3, blockLength3);
-// Send(&bs, ...)
-//
-// This function only works while connected
-// \param[in] data An array of pointers to blocks of data
-// \param[in] lengths An array of integers indicating the length of each block of data
-// \param[in] numParameters Length of the arrays data and lengths
-// \param[in] priority What priority level to send on.  See NetPacketPriority.h
-// \param[in] reliability How reliability to send this data.  See NetPacketPriority.h
-// \param[in] orderingChannel When using ordered or sequenced messages, what channel to order these on. Messages are only ordered relative
-// to other messages on the same stream \param[in] systemIdentifier Who to send this packet to, or in the case of broadcasting who not to
-// send it to. Pass either a SystemAddress structure or a NetGUID structure. Use NetUnassignedSocketAddress or to specify none \param[in]
-// broadcast True to send this packet to all connected systems. If true, then systemAddress specifies who not to send the packet to. \return
-// False if we are not connected to the specified recipient.  True otherwise
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-int BasePeer::SendList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,
-					   NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast)
-{
-	ION_NET_API_CHECK(data, -1, "invalid data");
-	ION_NET_API_CHECK(lengths, -1, "invalid data");
-	ION_NET_API_CHECK(numParameters, -1, "invalid data");
-	ION_ASSERT(IsActive(), "Not active");
-
-	if (mPeer->mRemoteStore.mRemoteSystemList == nullptr)
-		return 0;
-
-	if (broadcast == false && systemIdentifier.IsUndefined())
-		return 0;
-
-	SendBufferedList(data, lengths, numParameters, priority, reliability, orderingChannel, systemIdentifier, broadcast,
-					 NetMode::Disconnected);
-
-	return 1;
-}
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // Description:
@@ -467,38 +245,6 @@ ConnectionState BasePeer::GetConnectionState(const NetAddressOrRemoteRef& system
 // guids list. \param[out] guids All guids. Size of the list is the number of connections. Size of the list will match the size of the \a
 // addresses list.
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::GetSystemList(NetVector<NetSocketAddress>& addresses, NetVector<NetGUID>& guids) const
-{
-	ION_ASSERT(IsActive(), "Not active");
-
-	if (mPeer->mRemoteStore.mRemoteSystemList == nullptr)
-		return;
-	addresses.Clear();
-	guids.Clear();
-	GetSystemListInternal(addresses, guids);
-}
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::GetSystemListInternal(NetVector<NetSocketAddress>& addresses, NetVector<NetGUID>& guids) const
-{
-	ION_ASSERT(IsActive(), "Not active");
-	addresses.Clear();
-	guids.Clear();
-
-	if (mPeer->mRemoteStore.mRemoteSystemList == nullptr)
-		return;
-
-	unsigned int i;
-	// NOTE: activeSystemListSize might be changed by network update
-	for (i = 0; i < mPeer->mRemoteStore.mActiveSystemListSize; i++)
-	{
-		auto* system = &mPeer->mRemoteStore.mRemoteSystemList[mPeer->mRemoteStore.mActiveSystems[i]];
-		if (system->mMode == NetMode::Connected)
-		{
-			addresses.Add((system)->mAddress);
-			guids.Add((system)->guid);
-		}
-	}
-}
 
 bool BasePeer::IsBanned(const char* IP) { return IsBanned(IP, ion::SteadyClock::GetTimeMS()) != NetBanStatus::NotBanned; }
 
@@ -663,7 +409,7 @@ int BasePeer::GetMTUSize(const NetSocketAddress& target)
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 const char* BasePeer::GetLocalIP(unsigned int index)
 {
-	if (!IsActive())
+	if (!ion_net_is_active((ion_net_peer)mPeer.Get()))
 	{		
 		NetRemoteStoreLayer::FillIPList(mPeer->mRemoteStore);
 	}
@@ -839,8 +585,10 @@ void BasePeer::WriteOutOfBandHeader(ByteWriter& writer)
 bool BasePeer::SendOutOfBand(const char* host, unsigned short remotePort, const char* data, uint32_t dataLength,
 							 unsigned connectionSocketIndex)
 {
-	if (IsActive() == false)
+	if (!ion_net_is_active((ion_net_peer)mPeer.Get()))
+	{
 		return false;
+	}
 
 	if (host == 0 || host[0] == 0)
 		return false;
@@ -886,59 +634,14 @@ unsigned int BasePeer::GetReceiveBufferSize(void) { return static_cast<unsigned 
 
 
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void BasePeer::SendBufferedList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,
-								NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,
-								bool broadcast, NetMode connectionMode)
-{
-	ION_ASSERT(broadcast || !systemIdentifier.IsUndefined(), "Invalid system");
 
-	unsigned int totalLength = 0;
-	unsigned int lengthOffset;
-	int i;
-	for (i = 0; i < numParameters; i++)
-	{
-		if (lengths[i] > 0)
-			totalLength += lengths[i];
-	}
-	if (totalLength == 0)
-		return;
-
-	
-	NetSendCommand cmd(CreateSendCommand(systemIdentifier, totalLength,  broadcast));
-	char* dataAggregate = &cmd.Parameters().mData;
-
-	for (i = 0, lengthOffset = 0; i < numParameters; i++)
-	{
-		if (lengths[i] > 0)
-		{
-			memcpy(dataAggregate + lengthOffset, data[i], lengths[i]);
-			lengthOffset += lengths[i];
-		}
-	}
-	
-
-	auto ptr = cmd.Release();
-	ptr->mNumberOfBytesToSend = totalLength;
-	ptr->mConnectionMode = connectionMode;
-	ptr->mChannel = orderingChannel;
-	ptr->mPriority = priority;
-	ptr->mReliability = reliability;
-	if (broadcast == false && ion::NetRemoteStoreLayer::IsLoopbackAddress(mPeer->mRemoteStore, systemIdentifier, true))
-	{
-		SendLoopback(dataAggregate, totalLength);		
-		DeleteArenaPtr(&mPeer->mControl.mMemoryResource, ptr);
-		return;
-	}
-
-	NetControlLayer::SendBuffered(mPeer->mControl, std::move(ptr));
-}
 
 
 
 
 unsigned BasePeer::GetNumberOfAddresses()
 {
-	if (!IsActive())
+	if (!ion_net_is_active((ion_net_peer)mPeer.Get()))
 	{
 		NetRemoteStoreLayer::FillIPList(mPeer->mRemoteStore);
 	}
@@ -947,7 +650,7 @@ unsigned BasePeer::GetNumberOfAddresses()
 
 bool BasePeer::IsIPV6Only()
 {
-	if (!IsActive())
+	if (!ion_net_is_active((ion_net_peer)mPeer.Get()))
 	{
 		NetRemoteStoreLayer::FillIPList(mPeer->mRemoteStore);
 	}

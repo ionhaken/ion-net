@@ -5,6 +5,7 @@
 #include <ion/net/NetReception.h>
 #include <ion/net/NetRemote.h>
 #include <ion/net/NetRemoteStore.h>
+#include <ion/net/NetSecurity.h>
 
 #include <ion/container/UnorderedMap.h>
 
@@ -22,16 +23,13 @@ struct NetInterface
 {
 public:
 	NetInterface(NetInterfaceResource& pool) : mControl(&pool) {}
-	
+
 	NetControl mControl;
 	NetReception mReception;
 	NetConnections mConnections;
 	NetRemoteStore mRemoteStore;
+	NetSecurity mSecurity;
 
-
-#if ION_NET_FEATURE_SECURITY
-	ion::NetSecure::SecretKey mSecretKey;
-#endif
 };
 
 }  // namespace ion

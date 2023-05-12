@@ -209,8 +209,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 			ion::Time remoteTime;
 			inBitStream.ReadAssumeAvailable(remoteTime);
 
-
-			NetSendCommand cmd(control, remoteSystem->mId, sizeof(NetMessageId::ConnectedPong) + sizeof(TimeMS)*2);
+			NetSendCommand cmd(control, remoteSystem->mId, sizeof(NetMessageId::ConnectedPong) + sizeof(TimeMS) * 2);
 			if (cmd.HasBuffer())
 			{
 				ion::Time sendPongTime = ion::SteadyClock::GetTimeMS();
@@ -220,7 +219,6 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 					writer.Process(sendPongTime);
 					writer.Process(remoteTime);
 				}
-
 
 				cmd.Parameters().mReliability = NetPacketReliability::Unreliable;
 				cmd.Parameters().mPriority = NetPacketPriority::Immediate;
@@ -774,6 +772,45 @@ NetBanStatus IsBanned(NetReception& reception, NetControl& control, const ion::N
 	char str1[64];
 	systemAddress.ToString(str1, 64, false);
 	return IsBanned(reception, control, str1, now);
+}
+
+void SetIncomingPassword(NetReception& reception, const char* passwordData, int passwordDataLength)
+{
+	if (passwordDataLength > 255)
+	{
+		passwordDataLength = 255;
+	}
+
+	if (passwordData == 0)
+	{
+		passwordDataLength = 0;
+	}
+
+	if (passwordDataLength > 0)
+	{
+		memcpy(reception.mIncomingPassword, passwordData, passwordDataLength);
+	}
+	reception.mIncomingPasswordLength = (unsigned char)passwordDataLength;
+}
+
+// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+void GetIncomingPassword(const NetReception& reception, char* passwordData, int* passwordDataLength)
+{
+	if (passwordData == 0)
+	{
+		*passwordDataLength = reception.mIncomingPasswordLength;
+		return;
+	}
+
+	if (*passwordDataLength > reception.mIncomingPasswordLength)
+	{
+		*passwordDataLength = reception.mIncomingPasswordLength;
+	}
+
+	if (*passwordDataLength > 0)
+	{
+		memcpy(passwordData, reception.mIncomingPassword, *passwordDataLength);
+	}
 }
 
 }  // namespace ion::NetReceptionLayer

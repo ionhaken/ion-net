@@ -36,6 +36,10 @@ void RemoveFromBanList(NetReception& reception, NetControl& control, const char*
 
 void ClearBanList(NetReception& reception, NetControl& control);
 
+void SetIncomingPassword(NetReception& reception, const char* passwordData, int passwordDataLength);
+
+void GetIncomingPassword(const NetReception& reception, char* passwordData, int* passwordDataLength);
+
 }  // namespace NetReceptionLayer
 
 }  // namespace ion

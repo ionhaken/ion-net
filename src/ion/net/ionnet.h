@@ -11,6 +11,9 @@ extern "C"
 
 	enum ion_net_code
 	{
+		// API failure
+		ION_NET_CODE_NOT_ACTIVE = -11,
+
 		// Connection attempt failure
 		ION_NET_CODE_CANNOT_RESOLVE_DOMAIN_NAME = -10,
 		ION_NET_CODE_ALREADY_CONNECTED_TO_ENDPOINT = -9,
@@ -24,8 +27,12 @@ extern "C"
 		ION_NET_CODE_SOCKET_FAILED_TEST_SEND = -2,
 		ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD = -1,
 
+		// Generic Ok/Fail
+		ION_NET_CODE_FAIL = 0,
+		ION_NET_CODE_OK = 1,
+
 		// Startup success
-		ION_NET_CODE_STARTED = 1,
+		ION_NET_CODE_STARTED,
 		ION_NET_CODE_ALREADY_STARTED,
 
 		// Connection attempt success
@@ -35,6 +42,12 @@ extern "C"
 
 	union ion_net_socket_address_t;
 	typedef union ion_net_socket_address_t* ion_net_socket_address;
+
+	union ion_net_guid_t;
+	typedef union ion_net_guid_t* ion_net_guid;
+
+	union ion_net_remote_id_t;
+	typedef union ion_net_remote_id_t* ion_net_remote_id;
 
 	struct ion_net_connect_target_t;
 	typedef struct ion_net_connect_target_t* ion_net_connect_target;
@@ -93,6 +106,24 @@ extern "C"
 					  unsigned connectionSocketIndex);
 
 	void ion_net_ping_address(ion_net_peer handle, ion_net_socket_address address);
+
+	void ion_net_add_to_security_exceptions_list(ion_net_peer handle, const char*);
+
+	void ion_net_remove_from_security_exceptions_list(ion_net_peer handle, const char*);
+
+	bool ion_net_is_in_security_exception_list(ion_net_peer handle, const char*);
+
+	void ion_net_get_incoming_password(ion_net_peer handle, char* passwordData, int* passwordDataLength);
+
+	void ion_net_set_incoming_password(ion_net_peer handle, const char* passwordData, int passwordDataLength);
+
+	bool ion_net_is_active(ion_net_peer handle);
+
+	int ion_net_get_connection_list(ion_net_peer handle, ion_net_remote_id remote_ids, unsigned int* number_of_systems);
+
+	unsigned int ion_net_number_of_remote_initiated_connections(ion_net_peer handle);
+
+	unsigned int ion_net_number_of_connections(ion_net_peer handle);
 
 #if defined(__cplusplus)
 }

@@ -4,6 +4,7 @@
 #include <ion/net/NetGeneralPeer.h>
 #include <ion/net/NetRawSendCommand.h>
 #include <ion/net/NetSdk.h>
+#include <ion/net/NetSecurityLayer.h>
 #include <ion/net/NetSocket.h>
 #include <ion/net/NetStartupParameters.h>
 
@@ -19,8 +20,7 @@ struct NetConnectTarget
 	ion::NetSocketAddress resolved_address;
 };
 
-}
-
+}  // namespace ion
 
 static bool ion_net_resolve_target(ion_net_connect_target target_ptr, ion_net_socket socket_ptr)
 {
@@ -46,7 +46,7 @@ static bool ion_net_resolve_target(ion_net_connect_target target_ptr, ion_net_so
 void ion_net_init() { NetInit(); }
 void ion_net_deinit() { NetDeinit(); }
 
-ion_net_memory_resource ion_net_create_memory_resource() { return (ion_net_memory_resource)(new NetInterfaceResource(64*1024)); }
+ion_net_memory_resource ion_net_create_memory_resource() { return (ion_net_memory_resource)(new NetInterfaceResource(64 * 1024)); }
 void ion_net_destroy_memory_resource(ion_net_memory_resource resource) { delete ((NetInterfaceResource*)(resource)); }
 
 ion_net_peer ion_net_create_peer(ion_net_memory_resource resource)
@@ -104,7 +104,7 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 		return ION_NET_CODE_ALREADY_STARTED;
 	}
 
-	memset(net.mSecretKey.data, 0xAA, ion::NetSecure::SecretKeyLength);
+	memset(net.mSecurity.mSecretKey.data, 0xAA, ion::NetSecure::SecretKeyLength);
 	ion::NetControlLayer::Init(net, parameters);
 
 	NetRemoteStoreLayer::Init(net.mRemoteStore, parameters, net.mControl.mMemoryResource);
@@ -338,28 +338,10 @@ int ion_net_connect_with_socket(ion_net_peer handle, const char* host, unsigned 
 	if (passwordData == 0)
 		passwordDataLength = 0;
 	ion::NetConnectTarget target{host, remotePort};
-	return ion_net_send_connection_request(handle, (ion_net_connect_target)&target, passwordData, passwordDataLength, publicKey, 0, 0, sendConnectionAttemptCount,
-										   timeBetweenSendConnectionAttemptsMS, timeoutTime, socket);
+	return ion_net_send_connection_request(handle, (ion_net_connect_target)&target, passwordData, passwordDataLength, publicKey, 0, 0,
+										   sendConnectionAttemptCount, timeBetweenSendConnectionAttemptsMS, timeoutTime, socket);
 }
 
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Description:
-// Call this to connect to the specified host (ip or domain name) and server port.
-// Calling Connect and not calling SetMaximumIncomingConnections acts as a dedicated client.  Calling both acts as a true peer.
-// This is a non-blocking connection.  You know the connection is successful when IsConnected() returns true
-// or receive gets a packet with the type identifier NetMessageId::ConnectionRequestAccepted.  If the connection is not
-// successful, such as rejected connection or no response then neither of these things will happen.
-// Requires that you first call Initialize
-//
-// Parameters:
-// host: Either a dotted IP address or a domain name
-// remotePort: Which port to connect to on the remote machine.
-// passwordData: A data block that must match the data block on the server.  This can be just a password, or can be a stream of data
-// passwordDataLength: The length in bytes of passwordData
-//
-// Returns:
-// True on successful initiation. False on incorrect parameters, internal error, or too many existing peers
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 int ion_net_connect(ion_net_peer handle, ion_net_connect_target target_ptr, const char* passwordData, int passwordDataLength,
 					ion_net_public_key publicKey, unsigned connectionSocketIndex, unsigned sendConnectionAttemptCount,
 					unsigned timeBetweenSendConnectionAttemptsMS, uint32_t timeoutTime)
@@ -437,4 +419,82 @@ void ion_net_ping_address(ion_net_peer handle, ion_net_socket_address address)
 	}
 	bcs->mCommand = ion::NetCommandType::PingAddress;
 	net.mControl.mBufferedCommands.Enqueue(std::move(bcs));
+}
+
+void ion_net_add_to_security_exceptions_list(ion_net_peer handle, const char* str)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	ion::NetSecurityLayer::AddToSecurityExceptionList(net.mSecurity, str);
+}
+
+void ion_net_remove_from_security_exceptions_list(ion_net_peer handle, const char* str)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	ion::NetSecurityLayer::RemoveFromSecurityExceptionList(net.mSecurity, str);
+}
+
+bool ion_net_is_in_security_exception_list(ion_net_peer handle, const char* str)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	return ion::NetSecurityLayer::IsInSecurityExceptionList(net.mSecurity, str);
+}
+
+void ion_net_get_incoming_password(ion_net_peer handle, char* passwordData, int* passwordDataLength)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	ion::NetReceptionLayer::GetIncomingPassword(net.mReception, passwordData, passwordDataLength);
+}
+
+void ion_net_set_incoming_password(ion_net_peer handle, const char* passwordData, int passwordDataLength)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	ion::NetReceptionLayer::SetIncomingPassword(net.mReception, passwordData, passwordDataLength);
+}
+
+bool ion_net_is_active(ion_net_peer handle) { return handle != nullptr && (*(NetInterface*)handle).mControl.mIsActive; }
+
+int ion_net_get_connection_list(ion_net_peer handle, ion_net_remote_id remote_ids_ptr, unsigned int* numberOfSystems)
+{
+	ION_NET_API_CHECK(ion_net_is_active(handle), ION_NET_CODE_NOT_ACTIVE, "Not Active");
+	ION_NET_API_CHECK(numberOfSystems != nullptr, ION_NET_CODE_FAIL, "Number of systems must be valid");
+
+	NetInterface& net = *(NetInterface*)handle;
+	ion::NetRemoteId* remoteIds = (ion::NetRemoteId*)remote_ids_ptr;
+
+	unsigned int outIndex = 0;
+	if (remoteIds)
+	{
+		if (net.mRemoteStore.mRemoteSystemList != nullptr)
+		{
+			// NOTE: activeSystemListSize might be changed by network update, but invalid remote ids will be ignored anyway if used later.
+			*numberOfSystems = ion::Min(*numberOfSystems, net.mRemoteStore.mActiveSystemListSize);
+			for (unsigned int i = 0; i < *numberOfSystems; i++)
+			{
+				auto& system = net.mRemoteStore.mRemoteSystemList[net.mRemoteStore.mActiveSystems[i]];
+				if (system.mMode == NetMode::Connected)
+				{
+					remoteIds[outIndex] = system.mId;
+					outIndex++;
+				}
+			}
+		}
+	}
+	else
+	{
+		outIndex = net.mRemoteStore.mNumberOfConnectedSystems;
+	}
+	*numberOfSystems = outIndex;
+	return ION_NET_CODE_OK;
+}
+
+unsigned int ion_net_number_of_remote_initiated_connections(ion_net_peer handle)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	return net.mRemoteStore.mNumberOfIncomingConnections;
+}
+
+unsigned int ion_net_number_of_connections(ion_net_peer handle)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	return net.mRemoteStore.mNumberOfConnectedSystems;
 }

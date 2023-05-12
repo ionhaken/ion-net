@@ -114,16 +114,8 @@ public:
 	///  to connect.
 	/// \note If secure connections are on, do not use secure connections for a specific IP address.
 	/// \param[in] ip IP address to add. * wildcards are supported.
-	void AddToSecurityExceptionList(const char* ip);
 
-	/// \brief Remove a specific connection previously added via AddToSecurityExceptionList.
-	/// \param[in] ip IP address to remove. Pass 0 to remove all IP addresses. * wildcards are supported.
-	void RemoveFromSecurityExceptionList(const char* ip);
 
-	/// \brief Checks to see if a given IP is in the security exception list.
-	/// \param[in] IP address to check.
-	/// \return True if the IP address is found in security exception list, else returns false.
-	bool IsInSecurityExceptionList(const char* ip);
 
 	/// \brief Sets the maximum number of incoming connections allowed.
 	/// \details If the number of incoming connections is less than the number of players currently connected,
@@ -146,15 +138,12 @@ public:
 	/// scheme using CloseConnection() to remove unwanted connections. \param[in] passwordData A data block that incoming connections must
 	/// match.  This can be just a password, or can be a stream of data. Specify 0 for no password data \param[in] passwordDataLength The
 	/// length in bytes of passwordData
-	void SetIncomingPassword(const char* passwordData, int passwordDataLength);
-
+	
 	void SetPacketDataMaxSize(ion::UInt size, const NetAddressOrRemoteRef& systemIdentifier);
 
 	/// \brief Gets the password passed to SetIncomingPassword
 	/// \param[out] passwordData  Should point to a block large enough to hold the password data you passed to SetIncomingPassword()
 	/// \param[in,out] passwordDataLength Maximum size of the passwordData array.  Modified to hold the number of bytes actually written.
-	void GetIncomingPassword(char* passwordData, int* passwordDataLength);
-
 
 
 	/* /// \brief Connect to the specified network ID (Platform specific console function)
@@ -173,13 +162,12 @@ public:
 
 	/// \brief Returns true if the network thread is running.
 	/// \return True if the network thread is running, False otherwise
-	bool IsActive(void) const { return mPeer && mPeer->mControl.mIsActive; }
+	
 
 	/// \brief Fills the array remoteSystems with the SystemAddress of all the systems we are connected to.
 	/// \param[out] remoteSystems An array of SystemAddress structures, to be filled with the SystemAddresss of the systems we are connected
 	/// to. Pass 0 to remoteSystems to get the number of systems we are connected to. \param[in, out] numberOfSystems As input, the size of
 	/// remoteSystems array.  As output, the number of elements put into the array.
-	bool GetConnectionList(NetSocketAddress* remoteSystems, unsigned short* numberOfSystems) const;
 
 	/// \brief Sends a block of data to the specified system that you are connected to.
 	/// \note This function only works while connected.
@@ -212,50 +200,6 @@ public:
 		return ion::NetControlLayer::SendLoopback(mPeer->mControl, mPeer->mRemoteStore, data, length);
 	}
 
-	inline NetSendCommand CreateBroadcastCommand(size_t reservedSize, NetRemoteId remoteId = NetRemoteId())
-	{
-		return NetSendCommand(mPeer->mControl, remoteId, reservedSize, NetCommand::Targets::Exclude);
-	}
-
-	inline NetSendCommand CreateBroadcastCommand(const NetSocketAddress& address, size_t reservedSize)
-	{
-		return NetSendCommand(mPeer->mControl, address, reservedSize, NetCommand::Targets::Exclude);
-	}
-
-	inline NetSendCommand CreateSendCommand(NetRemoteId remoteId, size_t reservedSize)
-	{
-		return NetSendCommand(mPeer->mControl, remoteId, reservedSize);
-	}
-
-	inline NetSendCommand CreateMulticastCommand(const ArrayView<NetRemoteId>& remotes, size_t reservedSize)
-	{
-		return NetSendCommand(mPeer->mControl, reservedSize, remotes);
-	}
-
-	inline NetSendCommand CreateSendCommand(const NetSocketAddress& address, size_t reservedSize)
-	{
-		return NetSendCommand(mPeer->mControl, address, reservedSize);
-	}
-
-	inline NetSendCommand CreateSendCommand(const NetAddressOrRemoteRef& ref, size_t reservedSize, bool broadcast = false)
-	{
-		if (ref.mAddress.IsValid())
-		{
-			return NetSendCommand(mPeer->mControl, ref.mAddress, reservedSize,
-								  broadcast ? NetCommand::Targets::Exclude : NetCommand::Targets::Include);
-		}
-		return NetSendCommand(mPeer->mControl, ref.mRemoteId, reservedSize,
-							  broadcast ? NetCommand::Targets::Exclude : NetCommand::Targets::Include);
-	}
-
-	inline NetSendCommand CreateBroadcastCommand(const NetAddressOrRemoteRef& ref, size_t reservedSize)
-	{
-		if (ref.mAddress.IsValid())
-		{
-			return NetSendCommand(mPeer->mControl, ref.mAddress, reservedSize, NetCommand::Targets::Exclude);
-		}
-		return NetSendCommand(mPeer->mControl, ref.mRemoteId, reservedSize, NetCommand::Targets::Exclude);
-	}
 
 	/// \brief Sends multiple blocks of data, concatenating them automatically.
 	///
@@ -343,8 +287,6 @@ public:
 	/// the size of the \a guids list. \param[out] guids All guids. Size of the list is the number of connections. Size of the list will
 	/// match the size of the \a addresses list.
 	///
-
-	void GetSystemList(NetVector<NetSocketAddress>& addresses, NetVector<NetGUID>& guids) const;
 
 	/// \brief Bans an IP from connecting.
 	/// \details Banned IPs persist between connections but are not saved on shutdown nor loaded on startup.
@@ -663,32 +605,16 @@ public:
 
 	/// Returns how many remote systems initiated a connection to us
 
-	unsigned int GetNumberOfRemoteInitiatedConnections() const { return mPeer->mRemoteStore.mNumberOfIncomingConnections; }
-	unsigned int NumberOfConnections() const { return mPeer->mRemoteStore.mNumberOfConnectedSystems; }
 
 	ion::NetRemoteId GetNetRemoteId(const ion::NetSocketAddress& sa) const;
 
-	void GetSystemListInternal(NetVector<NetSocketAddress>& addresses, NetVector<NetGUID>& guids) const;
 
-	// #TODO: Do we need to separate this
-	void SendBufferedList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,
-						  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,
-						  bool broadcast, NetMode connectionMode);
 
 	void AddPacketToProducer(ion::NetPacket* p) { mPeer->mControl.mPacketReturnQueue.Enqueue(std::move(p)); }
 
 	NetPacket* AllocPacket(unsigned dataSize);
 
 	void ClearConnectionRequest(const ion::RequestedConnection& rcs);
-
-	//
-	// Security section
-	//
-
-	ion::Mutex securityExceptionMutex;
-	// Systems in this list will not go through the secure connection process, even when secure connections are turned on. Wildcards are
-	// accepted.
-	ion::NetVector<ion::String> securityExceptionList;
 
 protected:
 	ion::NetPtr<ion::NetInterface> mPeer;

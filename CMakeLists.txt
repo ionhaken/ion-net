@@ -4,7 +4,7 @@ project(ion-net)
 
 set( ION_NET_HEADERFILES ${PROJECT_SOURCE_DIR}/src) #This name doesn't follow CMake conventions but for retro compatibility I'll let it there.
 
-set(ION_NET_COMMON_LIBS ion_net)
+set(ION_NET_COMMON_LIBS ion-net)
 
 MACRO(GETCURRENTFOLDER)#Gets the current foldername without the path
 	string(REGEX REPLACE
@@ -52,15 +52,6 @@ add_compile_options(
     "$<$<CONFIG:DEBUG>:-DION_DEBUG_LOG_ENABLED=0>"
 )
 
-
-if( NOT APPLE )
-# check 64 bit
-if( CMAKE_SIZEOF_VOID_P MATCHES "4" )
-  set( HAVE_64_BIT 0 )
-else(  CMAKE_SIZEOF_VOID_P MATCHES "4")
-  set( HAVE_64_BIT 1 )
-endif(  CMAKE_SIZEOF_VOID_P MATCHES "4")
-endif( NOT APPLE )
 
 IF (WIN32 AND NOT UNIX)
 	set (PROGRAMFILESX86 $ENV{PROGRAMFILES})
@@ -136,7 +127,7 @@ target_compile_features(ion-net PRIVATE cxx_std_20)
 if(MSVC)
 	target_compile_options(ion-net PRIVATE "/MP")
 endif()
-	
+
 install(TARGETS ion-net 
         ARCHIVE DESTINATION ${CMAKE_PREFIX_PATH}/lib
     )

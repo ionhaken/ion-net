@@ -107,7 +107,7 @@ void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerIns
 		startupParameters.mReceiveThreadPriority = ion::Thread::Priority::Normal;
 		startupParameters.mUpdateThreadPriority = ion::Thread::Priority::Normal;
 		auto res = peerList.Back()->Startup(startupParameters);
-		REQUIRE(res == ion::StartupResult::RAKNET_STARTED);
+		REQUIRE(res == ion::NetStartupResult::Started);
 #else
 		peerList.Back()->ApplyNetworkSimulator(gPacketLoss, gExtraPing, 0);
 		peerList.Back()->Startup(1, &sd, 1);

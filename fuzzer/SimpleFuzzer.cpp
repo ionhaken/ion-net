@@ -31,7 +31,7 @@ void Prepare(uint32_t NumClients, ion::Vector<ion::UniquePtr<ion::NetGeneralPeer
 		ion::NetSocketDescriptor sd;
 		peerList.Back()->DisableSecurity();
 		auto res = peerList.Back()->Startup(ion::NetStartupParameters::CreateClient(&sd, 1));
-		ION_ASSERT(res == ion::StartupResult::RAKNET_STARTED, "Failed to start");
+		ION_ASSERT(res == ion::NetStartupResult::Started, "Failed to start");
 		peerList.Back()->Connect("127.0.0.1", 60000, nullptr, 0);
 	}
 

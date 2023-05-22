@@ -110,14 +110,14 @@ NetPacket* NetReliableChannels::Receive(NetChannel& channel, NetControl& control
 			{
 				packet->mGUID = remote.guid;
 				packet->mRemoteId = remote.mId;
-				packet->mSource = remote.rakNetSocket;
+				packet->mSource = remote.netSocket;
 				return packet;
 			}
 			else
 			{
 				uint32_t nextSize = packet->Length();
 				constexpr uint32_t MsgSize = sizeof(NetMessageId) + sizeof(uint64_t);
-				constexpr uint32_t KeySize = sizeof(remote.rakNetSocket->mBigDataKey);
+				constexpr uint32_t KeySize = sizeof(remote.netSocket->mBigDataKey);
 				if (nextSize == MsgSize || nextSize == (MsgSize + KeySize))
 				{
 					ByteReader stream((unsigned char*)(&packet->Data()[1]), nextSize);
@@ -128,7 +128,7 @@ NetPacket* NetReliableChannels::Receive(NetChannel& channel, NetControl& control
 					if (nextSize == (MsgSize + KeySize))
 					{
 						stream.ReadAssumeAvailable(bigDataKey, KeySize);
-						auto* receiverBigDataKey = remote.rakNetSocket->mBigDataKey.data;
+						auto* receiverBigDataKey = remote.netSocket->mBigDataKey.data;
 						if (memcmp(bigDataKey, receiverBigDataKey, KeySize) == 0)
 						{
 							maxSize = 512 * 1024 * 1024;
@@ -149,7 +149,7 @@ NetPacket* NetReliableChannels::Receive(NetChannel& channel, NetControl& control
 							buffer->mAddress = packet->mAddress;
 							buffer->mGUID = remote.guid;
 							buffer->mRemoteId = remote.mId;
-							buffer->mSource = remote.rakNetSocket;
+							buffer->mSource = remote.netSocket;
 							ION_ASSERT(channel.mState.mBigDataBuffer.mBuffer == nullptr, "Duplicate buffer");
 							channel.mState.mBigDataBuffer.mBuffer = buffer;
 							channel.mState.mBigDataBuffer.mTotalReceived = 0;
@@ -320,7 +320,7 @@ bool NetReliableChannels::Send(NetControl& control, TimeMS currentTime, NetRemot
 			writer.Process(command.mNumberOfBytesToSend);
 			if (command.mNumberOfBytesToSend > 16 * 1024)
 			{
-				writer.WriteArray(remote.rakNetSocket->mBigDataKey.data, sizeof(remote.rakNetSocket->mBigDataKey.data));
+				writer.WriteArray(remote.netSocket->mBigDataKey.data, sizeof(remote.netSocket->mBigDataKey.data));
 			}
 		}
 		ptr->mNumberOfBytesToSend = view.Size();

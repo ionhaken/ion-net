@@ -495,7 +495,7 @@ void ConnectingThread(NetSocket& socket, SystemAddress& systemAddress)
 					  ion::Thread::SleepMs(0);
 				  }
 			  }
-			  mFreePayload.Release(reinterpret_cast<RakNetSocket2::Payload*>(recvFromStruct));
+			  mFreePayload.Release(reinterpret_cast<NetSocket::Payload*>(recvFromStruct));
 		  }
 	  });
 	mReceiveThread.Start(32 * 1024, ion::NetworkReceivePriority);
@@ -571,12 +571,12 @@ void ListeningThread(NetSocket& socket)
 								  ion::Thread::SleepMs(0);
 							  }
 						  }
-						  mFreePayload.Release(reinterpret_cast<RakNetSocket2::Payload*>(recvFromStruct));
+						  mFreePayload.Release(reinterpret_cast<NetSocket::Payload*>(recvFromStruct));
 					  }
 				  }
 			  }
 		  }
-		  // mFreePayload.Release(reinterpret_cast<RakNetSocket2::Payload*>(recvFromStruct));
+		  // mFreePayload.Release(reinterpret_cast<NetSocket::Payload*>(recvFromStruct));
 	  });
 	mReceiveThread.Start(32 * 1024, ion::NetworkReceivePriority);
 }

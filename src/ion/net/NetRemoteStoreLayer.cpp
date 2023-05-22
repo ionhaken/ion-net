@@ -1,10 +1,14 @@
+#include <ion/net/NetCommand.h>
 #include <ion/net/NetConnectionLayer.h>
+#include <ion/net/NetControl.h>
+#include <ion/net/NetControlLayer.h>
 #include <ion/net/NetGlobalClock.h>
 #include <ion/net/NetRemote.h>
 #include <ion/net/NetRemoteStoreLayer.h>
 #include <ion/net/NetSecure.h>
-#include <ion/net/NetStartupParameters.h>
+#include <ion/net/NetSendCommand.h>
 #include <ion/net/NetSocketLayer.h>
+#include <ion/net/NetStartupParameters.h>
 
 #include <ion/arena/ArenaAllocator.h>
 
@@ -16,8 +20,6 @@
 
 #include <ion/jobs/JobIntermediate.h>
 #include <ion/jobs/JobScheduler.h>
-
-#include <ion/BasePeer.h>
 
 namespace ion::NetRemoteStoreLayer
 {
@@ -175,77 +177,76 @@ void Update(NetRemoteStore& remoteStore, NetControl& control, ion::TimeMS now, i
 	else
 	{
 		ion::ForEachPartial(remoteStore.mActiveSystems.Get(), remoteStore.mActiveSystems.Get() + remoteStore.mActiveSystemListSize,
-							[&](ion::NetRemoteIndex systemIndex) { UpdateRemote(control, remoteStore, now, systemIndex, operations.GetMain()); });
+							[&](ion::NetRemoteIndex systemIndex)
+							{ UpdateRemote(control, remoteStore, now, systemIndex, operations.GetMain()); });
 	}
 
 	bool sortActiveSystems = false;
 	operations.ForEachContainer(
 	  [&](Operations& operations)
 	  {
-		  ion::ForEach(operations.list,
-					   [&](SystemOp& systemOp)
-					   {
-						   NetRemoteSystem& remoteSystem = remoteStore.mRemoteSystemList[systemOp.system];
-						   switch (systemOp.op)
-						   {
-						   case Op::None:
-							   ION_UNREACHABLE("No op");
-							   break;
-						   case Op::KeepAliveReliable:
-							   remoteSystem.pingTracker.OnPing(now);
-							   NetControlLayer::PingInternal(control, remoteStore, remoteSystem.mAddress, true,
-															 NetPacketReliability::Reliable, now);
-							   break;
+		  ion::ForEach(
+			operations.list,
+			[&](SystemOp& systemOp)
+			{
+				NetRemoteSystem& remoteSystem = remoteStore.mRemoteSystemList[systemOp.system];
+				switch (systemOp.op)
+				{
+				case Op::None:
+					ION_UNREACHABLE("No op");
+					break;
+				case Op::KeepAliveReliable:
+					remoteSystem.pingTracker.OnPing(now);
+					NetControlLayer::PingInternal(control, remoteStore, remoteSystem.mAddress, true, NetPacketReliability::Reliable, now);
+					break;
 
-						   case Op::KeepAliveUnreliable:
-							   remoteSystem.pingTracker.OnPing(now);
-							   NetControlLayer::PingInternal(control, remoteStore, remoteSystem.mAddress, true,
-															 NetPacketReliability::Unreliable, now);
-							   break;
+				case Op::KeepAliveUnreliable:
+					remoteSystem.pingTracker.OnPing(now);
+					NetControlLayer::PingInternal(control, remoteStore, remoteSystem.mAddress, true, NetPacketReliability::Unreliable, now);
+					break;
 
-						   case Op::ConnectionLost:
-						   {
-							   NetPacket* packet = ion::NetControlLayer::AllocateUserPacket(control, sizeof(char));
-							   packet->mSource = nullptr;
-							   packet->mLength = sizeof(char);
+				case Op::ConnectionLost:
+				{
+					NetPacket* packet = ion::NetControlLayer::AllocateUserPacket(control, sizeof(char));
+					packet->mSource = nullptr;
+					packet->mLength = sizeof(char);
 
-							   if (remoteSystem.mMode == NetMode::RequestedConnection)
-							   {
-								   packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;
-							   }
-							   else if (remoteSystem.mMode == NetMode::Connected)
-							   {
-								   // Stopped receiving datagrams. Could be connection issue or
-								   // remote dropped the connection without notification or
-								   // disconnect notification was lost due to packet loss.
-								   packet->Data()[0] = NetMessageId::ConnectionLost;
-							   }
-							   else
-							   {
-								   packet->Data()[0] = NetMessageId::DisconnectionNotification;
-							   }
+					if (remoteSystem.mMode == NetMode::RequestedConnection)
+					{
+						packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;
+					}
+					else if (remoteSystem.mMode == NetMode::Connected)
+					{
+						// Stopped receiving datagrams. Could be connection issue or
+						// remote dropped the connection without notification or
+						// disconnect notification was lost due to packet loss.
+						packet->Data()[0] = NetMessageId::ConnectionLost;
+					}
+					else
+					{
+						packet->Data()[0] = NetMessageId::DisconnectionNotification;
+					}
 
-							   ION_DBG("Connection lost;Initiated:"
-									   << (remoteSystem.mIsRemoteInitiated ? "remote" : "local") << ";mMode=" << remoteSystem.mMode
-									   << ";Time since last datagram : " << ion::TimeSince(now, remoteSystem.timeLastDatagramArrived)
-									   << "ms;Connection time:" << ion::TimeSince(now, remoteSystem.connectionTime)
-									   << "ms;Since last ping request:" << ion::TimeSince(now, remoteSystem.pingTracker.GetLastPingTime()));
-							   packet->mGUID = remoteSystem.guid;
-							   packet->mAddress = remoteSystem.mAddress;
-							   packet->mRemoteId = remoteSystem.mId;
+					ION_DBG("Connection lost;Initiated:"
+							<< (remoteSystem.mIsRemoteInitiated ? "remote" : "local") << ";mMode=" << remoteSystem.mMode
+							<< ";Time since last datagram : " << ion::TimeSince(now, remoteSystem.timeLastDatagramArrived)
+							<< "ms;Connection time:" << ion::TimeSince(now, remoteSystem.connectionTime)
+							<< "ms;Since last ping request:" << ion::TimeSince(now, remoteSystem.pingTracker.GetLastPingTime()));
+					packet->mGUID = remoteSystem.guid;
+					packet->mAddress = remoteSystem.mAddress;
+					packet->mRemoteId = remoteSystem.mId;
 
-							   NetControlLayer::AddPacketToProducer(control, packet);
-						   }
-							   // else connection shutting down, don't bother telling the user
-							   [[fallthrough]];
-						   case Op::ConnectionLostSilent:
-							   ResetRemoteSystem(remoteStore, control, control.mMemoryResource, systemOp.system,
-												 now);
-							   RemoveFromActiveSystemList(remoteStore, systemOp.system);
-							   sortActiveSystems = true;
-							   break;
-						   }
-					   });
+					NetControlLayer::AddPacketToProducer(control, packet);
+				}
+					// else connection shutting down, don't bother telling the user
+					[[fallthrough]];
+				case Op::ConnectionLostSilent:
+					ResetRemoteSystem(remoteStore, control, control.mMemoryResource, systemOp.system, now);
+					RemoveFromActiveSystemList(remoteStore, systemOp.system);
+					sortActiveSystems = true;
+					break;
+				}
+			});
 	  });
 
 	if (sortActiveSystems)
@@ -254,8 +255,9 @@ void Update(NetRemoteStore& remoteStore, NetControl& control, ion::TimeMS now, i
 	}
 }
 
-ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource& memoryResource, const ion::NetSocketAddress& connectAddress, const ion::NetSocketAddress& bindingAddress,
-							  NetSocket* rakNetSocket, ion::NetGUID guid, NetDataTransferSecurity dataTransferSecurity, uint16_t mtu)
+ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource& memoryResource,
+							  const ion::NetSocketAddress& connectAddress, const ion::NetSocketAddress& bindingAddress,
+							  NetSocket* netSocket, ion::NetGUID guid, NetDataTransferSecurity dataTransferSecurity, uint16_t mtu)
 {
 	ConnectionResult result;
 	NetRemoteIndex rssIndexFromSA = GetRemoteIdFromSocketAddress(remoteStore, connectAddress, true).RemoteIndex();
@@ -297,8 +299,8 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 
 		if (remoteStore.mGuid != ion::NetGuidAuthority)
 		{
-			ION_DBG("GUID collision at " << remoteStore.mIpList[0] << "(" << remoteStore.mGuid << "): Someone else took the guid "
-										 << guid << ";connectAddres=" << connectAddress);
+			ION_DBG("GUID collision at " << remoteStore.mIpList[0] << "(" << remoteStore.mGuid << "): Someone else took the guid " << guid
+										 << ";connectAddres=" << connectAddress);
 			result.outcome = ConnectionResponse::GUIDReserved;
 			return result;
 		}
@@ -332,7 +334,7 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 	rsp.mConversationId = conversationId;
 	rsp.guid = guid;
 	rsp.incomingMTU = mtu;
-	rsp.incomingRakNetSocket = rakNetSocket;
+	rsp.incomingNetSocket = netSocket;
 	rsp.mDataTransferSecurity = dataTransferSecurity;
 
 	bool thisIPConnectedRecently = false;
@@ -409,7 +411,7 @@ void Deinit(NetRemoteStore& remoteStore, NetControl& control, ion::TimeMS now)
 
 	ION_ASSERT(remoteStore.mRemoteSystemList[0].mMetrics == nullptr, "Metrics set");
 	ION_ASSERT(remoteStore.mRemoteSystemList[0].mResource == nullptr, "Resource set");
-	
+
 	for (NetRemoteIndex i = 1; i <= systemListSize; i++)
 	{
 		if (remoteStore.mRemoteSystemList[i].mMode != NetMode::Disconnected)
@@ -441,8 +443,8 @@ void Deinit(NetRemoteStore& remoteStore, NetControl& control, ion::TimeMS now)
 	remoteStore.mGuid = ion::NetGuidUnassigned;
 }
 
-void ResetRemoteSystem(NetRemoteStore& remoteStore, NetControl& control, NetInterfaceResource& memoryResource,
-					   NetRemoteIndex remoteIndex, [[maybe_unused]] ion::TimeMS currentTime)
+void ResetRemoteSystem(NetRemoteStore& remoteStore, NetControl& control, NetInterfaceResource& memoryResource, NetRemoteIndex remoteIndex,
+					   [[maybe_unused]] ion::TimeMS currentTime)
 {
 	ion::NetRemoteSystem& remote = remoteStore.mRemoteSystemList[remoteIndex];
 	ION_ASSERT(remote.mResource, "Invalid remote");
@@ -485,7 +487,7 @@ void ResetRemoteSystem(NetRemoteStore& remoteStore, NetControl& control, NetInte
 	ion::DeleteArenaPtr(&memoryResource, remote.mResource);
 
 	// Not using this socket
-	remote.rakNetSocket = 0;
+	remote.netSocket = 0;
 
 	SetMode(remoteStore, remote, ion::NetMode::Disconnected);
 	SetRemoteInitiated(remoteStore, remote, false);
@@ -613,7 +615,7 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetRemoteStore& remo
 	}
 
 	// Don't use a different port than what we received on
-	bindingAddress.CopyPort(rsp.incomingRakNetSocket->mBoundAddress);
+	bindingAddress.CopyPort(rsp.incomingNetSocket->mBoundAddress);
 
 	*thisIPConnectedRecently = false;
 	for (uint16_t assignedIndex = 1; assignedIndex <= remoteStore.mMaximumNumberOfPeers; assignedIndex++)
@@ -654,9 +656,9 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetRemoteStore& remo
 			}
 
 			AddToActiveSystemList(remoteStore, ion::NetRemoteIndex(assignedIndex));
-			if (rsp.incomingRakNetSocket->mBoundAddress == bindingAddress)
+			if (rsp.incomingNetSocket->mBoundAddress == bindingAddress)
 			{
-				remoteSystem->rakNetSocket = rsp.incomingRakNetSocket;
+				remoteSystem->netSocket = rsp.incomingNetSocket;
 			}
 			else
 			{
@@ -678,7 +680,7 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetRemoteStore& remo
 					}
 				}
 
-				remoteSystem->rakNetSocket = rsp.incomingRakNetSocket;
+				remoteSystem->netSocket = rsp.incomingNetSocket;
 			}
 
 			remoteSystem->timeSync = ion::NetTimeSync();
@@ -702,9 +704,8 @@ bool RegenerateGuid(NetRemoteStore& remoteStore)
 }
 
 bool GetStatistics(NetRemoteStore& remoteStore, NetInterfaceResource& memoryResource, const NetSocketAddress& systemAddress,
-						NetStats& systemStats)
+				   NetStats& systemStats)
 {
-
 	if (systemAddress == NetUnassignedSocketAddress)
 	{
 		bool firstWrite = false;
@@ -730,7 +731,7 @@ bool GetStatistics(NetRemoteStore& remoteStore, NetInterfaceResource& memoryReso
 	}
 	else
 	{
-		NetRemoteId remoteId = GetRemoteIdThreadSafe(remoteStore, systemAddress,  false);
+		NetRemoteId remoteId = GetRemoteIdThreadSafe(remoteStore, systemAddress, false);
 		if (remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].mResource)
 		{
 			DataMetricsSnapshot(memoryResource, remoteStore.mRemoteSystemList[remoteId.RemoteIndex()], systemStats);
@@ -756,7 +757,6 @@ void GetStatisticsList(NetRemoteStore& remoteStore, NetInterfaceResource& memory
 		auto* system = &remoteStore.mRemoteSystemList[remoteStore.mActiveSystems[i]];
 		if (system->mMode == NetMode::Connected)
 		{
-
 			addresses.Add((system)->mAddress);
 			guids.Add((system)->guid);
 			NetStats rns;
@@ -768,7 +768,7 @@ void GetStatisticsList(NetRemoteStore& remoteStore, NetInterfaceResource& memory
 
 bool GetStatistics(NetRemoteStore& remoteStore, NetInterfaceResource& memoryResource, NetRemoteId remoteId, NetStats& stats)
 {
-	if (!remoteId.IsValid()) 
+	if (!remoteId.IsValid())
 	{
 		GetStatistics(remoteStore, memoryResource, NetUnassignedSocketAddress, stats);
 		return true;
@@ -811,7 +811,7 @@ ion::TimeMS GetTimeoutTime(const NetRemoteStore& remoteStore, const NetSocketAdd
 {
 	if (target != NetUnassignedSocketAddress)
 	{
-		ion::NetRemoteId id= GetRemoteIdThreadSafe(remoteStore, target, true);
+		ion::NetRemoteId id = GetRemoteIdThreadSafe(remoteStore, target, true);
 		ion::TimeMS timeoutTime = remoteStore.mRemoteSystemList[id.RemoteIndex()].timeoutTime;
 
 		// Check address was not altered
@@ -823,11 +823,12 @@ ion::TimeMS GetTimeoutTime(const NetRemoteStore& remoteStore, const NetSocketAdd
 	return remoteStore.mDefaultTimeoutTime;
 }
 
-NetSocketAddress GetInternalID(const NetRemoteStore& remoteStore, const NetSocketAddress& address, const int index)
+void GetInternalID(const NetRemoteStore& remoteStore, NetSocketAddress& out, const NetSocketAddress& address, const int index)
 {
 	if (address == NetUnassignedSocketAddress)
 	{
-		return remoteStore.mIpList[index];
+		out = remoteStore.mIpList[index];
+		return;
 	}
 	else
 	{
@@ -839,11 +840,12 @@ NetSocketAddress GetInternalID(const NetRemoteStore& remoteStore, const NetSocke
 			// Check address was not altered
 			if (remoteStore.mRemoteSystemList[id.RemoteIndex()].mAddress == address)
 			{
-				return address;
+				out = address;
+				return;
 			}
 		}
 	}
-	return NetUnassignedSocketAddress;
+	out = NetUnassignedSocketAddress;
 }
 
 void SetInternalID(NetRemoteStore& remoteStore, const NetSocketAddress& systemAddress, int index)
@@ -946,7 +948,7 @@ void SetRemoteInitiated(NetRemoteStore& remoteStore, NetRemoteSystem& remoteSyst
 }
 
 NetRemoteId GetRemoteIdFromSocketAddress(const NetRemoteStore& remoteStore, const ion::NetSocketAddress& address,
-													   bool calledFromNetworkThread, bool onlyActive)
+										 bool calledFromNetworkThread, bool onlyActive)
 {
 	if (!address.IsAssigned())
 	{
@@ -1028,29 +1030,30 @@ NetRemoteId GetRemoteIdThreadSafe(const NetRemoteStore& remoteStore, const NetGU
 	return NetRemoteId();
 }
 
-NetSocketAddress GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetGUID guid)
+void GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetGUID guid, NetSocketAddress& out)
 {
 	if (guid == NetGuidUnassigned)
 	{
-		return NetUnassignedSocketAddress;
+		out = NetUnassignedSocketAddress;
 	}
-
-	if (guid == remoteStore.mGuid)
+	else if (guid == remoteStore.mGuid)
 	{
-		return GetInternalID(remoteStore, NetUnassignedSocketAddress);
+		GetInternalID(remoteStore, out, NetUnassignedSocketAddress);
 	}
-	NetRemoteId remoteId = GetRemoteIdThreadSafe(remoteStore, guid);
-	NetSocketAddress address = GetSocketAddressThreadSafe(remoteStore, remoteId);
-
-	// Check address was not altered by other thread
-	if (remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].guid == guid)
+	else
 	{
-		return address;
+		NetRemoteId remoteId = GetRemoteIdThreadSafe(remoteStore, guid);
+		GetSocketAddressThreadSafe(remoteStore, remoteId, out);
+
+		// Check address was not altered by other thread
+		if (remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].guid != guid)
+		{
+			out = NetUnassignedSocketAddress;
+		}
 	}
-	return NetUnassignedSocketAddress;
 }
 
-NetSocketAddress GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetRemoteId remoteId)
+void GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetRemoteId remoteId, NetSocketAddress& out)
 {
 	ION_ASSERT(remoteId.RemoteIndex() <= remoteStore.mMaximumNumberOfPeers, "Invalid remote id");
 
@@ -1063,10 +1066,11 @@ NetSocketAddress GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, N
 		// Check address was not altered by other thread
 		if (remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].mId.load() == remoteId)
 		{
-			return address;
+			out = address;
+			return;
 		}
 	}
-	return NetUnassignedSocketAddress;
+	out = NetUnassignedSocketAddress;
 }
 
 NetGUID GetGUIDThreadSafe(const NetRemoteStore& remoteStore, NetRemoteId remoteId)
@@ -1188,7 +1192,7 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 		else
 		{
 			idx = 0;
-			lastIdx = outRemoteIndices.Size()-1;
+			lastIdx = outRemoteIndices.Size() - 1;
 		}
 	}
 
@@ -1215,10 +1219,9 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 		}
 		else
 		{
-			if (!NetModeIsOpen(remoteStore.mRemoteSystemList[idx].mMode) ||
-				Find(outRemoteIndices, idx) != outRemoteIndices.End())
+			if (!NetModeIsOpen(remoteStore.mRemoteSystemList[idx].mMode) || Find(outRemoteIndices, idx) != outRemoteIndices.End())
 			{
-				continue; // Exclude remote index
+				continue;  // Exclude remote index
 			}
 			remoteIndex = idx;
 		}
@@ -1246,13 +1249,13 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 	}
 }
 
-void SendConnectionRequestAccepted(NetRemoteStore& remoteStore, NetControl& control, ion::NetRemoteSystem* remoteSystem, ion::Time incomingTimestamp,
-								   ion::TimeMS now)
+void SendConnectionRequestAccepted(NetRemoteStore& remoteStore, NetControl& control, ion::NetRemoteSystem* remoteSystem,
+								   ion::Time incomingTimestamp, ion::TimeMS now)
 {
 	NetSendCommand cmd(control, remoteSystem->mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
 	if (cmd.HasBuffer())
 	{
-		{			
+		{
 			ByteWriter writer(cmd.Writer());
 
 			writer.Process(NetMessageId::ConnectionRequestAccepted);
@@ -1265,7 +1268,7 @@ void SendConnectionRequestAccepted(NetRemoteStore& remoteStore, NetControl& cont
 			}
 			remoteSystem->pingTracker.OnPing(now);
 			writer.Process(now);
-			writer.Process(incomingTimestamp);			
+			writer.Process(incomingTimestamp);
 		}
 		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
@@ -1273,7 +1276,8 @@ void SendConnectionRequestAccepted(NetRemoteStore& remoteStore, NetControl& cont
 	}
 }
 
-void OnConnectedPong(NetRemoteStore& remoteStore, ion::Time now, ion::Time sentPingTime, ion::Time remoteTime, ion::NetRemoteSystem* remoteSystem)
+void OnConnectedPong(NetRemoteStore& remoteStore, ion::Time now, ion::Time sentPingTime, ion::Time remoteTime,
+					 ion::NetRemoteSystem* remoteSystem)
 {
 	remoteSystem->pingTracker.OnPong(now, sentPingTime, remoteTime);
 	if (remoteSystem->timeSync.IsActive() && remoteSystem->pingTracker.HasSamples())
@@ -1337,6 +1341,34 @@ bool IsIPV6Only(const NetRemoteStore& remoteStore)
 		}
 	}
 	return num != 0;  // True only when IPV6 adresses are available.
+}
+
+void GetExternalID(const NetRemoteStore& remoteStore, const NetSocketAddress& target, NetSocketAddress& inactiveExternalId)
+{
+	if (target == NetUnassignedSocketAddress)
+	{
+		inactiveExternalId = remoteStore.mFirstExternalID;
+	}
+	else
+	{
+		// First check for active connection with this systemAddress
+		inactiveExternalId = NetUnassignedSocketAddress;
+		for (unsigned int i = 1; i <= remoteStore.mMaximumNumberOfPeers; i++)
+		{
+			if (remoteStore.mRemoteSystemList[i].mAddress == target)
+			{
+				if (remoteStore.mRemoteSystemList[i].mMode != NetMode::Disconnected)
+				{
+					inactiveExternalId = remoteStore.mSystemAddressDetails[i].mExternalSystemAddress;
+					break;
+				}
+				else if (remoteStore.mSystemAddressDetails[i].mExternalSystemAddress != NetUnassignedSocketAddress)
+				{
+					inactiveExternalId = remoteStore.mSystemAddressDetails[i].mExternalSystemAddress;
+				}
+			}
+		}
+	}
 }
 
 }  // namespace ion::NetRemoteStoreLayer

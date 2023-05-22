@@ -20,7 +20,7 @@ using NetRemoteSystemResource = ion::TLSFResource<PolymorphicResource, ion::tag:
 
 enum class NetDataTransferSecurity : uint8_t
 {
-	EncryptionAndReplayProtection,
+	EncryptionAndReplayProtection,  // #TODO: Impl replay protection & checksum
 	ReplayProtectionAndChecksum,
 	Checksum,
 	Disabled
@@ -48,7 +48,7 @@ struct NetRemoteSystem
 	}
 
 	// Data transport
-	NetSocket* rakNetSocket = nullptr;  // Reference counted socket to send back on
+	NetSocket* netSocket = nullptr;  // Reference counted socket to send back on
 	ion::NetReliableChannels reliableChannels;
 
 	// Qos

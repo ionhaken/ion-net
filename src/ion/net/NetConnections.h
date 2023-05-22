@@ -20,12 +20,19 @@ namespace ion
 template <typename T>
 using NetVector = Vector<T, NetAllocator<T>>;
 
+struct NetConnectTarget
+{
+	const char* host;
+	unsigned short remote_port;
+	ion::NetSocketAddress resolved_address;
+};
+
 struct NetConnections
 {
 	ion::Mutex mSocketListMutex;
 	NetVector<NetSocket*> mSocketList;
 
-	ion::NetSocketAddress mSocketListFirstBoundAddress = NetUnassignedSocketAddress;	 // Cached for fast access
+	ion::NetSocketAddress mSocketListFirstBoundAddress = NetUnassignedSocketAddress;  // Cached for fast access
 
 	ion::Offline mOffline;
 

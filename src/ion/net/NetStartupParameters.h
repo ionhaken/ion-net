@@ -6,8 +6,6 @@
 
 namespace ion
 {
-class RakNetSocket2;
-
 struct NetSocketDescriptor;
 class JobScheduler;
 

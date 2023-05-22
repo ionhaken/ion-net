@@ -45,6 +45,12 @@ inline size_t StringLen(const char* str)
 	return strlen(str);
 }
 
+inline size_t StringLen(const char* str, size_t maxLen)
+{
+	ION_ASSERT_FMT_IMMEDIATE(str != 0, "Invalid string");
+	return strnlen_s(str, maxLen);
+}
+
 size_t ION_CONSTEVAL ConstexprStringLength(const char* str) { return *str ? 1 + ConstexprStringLength(str + 1) : 0; }
 
 inline int StringConcatenate(char* ION_RESTRICT dest, [[maybe_unused]] size_t destByteSize, const char* ION_RESTRICT src)

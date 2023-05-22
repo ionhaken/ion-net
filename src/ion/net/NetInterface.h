@@ -15,8 +15,6 @@
 
 namespace ion
 {
-class RakNetSocket2;
-
 class JobScheduler;
 
 struct NetInterface

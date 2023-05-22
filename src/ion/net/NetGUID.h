@@ -1,9 +1,10 @@
 #pragma once
 
+#include <ion/net/ionnet.h>
+
 #include <ion/Base.h>
 #include <ion/byte/ByteWriter.h>
 #include <ion/tracing/Log.h>
-#include <stdint.h>
 
 namespace ion
 {
@@ -16,8 +17,7 @@ class NetRemoteId
 
 public:
 	constexpr NetRemoteId() : mRaw(UnassignedId) {}
-	// constexpr NetRemoteId(const NetRemoteId& other) : mRaw(other.mRaw) {}
-	// constexpr NetRemoteId(NetRemoteId&& other) : mRaw(other.mRaw) {}
+	constexpr explicit NetRemoteId(uint32_t raw) : mRaw(raw) {}
 	constexpr explicit NetRemoteId(NetRemoteGeneration generation, NetRemoteIndex index)
 	  : mRaw(uint32_t(generation) << 16 | uint32_t(index))
 	{
@@ -35,7 +35,7 @@ public:
 	uint32_t UInt32() const { return mRaw; }
 
 private:
-	uint32_t mRaw;
+	ion_net_remote_id_t mRaw;
 };
 
 // Global unique identifier.
@@ -69,7 +69,7 @@ public:
 	constexpr const uint64_t& Raw() const { return mRaw; }
 
 private:
-	uint64_t mRaw;
+	ion_net_guid_t mRaw;
 };
 
 constexpr NetGUID NetGuidUnassigned;

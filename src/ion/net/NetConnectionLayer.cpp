@@ -1,15 +1,17 @@
 #include <ion/net/NetConnectionLayer.h>
+#include <ion/net/NetConnections.h>
+#include <ion/net/NetControlLayer.h>
 #include <ion/net/NetMessageIdentifiers.h>
 #include <ion/net/NetPayload.h>
 #include <ion/net/NetRawSendCommand.h>
 #include <ion/net/NetRemoteStoreLayer.h>
+#include <ion/net/NetRequestedConnections.h>
 #include <ion/net/NetSecure.h>
+#include <ion/net/NetSendCommand.h>
 #include <ion/net/NetSocketLayer.h>
 #include <ion/net/NetStartupParameters.h>
 
 #include <ion/container/ForEach.h>
-
-#include <ion/BasePeer.h>
 
 namespace ion
 {
@@ -225,7 +227,7 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& control, NetRemoteStore& remoteStore,
 								 ion::NetSocketReceiveData& recvFromStruct, ion::TimeMS timeRead)
 {
-	auto* rakNetSocket = recvFromStruct.Socket();
+	auto* netSocket = recvFromStruct.Socket();
 	auto& socketAddress = recvFromStruct.Address();
 	auto* data = recvFromStruct.mPayload;
 	uint32_t length = recvFromStruct.SocketBytesRead();
@@ -254,7 +256,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					break;
 				}
 			}
-			NetRawSendCommand pong(*rakNetSocket);
+			NetRawSendCommand pong(*netSocket);
 			{
 				ion::ByteWriter writer(pong.Writer());
 				writer.Process(NetMessageId::UnconnectedPong);
@@ -386,7 +388,8 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  if (!ion::NetRemoteStoreLayer::RegenerateGuid(remoteStore))
 					  {
 						  // Filter logging when potentially connecting to self.
-						  auto internalId = ion::NetRemoteStoreLayer::GetInternalID(remoteStore);
+						  NetSocketAddress internalId;
+						  ion::NetRemoteStoreLayer::GetInternalID(remoteStore, internalId);
 						  if (iter->second.systemAddress.GetPort() != internalId.GetPort())
 						  {
 							  ION_LOG_INFO("GUID collision. Cancel connection attempt;GUID=" << remoteGuid << ";RemoteAddress="
@@ -434,7 +437,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  return;
 				  }
 
-				  NetRawSendCommand ocr2msg(*rakNetSocket);
+				  NetRawSendCommand ocr2msg(*netSocket);
 				  {
 					  ByteWriter ocr2writer(ocr2msg.Writer());
 					  ocr2writer.Process(NetMessageId::OpenConnectionRequest2);
@@ -448,10 +451,10 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  if (dataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
 					  {
 						  ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Remote is expecting security. Sending public key.");
-						  ocr2writer.WriteArrayKeepCapacity((u8*)rakNetSocket->mCryptoKeys.mPublicKey.data,
-															sizeof(rakNetSocket->mCryptoKeys.mPublicKey.data));
-						  ocr2writer.WriteArrayKeepCapacity((u8*)rakNetSocket->mNonceOffset.Data(),
-															rakNetSocket->mNonceOffset.ElementCount);
+						  ocr2writer.WriteArrayKeepCapacity((u8*)netSocket->mCryptoKeys.mPublicKey.data,
+															sizeof(netSocket->mCryptoKeys.mPublicKey.data));
+						  ocr2writer.WriteArrayKeepCapacity((u8*)netSocket->mNonceOffset.Data(),
+															netSocket->mNonceOffset.ElementCount);
 					  }
 					  else
 #endif
@@ -501,7 +504,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		if (rsp.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
 		{
 			isValid &= bs.ReadArray(publicKey.data, NetSecure::PublicKeyLength);
-			if (isValid && ion::NetSecure::ComputeSharedCryptoKeys(sharedKey, rakNetSocket->mCryptoKeys, publicKey) == 0)
+			if (isValid && ion::NetSecure::ComputeSharedCryptoKeys(sharedKey, netSocket->mCryptoKeys, publicKey) == 0)
 			{
 				ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Got server response with security parameters");
 				isValid &= bs.ReadArray(nonceOffset.Data(), nonceOffset.ElementCount);
@@ -538,7 +541,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  remoteSystem = NetRemoteStoreLayer::GetRemoteFromSocketAddress(remoteStore, socketAddress, true, true);
 					  if (remoteSystem == 0)
 					  {
-						  rsp.incomingRakNetSocket = rcs->socket ? rcs->socket : rakNetSocket;
+						  rsp.incomingNetSocket = rcs->socket ? rcs->socket : netSocket;
 						  rsp.mIsRemoteInitiated = false;
 						  bool thisIPConnectedRecently = false; /* Don't care if we connected recently or not */
 						  remoteSystem = ion::NetRemoteStoreLayer::AssignSystemAddressToRemoteSystemList(
@@ -582,7 +585,8 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 							  // We can get here also when we are already connected or handling other's connection request
 							  if (remoteSystem->mMode == NetMode::UnverifiedSender || remoteSystem->mMode == NetMode::RequestedConnection)
 							  {
-								  if (remoteSystem->MTUSize != rsp.incomingMTU || remoteSystem->mDataTransferSecurity != rsp.mDataTransferSecurity)
+								  if (remoteSystem->MTUSize != rsp.incomingMTU ||
+									  remoteSystem->mDataTransferSecurity != rsp.mDataTransferSecurity)
 								  {
 									  ION_ABNORMAL("Connection parameters renegotiated, flushing reliable channels");
 									  remoteSystem->MTUSize = rsp.incomingMTU;
@@ -614,7 +618,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 									  }
 								  }
 								  remoteSystem->pingTracker.OnPing(timeRead);
-								  
+
 								  cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
 								  ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, cmd.Release(), timeRead);
@@ -647,7 +651,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			ion::ByteReader bs((unsigned char*)data, length);
 			bs.SkipBytes(sizeof(NetMessageId));
 			uint32_t unconnectedHeader;
-			bs.Process(unconnectedHeader);			
+			bs.Process(unconnectedHeader);
 			if ((NetMessageId)(data)[0] == NetMessageId::IncompatibleProtocolVersion)
 			{
 				ION_LOG_INFO("Remote protocol version=" << (unconnectedHeader >> 24))
@@ -728,7 +732,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		if (remoteProtocolHeader != NetUnconnectedHeader)
 		{
 			ION_ABNORMAL("Incompatible protocol version: " << remoteProtocolHeader << ";expected:" << NetUnconnectedHeader);
-			NetRawSendCommand cmd(*rakNetSocket);
+			NetRawSendCommand cmd(*netSocket);
 			{
 				ByteWriter writer(cmd.Writer());
 				writer.Process(NetMessageId::IncompatibleProtocolVersion);
@@ -742,7 +746,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		if (remoteStore.mMaximumIncomingConnections == 0)
 		{
 			ION_ABNORMAL("Connection attempt when not accepting connections");
-			NetRawSendCommand cmd(*rakNetSocket);
+			NetRawSendCommand cmd(*netSocket);
 			{
 				ByteWriter writer(cmd.Writer());
 				writer.Process(NetMessageId::NoFreeIncomingConnections);
@@ -765,7 +769,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			mtu = NetPreferedMtuSize[NetNumMtuSizes - 1];
 		}
 
-		NetRawSendCommand msg(*rakNetSocket, ion::NetUdpPayloadSize(mtu));
+		NetRawSendCommand msg(*netSocket, ion::NetUdpPayloadSize(mtu));
 		if (msg.HasBuffer())
 		{
 			{
@@ -814,7 +818,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			ION_ABNORMAL("Connection request 2 has invalid binding address");
 			break;
 		}
-		
+
 		ion::Time remoteTime, sentTime;
 		isValid &= bs.Process(remoteTime);
 		isValid &= bs.Process(sentTime);
@@ -831,11 +835,11 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		}
 
 		ion::NetRemoteStoreLayer::ConnectionResult result =
-		  ion::NetRemoteStoreLayer::AssignRemote(remoteStore, control.mMemoryResource, socketAddress, bindingAddress, rakNetSocket, guid,
-												 remoteStore.mDataTransferSecurity,	// #TODO: Security exceptions
+		  ion::NetRemoteStoreLayer::AssignRemote(remoteStore, control.mMemoryResource, socketAddress, bindingAddress, netSocket, guid,
+												 remoteStore.mDataTransferSecurity,	 // #TODO: Security exceptions
 												 mtu);
 
-		NetRawSendCommand reply(*rakNetSocket);
+		NetRawSendCommand reply(*netSocket);
 		{
 			auto replyWriter = reply.Writer();
 			switch (result.outcome)
@@ -888,7 +892,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						isValid &= bs.ReadArray(publicKey.data, NetSecure::PublicKeyLength);
 						isValid &= bs.ReadArray(result.rssFromSA->mNonceOffset.Data(), result.rssFromSA->mNonceOffset.ElementCount);
 
-						if (!isValid || ion::NetSecure::ComputeSharedCryptoKeys(result.rssFromSA->mSharedKey, rakNetSocket->mCryptoKeys,
+						if (!isValid || ion::NetSecure::ComputeSharedCryptoKeys(result.rssFromSA->mSharedKey, netSocket->mCryptoKeys,
 																				publicKey) != 0)
 						{
 							ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Invalid client public key");
@@ -943,9 +947,9 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 				if (remoteStore.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
 				{
 					ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Sending server public key.");
-					replyWriter.WriteArray((u8*)rakNetSocket->mCryptoKeys.mPublicKey.data,
-										   sizeof(rakNetSocket->mCryptoKeys.mPublicKey.data));
-					replyWriter.WriteArray((u8*)rakNetSocket->mNonceOffset.Data(), rakNetSocket->mNonceOffset.ElementCount);
+					replyWriter.WriteArray((u8*)netSocket->mCryptoKeys.mPublicKey.data,
+										   sizeof(netSocket->mCryptoKeys.mPublicKey.data));
+					replyWriter.WriteArray((u8*)netSocket->mNonceOffset.Data(), netSocket->mNonceOffset.ElementCount);
 				}
 #endif
 				break;

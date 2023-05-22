@@ -591,7 +591,9 @@ void AddToBanList(NetReception& reception, NetControl& control, const char* IP, 
 			  {
 				  // Already in the ban list.  Just update the time
 				  if (milliseconds == 0)
+				  {
 					  banList[index]->timeout = 0;	// Infinite
+				  }
 				  else
 				  {
 					  banList[index]->timeout = time + milliseconds;
@@ -679,15 +681,20 @@ void ClearBanList(NetReception& reception, NetControl& control)
 
 NetBanStatus IsBanned(NetReception& reception, NetControl& control, const char* IP, ion::TimeMS now)
 {
-	unsigned banListIndex, characterIndex;
-	ion::NetInterfacePtr<NetBanStruct> temp;
-
-	NetBanStatus banStatus = NetBanStatus::NotBanned;
-	if (IP == 0 || IP[0] == 0 || strlen(IP) > 15)
+	if (!reception.mIsAnyoneBanned)
+	{
 		return NetBanStatus::NotBanned;
+	}
 
-	banListIndex = 0;
+	if (IP == 0 || IP[0] == 0 || StringLen(IP, 16) > 15)
+	{
+		return NetBanStatus::NotBanned;
+	}
 
+	ion::NetInterfacePtr<NetBanStruct> temp;
+	NetBanStatus banStatus = NetBanStatus::NotBanned;
+	unsigned banListIndex = 0;
+	
 	reception.mBanList.Access(
 	  [&](NetBanListVector& banList)
 	  {
@@ -704,7 +711,7 @@ NetBanStatus IsBanned(NetReception& reception, NetControl& control, const char* 
 			  }
 			  else
 			  {
-				  characterIndex = 0;
+				  unsigned characterIndex = 0;
 
 				  for (;;)
 				  {
@@ -766,9 +773,6 @@ NetBanStatus IsBanned(NetReception& reception, NetControl& control, const char* 
 
 NetBanStatus IsBanned(NetReception& reception, NetControl& control, const ion::NetSocketAddress& systemAddress, ion::TimeMS now)
 {
-	if (!reception.mIsAnyoneBanned)
-		return NetBanStatus::NotBanned;	 // Skip the mutex if possible
-
 	char str1[64];
 	systemAddress.ToString(str1, 64, false);
 	return IsBanned(reception, control, str1, now);

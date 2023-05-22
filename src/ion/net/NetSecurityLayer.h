@@ -49,9 +49,7 @@ bool IPAddressMatch(const ion::String& string, const char* IP)
 
 bool IsInSecurityExceptionList(const NetSecurity& security, const char* ip)
 {
-	bool isEmpty = false;
-	security.mySecurityExceptions.AssumeThreadSafeAccess([&](auto& securityExceptionList) { isEmpty = securityExceptionList.Size() == 0; });
-	if (isEmpty)
+	if (!security.myHasAnySecurityExceptions)
 	{
 		return false;
 	}
@@ -75,15 +73,18 @@ bool IsInSecurityExceptionList(const NetSecurity& security, const char* ip)
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void AddToSecurityExceptionList(NetSecurity& security, const char* ip)
 {
-	security.mySecurityExceptions.Access([&](auto& securityExceptionList) { securityExceptionList.Add(ion::String(ip)); });
+	security.mySecurityExceptions.Access(
+	  [&](auto& securityExceptionList)
+	  {
+		  securityExceptionList.Add(ion::String(ip));
+		  security.myHasAnySecurityExceptions = true;
+	  });
 }
 
 
 void RemoveFromSecurityExceptionList(NetSecurity& security, const char* ip)
 {
-	bool isEmpty = false;
-	security.mySecurityExceptions.AssumeThreadSafeAccess([&](auto& securityExceptionList) { isEmpty = securityExceptionList.Size() == 0; });
-	if (isEmpty)
+	if (!security.myHasAnySecurityExceptions)
 	{
 		return;
 	}
@@ -92,7 +93,7 @@ void RemoveFromSecurityExceptionList(NetSecurity& security, const char* ip)
 	  [&](auto& securityExceptionList)
 	  {
 		  if (ip == 0)
-		  {
+		  {			  
 			  securityExceptionList.Clear();
 		  }
 		  else
@@ -111,6 +112,7 @@ void RemoveFromSecurityExceptionList(NetSecurity& security, const char* ip)
 				  }
 			  }
 		  }
+		  security.myHasAnySecurityExceptions = securityExceptionList.Size() > 0;
 	  });
 }
 

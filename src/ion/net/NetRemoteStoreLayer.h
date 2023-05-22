@@ -40,7 +40,7 @@ struct ConnectionResult
 
 ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource& memoryResource,
 							  const ion::NetSocketAddress& connectAddress, const ion::NetSocketAddress& bindingAddress,
-							  NetSocket* rakNetSocket, ion::NetGUID guid, NetDataTransferSecurity dataTransferSecurity, uint16_t mtu);
+							  NetSocket* netSocket, ion::NetGUID guid, NetDataTransferSecurity dataTransferSecurity, uint16_t mtu);
 
 enum class Op : uint8_t
 {
@@ -151,7 +151,7 @@ bool RegenerateGuid(NetRemoteStore& remoteStore);
 
 struct RemoteSystemParameters
 {
-	NetSocket* incomingRakNetSocket = nullptr;
+	NetSocket* incomingNetSocket = nullptr;
 	uint16_t incomingMTU;
 	NetGUID guid;
 	uint32_t mConversationId;
@@ -186,8 +186,6 @@ void SetTimeoutTime(NetRemoteStore& remoteStore, ion::TimeMS timeMS, const NetSo
 
 ion::TimeMS GetTimeoutTime(const NetRemoteStore& remoteStore, const NetSocketAddress& target);
 
-NetSocketAddress GetInternalID(const NetRemoteStore& remoteStore, const NetSocketAddress& systemAddress = NetUnassignedSocketAddress,
-							   const int index = 0);
 
 void SetInternalID(NetRemoteStore& remoteStore, const NetSocketAddress& systemAddress, int index);
 
@@ -276,15 +274,6 @@ inline void SetOccasionalPing(NetRemoteStore& remoteStore, TimeMS time)
 	remoteStore.mOccasionalPing = time != 0 ? ion ::SafeRangeCast<ion::NetRoundTripTime>(time) : ion::NetRoundTripTime(-1);
 }
 
-inline const NetSocketAddress& GetSocketAddress(const NetRemoteStore& remoteStore, NetRemoteId remoteId)
-{
-	if (remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].mId.load() != remoteId)
-	{
-		return NetUnassignedSocketAddress;
-	}
-	return remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].mAddress;
-}
-
 NetRemoteId GetRemoteIdThreadSafe(const NetRemoteStore& remoteStore, const NetGUID input);
 
 inline NetRemoteId RemoteId(const NetRemoteStore& remoteStore, const ion::NetSocketAddress& sa)
@@ -295,16 +284,15 @@ inline NetRemoteId RemoteId(const NetRemoteStore& remoteStore, const ion::NetSoc
 
 NetRemoteId GetRemoteIdThreadSafe(const NetRemoteStore& remoteStore, const NetSocketAddress& address, bool onlyActive);
 
-NetSocketAddress GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetGUID guid);
+void GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetGUID guid, NetSocketAddress& out);
 
-NetSocketAddress GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetRemoteId remoteId);
+void GetSocketAddressThreadSafe(const NetRemoteStore& remoteStore, NetRemoteId remoteId, NetSocketAddress& out);
 
 NetGUID GetGUIDThreadSafe(const NetRemoteStore& remoteStore, NetRemoteId remoteId);
 
-inline NetRemoteId GetRemoteIdThreadSafe(const NetRemoteStore& remoteStore, const NetAddressOrRemoteRef& systemIdentifier)
+inline NetRemoteId GetRemoteIdThreadSafe(const NetRemoteStore& remoteStore, const NetSocketAddress& address)
 {
-	return systemIdentifier.mRemoteId.IsValid() ? systemIdentifier.mRemoteId
-												: GetRemoteIdThreadSafe(remoteStore, systemIdentifier.mAddress, false);
+	return GetRemoteIdThreadSafe(remoteStore, address, false);
 }
 
 // Not thread-safe. Need to make sure reliable layer update is not ongoing when calling this.
@@ -321,6 +309,11 @@ void FillIPList(NetRemoteStore& remoteStore);
 unsigned GetNumberOfAddresses(const NetRemoteStore& remoteStore);
 
 bool IsIPV6Only(const NetRemoteStore& remoteStore);
+
+void GetInternalID(const NetRemoteStore& remoteStore, NetSocketAddress& out,
+				   const NetSocketAddress& systemAddress = NetUnassignedSocketAddress, const int index = 0);
+
+void GetExternalID(const NetRemoteStore& remoteStore, const NetSocketAddress& in, NetSocketAddress& out);
 
 }  // namespace NetRemoteStoreLayer
 }  // namespace ion

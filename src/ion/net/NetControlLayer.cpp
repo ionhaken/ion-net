@@ -1,21 +1,20 @@
-#include <ion/net/NetBasePeer.h>
+#include <ion/net/NetCommand.h>
 #include <ion/net/NetConfig.h>
 #include <ion/net/NetControlLayer.h>
-#include <ion/net/NetGlobalClock.h>
 #include <ion/net/NetGUID.h>
+#include <ion/net/NetGlobalClock.h>
 #include <ion/net/NetInterface.h>
 #include <ion/net/NetMemory.h>
 #include <ion/net/NetRemoteStore.h>
 #include <ion/net/NetRemoteStoreLayer.h>
+#include <ion/net/NetSendCommand.h>
 #include <ion/net/NetSocket.h>
 #include <ion/net/NetStartupParameters.h>
-
-#include <ion/memory/AllocatorTraits.h>
+#include <ion/net/ionnet.h>
 
 #include <ion/time/Clock.h>
 
-#include <ion/net/ionnet.h>
-
+#include <ion/memory/AllocatorTraits.h>
 
 namespace ion
 {
@@ -69,7 +68,7 @@ public:
 					  netInterface.mControl.mIsReceiving = false;
 					  ion_net_preupdate((ion_net_peer)&netInterface, (ion_job_scheduler) nullptr);
 				  }
-				  ion_net_postupdate((ion_net_peer)&netInterface, (ion_job_scheduler)nullptr);
+				  ion_net_postupdate((ion_net_peer)&netInterface, (ion_job_scheduler) nullptr);
 				  netInterface.mControl.mUpdater.mUpdateWorker->myThreadSynchronizer.TryWaitFor(ion::NetUpdateInterval * 1000);
 			  }
 		  })
@@ -103,7 +102,6 @@ void Init(NetInterface& net, const NetStartupParameters& pars)
 		net.mControl.mUpdateMode = NetPeerUpdateMode::Worker;  // Degrade mode to Worker mode when no scheduler available.
 	}
 }
-
 
 void ClearBufferedCommands(NetControl& control)
 {
@@ -331,9 +329,6 @@ void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, c
 
 constexpr size_t BitsToBytes(size_t bitCount) { return (((bitCount) + 7) >> 3); };
 
-
-
-
 void SendBuffered(NetControl& control, const char* data, size_t numberOfBytesToSend, NetPacketPriority priority,
 				  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast,
 				  NetMode connectionMode)
@@ -362,7 +357,6 @@ void SendBuffered(NetControl& control, const char* data, size_t numberOfBytesToS
 		ION_ASSERT(broadcast || !systemIdentifier.IsUndefined(), "Invalid system");
 		bcs = (ion::MakeArenaPtrRaw<ion::NetCommand>(&control.mMemoryResource, cmdSize));
 	}
-
 
 	if (bcs.Get() == nullptr)
 	{
@@ -406,7 +400,7 @@ void PingInternal(NetControl& control, NetRemoteStore& remoteStore, const NetSoc
 		}
 		cmd.Parameters().mReliability = reliability;
 		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
-		
+
 		if (performImmediate)
 		{
 			ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, std::move(cmd.Release()), now);

@@ -1,20 +1,10 @@
 #pragma once
 
 #include <ion/net/NetConfig.h>
+#include <ion/net/ionnet_types.h>
 
 #include <ion/byte/ByteSerialization.h>
 #include <ion/util/Hasher.h>
-
-#if ION_PLATFORM_MICROSOFT
-	#include <winsock2.h>
-	#include <ws2tcpip.h>
-#else
-	#include <sys/socket.h>
-	#if ION_PLATFORM_ANDROID
-		#include <arpa/inet.h>
-	#endif
-	#include <netdb.h>
-#endif
 
 namespace ion
 {

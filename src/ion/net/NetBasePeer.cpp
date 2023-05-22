@@ -1,5 +1,7 @@
 #include <ion/net/NetBasePeer.h>
+#include <ion/net/NetControlLayer.h>
 #include <ion/net/NetMemory.h>
+#include <ion/net/NetRemoteStoreLayer.h>
 #include <ion/net/NetStartupParameters.h>
 
 #include <ion/concurrency/Runner.h>
@@ -10,8 +12,8 @@
 
 namespace ion
 {
-NetBasePeer::NetBasePeer(ion::NetInterfaceResource& resource) : BasePeer() { Init(resource); }
-NetBasePeer::NetBasePeer() : BasePeer(){};
+NetBasePeer::NetBasePeer(ion::NetInterfaceResource& resource) { Init(resource); }
+NetBasePeer::NetBasePeer(){};
 
 void NetBasePeer::Init(ion::NetInterfaceResource& resource)
 {
@@ -33,7 +35,7 @@ NetBasePeer::~NetBasePeer()
 	}
 }
 
-	int NetBasePeer::SendList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,
+int NetBasePeer::SendList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,
 						  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,
 						  bool broadcast)
 {
@@ -97,6 +99,26 @@ void NetBasePeer::SendBufferedList(const char** data, const int* lengths, const 
 	}
 
 	NetControlLayer::SendBuffered(mPeer->mControl, std::move(ptr));
+}
+
+NetConnectionAttemptResult NetBasePeer::Connect(const char* host, unsigned short remotePort, const char* passwordData,
+												int passwordDataLength, ion::NetSecure::PublicKey* publicKey,
+												unsigned connectionSocketIndex, unsigned sendConnectionAttemptCount,
+												unsigned timeBetweenSendConnectionAttemptsMS, ion::TimeMS timeoutTime)
+{
+	NetConnectTarget target{
+	  host,
+	  remotePort,
+	};
+	return Connect(target, passwordData, passwordDataLength, publicKey, connectionSocketIndex, sendConnectionAttemptCount,
+				   timeBetweenSendConnectionAttemptsMS, timeoutTime);
+}
+
+bool NetBasePeer::Ping(const char* host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections,
+					   unsigned connectionSocketIndex)
+{
+	ion::NetConnectTarget target{host, remotePort};
+	return ion_net_ping((ion_net_peer)mPeer.Get(), (ion_net_connect_target)&target, onlyReplyOnAcceptingConnections, connectionSocketIndex);
 }
 
 }  // namespace ion

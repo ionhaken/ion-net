@@ -1,4 +1,7 @@
 ﻿#pragma once
+
+#include <ion/net/NetConfig.h>
+
 #include <ion/time/CoreTime.h>
 
 namespace ion

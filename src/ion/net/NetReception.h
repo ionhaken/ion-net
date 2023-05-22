@@ -43,8 +43,9 @@ struct NetReception
 	ion::Synchronized<NetBanListVector> mBanList;
 
 	std::atomic<bool> mIsAnyoneBanned = false;
-	/// True to allow connection accepted packets from anyone.  False to only allow these packets from servers we requested a connection
-	/// to.
+
+	// Allow or disallow connection responses from any IP.Normally this should be false, but may be necessary
+	// when connection to servers with multiple IP addresses
 	bool mAllowConnectionResponseIPMigration = false;
 
 	unsigned char mIncomingPasswordLength = 0;

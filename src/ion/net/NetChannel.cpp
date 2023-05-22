@@ -918,7 +918,7 @@ NetChannelWriteContext ::~NetChannelWriteContext()
 {
 	if (mSsp)
 	{
-		mRemote.rakNetSocket->DeallocateSend(mSsp);
+		mRemote.netSocket->DeallocateSend(mSsp);
 	}
 }
 
@@ -934,8 +934,8 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 
 		unsigned char nonce[ion::NetSecure::NonceLength];
 		memcpy(nonce, context.mSsp->data, NetUnencryptedProtocolBytes);
-		memcpy(nonce + NetUnencryptedProtocolBytes, context.mRemote.rakNetSocket->mNonceOffset.Data(),
-			   context.mRemote.rakNetSocket->mNonceOffset.ElementCount);
+		memcpy(nonce + NetUnencryptedProtocolBytes, context.mRemote.netSocket->mNonceOffset.Data(),
+			   context.mRemote.netSocket->mNonceOffset.ElementCount);
 
 		[[maybe_unused]] bool isEncrypted = ion::NetSecure::Encrypt((unsigned char*)(&context.mSsp->data[NetUnencryptedProtocolBytes]),
 																	(unsigned char*)(&context.mSsp->data[NetUnencryptedProtocolBytes]),
@@ -958,20 +958,20 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 	context.mSsp->SetAddress(context.mRemote.mAddress);
 
 #if ION_NET_SIMULATOR
-	ION_CHECK_FATAL(context.mRemote.rakNetSocket->mSendThreadEnabled, "Send thread is mandatory when using network simulator");
+	ION_CHECK_FATAL(context.mRemote.netSocket->mSendThreadEnabled, "Send thread is mandatory when using network simulator");
 #endif
-	if (context.mRemote.rakNetSocket->mSendThreadEnabled)
+	if (context.mRemote.netSocket->mSendThreadEnabled)
 	{
-		if (NetSocketSendParameters* newBuffer = context.mRemote.rakNetSocket->AllocateSend())
+		if (NetSocketSendParameters* newBuffer = context.mRemote.netSocket->AllocateSend())
 		{
 			NetSocketSendParameters* bsp = context.mSsp;
 			context.mSsp = newBuffer;
-			ion::SocketLayer::SendTo(*context.mRemote.rakNetSocket, bsp);
+			ion::SocketLayer::SendTo(*context.mRemote.netSocket, bsp);
 			return len;
 		}
 		// Use blocking send if no memory for new buffer
 	}
-	ion::SocketLayer::SendBlocking(*context.mRemote.rakNetSocket, *context.mSsp);
+	ion::SocketLayer::SendBlocking(*context.mRemote.netSocket, *context.mSsp);
 	return len;
 }
 
@@ -1020,7 +1020,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 		}
 		else if (!context.mWriter.IsValid())
 		{
-			context.mSsp = context.mRemote.rakNetSocket->AllocateSend();
+			context.mSsp = context.mRemote.netSocket->AllocateSend();
 			if (context.mSsp)
 			{
 				context.mWriter = ByteWriterUnsafe((byte*)context.mSsp->data);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ion/net/NetInternalConfig.h>
 #include <ion/net/NetPayload.h>
 #include <ion/net/NetTypes.h>
 
@@ -87,9 +88,9 @@ struct NetCommand;
 struct NetUpstreamSegmentHeader
 {
 	uint32_t conv;	// unencrypted conversation id
-	uint32_t sn;	// unencrypted segment number	
-	uint32_t ts;	// unencrypted timestamp	
-	uint32_t frg;  
+	uint32_t sn;	// unencrypted segment number
+	uint32_t ts;	// unencrypted timestamp
+	uint32_t frg;
 	uint32_t cmd;
 	uint32_t wnd;
 	uint32_t una;

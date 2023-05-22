@@ -1,5 +1,5 @@
 #pragma once
-#include <ion/net/NetConfig.h>
+#include <ion/net/NetInternalConfig.h>
 
 namespace ion
 {

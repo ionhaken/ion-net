@@ -256,7 +256,8 @@ uint32_t ion_net_timeout_time(ion_net_peer handle, ion_net_socket_address target
 bool ion_net_statistics_for_address(ion_net_peer handle, ion_net_socket_address address, ion_net_statistics stats)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	return NetRemoteStoreLayer::GetStatistics(net.mRemoteStore, net.mControl.mMemoryResource, *(NetSocketAddress*)address, *(NetStats*)stats);
+	return NetRemoteStoreLayer::GetStatistics(net.mRemoteStore, net.mControl.mMemoryResource, *(NetSocketAddress*)address,
+											  *(NetStats*)stats);
 }
 
 bool ion_net_statistics_for_remote_id(ion_net_peer handle, ion_net_remote_id_t remote, ion_net_statistics stats)
@@ -372,7 +373,6 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 
 	// This needs to be done first to make sure all disconnects are sent and acked before shutdown can continue
 	ion::TimeMS now = ion::SteadyClock::GetTimeMS();
-	ION_NET_LOG_VERBOSE("Shutting down;block duration=" << blockDuration);
 	if (blockDuration > 0)
 	{
 		for (unsigned int i = 1; i <= systemListSize; i++)
@@ -380,7 +380,8 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 			// remoteSystemList in user thread
 			if (net.mRemoteStore.mRemoteSystemList[i].mMode != NetMode::Disconnected)
 			{
-				ION_NET_LOG_VERBOSE("Closing connection to " << net.mRemoteStore.mRemoteSystemList[i].guid);
+				ION_NET_LOG_VERBOSE("[" << net.mRemoteStore.mGuid << "] Shutdown: Closing connection to "
+										<< net.mRemoteStore.mRemoteSystemList[i].guid);
 				NetControlLayer::CloseConnectionInternal(net.mControl, net.mRemoteStore, net.mConnections,
 														 net.mRemoteStore.mRemoteSystemList[i].mId.load(), true, !IsUpdateThreadRunning,
 														 orderingChannel, (NetPacketPriority)disconnectionNotificationPriority);
@@ -422,7 +423,8 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 		}
 		if (anyActive)
 		{
-			ION_NET_LOG_VERBOSE("Could not disconnect all remotes gracefully in " << blockDuration << "ms");
+			ION_NET_LOG_VERBOSE("[" << net.mRemoteStore.mGuid << "] Shutdown: Could not disconnect all remotes gracefully in "
+									<< blockDuration << "ms");
 		}
 	}
 

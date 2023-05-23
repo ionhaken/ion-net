@@ -229,12 +229,12 @@ void Update(NetRemoteStore& remoteStore, NetControl& control, ion::TimeMS now, i
 						packet->Data()[0] = NetMessageId::DisconnectionNotification;
 					}
 
-					ION_NET_LOG_VERBOSE("Connection lost;Initiated:"
-										<< (remoteSystem.mIsRemoteInitiated ? "remote" : "local") << ";mMode=" << remoteSystem.mMode
-										<< ";Time since last datagram : " << ion::TimeSince(now, remoteSystem.timeLastDatagramArrived)
-										<< "ms;Connection time:" << ion::TimeSince(now, remoteSystem.connectionTime)
-										<< "ms;Since last ping request:"
-										<< ion::TimeSince(now, remoteSystem.pingTracker.GetLastPingTime()));
+					ION_NET_LOG_VERBOSE(
+					  "[" << remoteStore.mGuid << "] Connection lost to [" << remoteSystem.guid
+						  << "];Initiated:" << (remoteSystem.mIsRemoteInitiated ? "remote" : "local") << ";mMode=" << remoteSystem.mMode
+						  << ";Time since last datagram : " << ion::TimeSince(now, remoteSystem.timeLastDatagramArrived)
+						  << "ms;Connection time:" << ion::TimeSince(now, remoteSystem.connectionTime)
+						  << "ms;Since last ping request:" << ion::TimeSince(now, remoteSystem.pingTracker.GetLastPingTime()));
 					packet->mGUID = remoteSystem.guid;
 					packet->mAddress = remoteSystem.mAddress;
 					packet->mRemoteId = remoteSystem.mId;

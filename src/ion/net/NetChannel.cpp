@@ -238,9 +238,10 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 		{
 			ION_ASSERT(seg->len > 0, "Invalid fragment");
 			bool isRecover = IsReceiveRecovering();
-			// size = mRcvQueue.Front()->len;
 			packet = reinterpret_cast<NetPacket*>(seg->data - seg->mOffset);
 			ION_ASSERT(packet->mAddress == remote.mAddress, "Invalid address");
+			ION_ASSERT(packet->mGUID == remote.guid, "Invalid GUID");
+			ION_ASSERT(packet->mRemoteId == remote.mId.load(), "Invalid remote");
 			packet->mLength = seg->len;
 			packet->mInternalPacketType = NetInternalPacketType::DownstreamSegment;
 			packet->mDataPtr = seg->data;
@@ -257,6 +258,8 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 				auto ret = Receive(control, remote, NetPacketHeader(packet), size);
 				ION_ASSERT(ret == int(size), "Invalid reception");
 				packet->mAddress = remote.mAddress;
+				packet->mGUID = remote.guid;
+				packet->mRemoteId = remote.mId.load();
 				packet->mLength = size;
 				ION_NET_CHANNEL_LOG("Channel in: Packet " << size << " bytes;GUID=" << packet->mGUID);
 			}

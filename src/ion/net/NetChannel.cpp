@@ -239,9 +239,9 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 			ION_ASSERT(seg->len > 0, "Invalid fragment");
 			bool isRecover = IsReceiveRecovering();
 			packet = reinterpret_cast<NetPacket*>(seg->data - seg->mOffset);
-			ION_ASSERT(packet->mAddress == remote.mAddress, "Invalid address");
-			ION_ASSERT(packet->mGUID == remote.guid, "Invalid GUID");
-			ION_ASSERT(packet->mRemoteId == remote.mId.load(), "Invalid remote");
+			ION_ASSERT(packet->mAddress == remote.mAddress, "Invalid address"); // Set by socket layer
+			packet->mGUID = remote.guid;
+			packet->mRemoteId = remote.mId.load();
 			packet->mLength = seg->len;
 			packet->mInternalPacketType = NetInternalPacketType::DownstreamSegment;
 			packet->mDataPtr = seg->data;

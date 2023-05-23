@@ -15,6 +15,8 @@
 #include <ion/jobs/JobScheduler.h>
 #include <ion/jobs/TimedJob.h>
 
+#include <ion/string/Hex.h>
+
 namespace ion::NetReceptionLayer
 {
 
@@ -82,8 +84,9 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		{
 			char str1[64];
 			remoteSystem->mAddress.ToString(str1, 64, false);
-			ION_ABNORMAL("Temporary " << remoteSystem->timeoutTime << "ms ban " << ion::String(str1) << " for sending nonsense data;GUID="
-									  << remoteSystem->guid << ";packetId=" << (unsigned char)(data[0]));
+			ION_NET_LOG_ABNORMAL("Temporary " << remoteSystem->timeoutTime << "ms ban " << ion::String(str1)
+											  << " for sending nonsense data;GUID=" << remoteSystem->guid
+											  << ";packetId=" << (unsigned char)(data[0]));
 
 			AddToBanList(reception, control, str1, remoteSystem->timeoutTime);
 			remoteSystem->reliableChannels.Reset(control, *remoteSystem);
@@ -124,8 +127,8 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 			else
 			{
 				// Do not flag this as bad, as GUID can change.
-				ION_ABNORMAL("[" << remoteStore.mGuid << "] Ignored invalid connection request from " << remoteSystem->guid
-								 << " when already connected");
+				ION_NET_LOG_ABNORMAL("[" << remoteStore.mGuid << "] Ignored invalid connection request from " << remoteSystem->guid
+										 << " when already connected");
 			}
 		}
 		return false;
@@ -134,14 +137,15 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 	{
 		if (byteSize <= sizeof(unsigned char) + sizeof(unsigned int) + sizeof(unsigned short) + sizeof(ion::Time) * 2)
 		{
-			ION_ABNORMAL("Invalid Message: NewIncomingConnection");
+			ION_NET_LOG_ABNORMAL("Invalid Message: NewIncomingConnection");
 			return false;
 		}
 
 		if (remoteSystem->mMode != NetMode::HandlingConnectionRequest)
 		{
 			// Ignore, already connected. Not abnormal as happens on cross connection case
-			ION_DBG("[" << remoteStore.mGuid << "] Connect request received from " << remoteSystem->guid << " when already connected");
+			ION_NET_LOG_VERBOSE("[" << remoteStore.mGuid << "] Connect request received from " << remoteSystem->guid
+									<< " when already connected");
 			return false;
 		}
 
@@ -161,7 +165,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		isValid &= inBitStream.Process(sentPingTime);
 		if (!isValid)
 		{
-			ION_ABNORMAL("Invalid Message: NewIncomingConnection");
+			ION_NET_LOG_ABNORMAL("Invalid Message: NewIncomingConnection");
 			return false;
 		}
 		ion::NetRemoteStoreLayer::OnConnectedPong(remoteStore, now, sentPingTime, remoteTime, remoteSystem);
@@ -263,7 +267,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		if (byteSize <=
 			sizeof(ion::NetMessageId) + sizeof(unsigned int) + sizeof(unsigned short) + sizeof(NetRemoteIndex) + sizeof(ion::Time) * 2)
 		{
-			ION_ABNORMAL("Version mismatch");
+			ION_NET_LOG_ABNORMAL("Version mismatch");
 			return false;
 		}
 
@@ -298,7 +302,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		isValid &= reader.Process(sentPingTime);
 		if (!isValid)
 		{
-			ION_ABNORMAL("Invalid connection request accepted");
+			ION_NET_LOG_ABNORMAL("Invalid connection request accepted");
 			return false;
 		}
 		ion::NetRemoteStoreLayer::OnConnectedPong(remoteStore, now, sentPingTime, remoteTime, remoteSystem);
@@ -337,7 +341,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 
 		if (alreadyConnected == false)
 		{
-			ION_DBG("[" << remoteStore.mGuid << "] Ping accepting connection " << remoteSystem->guid);
+			ION_NET_LOG_VERBOSE("[" << remoteStore.mGuid << "] Ping accepting connection " << remoteSystem->guid);
 			remoteSystem->pingTracker.OnPing(now);
 			NetControlLayer::PingInternal(control, remoteStore, remoteSystem->mAddress, true, NetPacketReliability::Unreliable, now);
 		}
@@ -363,7 +367,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		}
 		else
 		{
-			ION_ABNORMAL("Invalid packet from " << remoteSystem->guid << ";id=" << data[0]);
+			ION_NET_LOG_ABNORMAL("Invalid packet from " << remoteSystem->guid << ";id=" << data[0]);
 		}
 		return false;
 	}
@@ -380,6 +384,8 @@ void RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 	// To be thread safe, this has to be called in the same thread as HandleSocketReceiveFromConnectedPlayer
 	while (ion::NetPacket* packet = remoteSystem->reliableChannels.Receive())
 	{
+		ION_NET_LOG_VERBOSE_MSG("Msg: Receiving id=" << Hex<uint8_t>(packet->Data()[0]) << ";Length=" << packet->Length()
+													<< ";GUID=" << packet->mGUID << ";InternalType=" << packet->mInternalPacketType);
 		if (remoteSystem->mMetrics)
 		{
 			// #TODO: Not always reliable.
@@ -446,7 +452,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 			// Reroute clients using conversation key, but only if the remote packet is valid.
 			if (remoteSystem->reliableChannels.Input(control, *remoteSystem, conversation, recvFromStruct, timeRead))
 			{
-				ION_LOG_INFO("Rerouted system " << remoteSystem->mAddress << " to new adress " << recvFromStruct.Address());
+				ION_NET_LOG_INFO("Rerouted system " << remoteSystem->mAddress << " to new adress " << recvFromStruct.Address());
 				if (remoteSystem->mMetrics)
 				{
 					remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::Raw,
@@ -459,7 +465,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 			}
 			else
 			{
-				ION_ABNORMAL("Invalid conversation key change attempt. Disable fast rerouting as a security measure.");
+				ION_NET_LOG_ABNORMAL("Invalid conversation key change attempt. Disable fast rerouting as a security measure.");
 				remoteSystem->mAllowFastReroute = false;
 				return true;
 			}
@@ -694,7 +700,7 @@ NetBanStatus IsBanned(NetReception& reception, NetControl& control, const char* 
 	ion::NetInterfacePtr<NetBanStruct> temp;
 	NetBanStatus banStatus = NetBanStatus::NotBanned;
 	unsigned banListIndex = 0;
-	
+
 	reception.mBanList.Access(
 	  [&](NetBanListVector& banList)
 	  {

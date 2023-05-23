@@ -1,4 +1,5 @@
 #pragma once
+#include <ion/net/NetLogging.h>
 #include <ion/net/NetSdk.h>
 #include <ion/net/NetSecureTypes.h>
 
@@ -85,9 +86,3 @@ inline bool Decrypt(unsigned char* dst, const unsigned char* src, unsigned long 
 }
 
 }  // namespace ion::NetSecure
-
-#if ION_NET_FEATURE_SECURITY && ION_NET_FEATURE_SECURITY_AUDIT
-	#define ION_NET_SECURITY_AUDIT_PRINTF(__format, ...) ION_LOG_INFO_FMT(__format, __VA_ARGS__)
-#else
-	#define ION_NET_SECURITY_AUDIT_PRINTF(__format, ...)
-#endif

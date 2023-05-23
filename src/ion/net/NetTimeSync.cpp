@@ -52,7 +52,7 @@ void ion::NetTimeSync::Update(const NetRttTracker& tracker)
 		}
 		else
 		{
-			ION_ABNORMAL("Remote ping is older than latest received"
+			ION_NET_LOG_ABNORMAL("Remote ping is older than latest received"
 					 << ";delta=" << delta << ";latestSendTime=" << latestSendTime << ";Ping=" << ping
 					 << ";IsInSync=" << (IsInSyncInternal() ? "true" : "false"));
 		}
@@ -60,7 +60,7 @@ void ion::NetTimeSync::Update(const NetRttTracker& tracker)
 	else
 	{
 		mPingFrequency = MinPingFrequency;
-		ION_DBG("Invalid clock sample;in range=" << inRange << ";valid=" << validCount << ";rtt=" << tracker.GetLastSample().ping);
+		ION_NET_LOG_VERBOSE("Invalid clock sample;in range=" << inRange << ";valid=" << validCount << ";rtt=" << tracker.GetLastSample().ping);
 	}
 }
 
@@ -234,7 +234,7 @@ void ion::NetTimeSync::Update(NetRttTracker::SampleBuffer& samples, TimeMS lates
 		// Large changes to clock differential
 		if (mState != NetTimeSyncState::NoSync)
 		{
-			ION_LOG_INFO("Clock differential resync: Differential: "
+			ION_NET_LOG_INFO("Clock differential resync: Differential: "
 				<< "prev=" << mSynchronizedClock.ClockDifferential() << ";latest=" << latestOffset << " (" << offsetDelta << "ms offset)"
 				<< ";next=" << newClockDiff);
 		}

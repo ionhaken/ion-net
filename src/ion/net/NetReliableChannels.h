@@ -49,6 +49,9 @@ public:
 	bool IsOutgoingDataWaiting(void) const;
 	bool AreAcksWaiting(void) const;
 
+
+
+
 private:
 	ION_ACCESS_GUARD(mGuard);
 	NetPacket* Receive(NetChannel& channel, NetControl& control, NetRemoteSystem& remote);

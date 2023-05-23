@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ion/net/NetSecureTypes.h>
+
 #include <ion/util/Math.h>
 #include <ion/util/SafeRangeCast.h>
 
@@ -53,7 +55,16 @@ constexpr uint16_t NetIpMaxMtuSize = 1492;
 	#endif
 #endif
 
-constexpr uint16_t NetMaxUdpPayloadSize() { return NetIpMaxMtuSize - NetIpV4MinHeaderSize - NetUdpHeaderSize; }
+constexpr uint16_t NetMaxUdpPayloadSize() { return NetUdpPayloadSize(NetIpMaxMtuSize, 4); }
+
+constexpr uint32_t NetConnectedProtocolOverHead = 22;
+constexpr uint32_t NetConnectedProtocolMinOverHead = 20; // No length included
+
+constexpr uint16_t NetConnectedProtocolPayloadSize(bool useEncryption = true)
+{
+	return NetUdpPayloadSize(NetIpMaxMtuSize) - uint16_t(ion::NetConnectedProtocolOverHead) -
+		   (useEncryption ? uint16_t(ion::NetSecure::AuthenticationTagLength) : 0);
+}
 
 constexpr uint16_t NetPreferedMtuSize[] = {ion::NetIpMaxMtuSize, 1200, ion::NetIpMinimumReassemblyBufferSize};
 constexpr int NetNumMtuSizes = sizeof(NetPreferedMtuSize) / sizeof(uint16_t);

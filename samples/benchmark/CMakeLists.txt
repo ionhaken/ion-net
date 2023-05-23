@@ -8,7 +8,7 @@ include_directories(
 
 GETCURRENTFOLDER()
 STANDARDSUBPROJECT(${current_folder})
-VSUBFOLDER(${current_folder} "Utils")
+VSUBFOLDER(${current_folder} "Samples")
 
 target_compile_features(benchmark PRIVATE cxx_std_20)
 if(MSVC)

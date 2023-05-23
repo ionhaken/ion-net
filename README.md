@@ -74,62 +74,7 @@ Getting Started
 Run cmake from your work directory, e.g. "cmake [Ion Net root directory]"
 
 
-Example server implementation
+Example implementations
 -----------------------------------------
 
-```
-// Starts server on port 60000. Reads packets until ctrl+break is pressed
-#include <ion/net/NetSdk.h>
-#include <ion/net/NetStartupParameters.h>
-#include <ion/net/NetGeneralPeer.h>
-void main()
-{
-	ion::NetInit();
-	{
-		ion::UniquePtr<ion::NetGeneralPeer> server = ion::MakeUnique<ion::NetGeneralPeer>();
-		ion::SocketDescriptor sd(60000, 0);
-		server->Startup(ion::NetStartupParameters::Create(8, &sd, 1));
-
-		while (!ion::Engine::IsExitRequested())
-		{
-			while (auto* packet = server->Receive())
-			{
-				ION_LOG_INFO("Server received packet" << packet->Data()[0]);
-				server->DeallocatePacket(packet);				
-			}
-			ion::Thread:Sleep(10);
-		}
-	}
-	ion::NetDeinit();
-}
-```
-
-Example client implementation
------------------------------------------
-```
-// Starts client and connects to localhost port 60000. Reads packets until ctrl+break is pressed
-#include <ion/net/NetSdk.h>
-#include <ion/net/NetStartupParameters.h>
-#include <ion/net/NetGeneralPeer.h>
-void main()
-{
-	ion::NetInit();
-	{
-		ion::UniquePtr<ion::NetGeneralPeer> client = ion::MakeUnique<ion::NetGeneralPeer>();
-		ion::SocketDescriptor sd;
-		client->Startup(ion::NetStartupParameters::CreateClient(&sd, 1));
-		client->Connect("127.0.0.1", 60000, nullptr, 0);
-
-		while (!ion::Engine::IsExitRequested())
-		{
-			while (auto* packet = client->Receive())
-			{
-				ION_LOG_INFO("Client received packet" << packet->Data()[0]);
-				client->DeallocatePacket(packet);				
-			}
-			ion::Thread:Sleep(10);
-		}
-	}
-	ion::NetDeinit();
-}
-```
+Please see example_client and example_server under samples/ for examples.

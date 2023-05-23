@@ -23,7 +23,7 @@ void NetBasePeer::Init(ion::NetInterfaceResource& resource)
 
 void NetBasePeer::Deinit(unsigned int blockingTime)
 {
-	Shutdown(blockingTime, 0, NetPacketPriority::Low);
+	Shutdown(blockingTime, 0, NetPacketPriority::Immediate);
 	DeleteNetPtr(mPeer);
 }
 

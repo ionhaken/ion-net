@@ -27,7 +27,7 @@ public:
 	NetConnections mConnections;
 	NetRemoteStore mRemoteStore;
 	NetSecurity mSecurity;
-
 };
 
 }  // namespace ion
+

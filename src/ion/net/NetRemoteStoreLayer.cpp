@@ -21,6 +21,8 @@
 #include <ion/jobs/JobIntermediate.h>
 #include <ion/jobs/JobScheduler.h>
 
+#include <ion/string/Hex.h>
+
 namespace ion::NetRemoteStoreLayer
 {
 
@@ -227,11 +229,12 @@ void Update(NetRemoteStore& remoteStore, NetControl& control, ion::TimeMS now, i
 						packet->Data()[0] = NetMessageId::DisconnectionNotification;
 					}
 
-					ION_DBG("Connection lost;Initiated:"
-							<< (remoteSystem.mIsRemoteInitiated ? "remote" : "local") << ";mMode=" << remoteSystem.mMode
-							<< ";Time since last datagram : " << ion::TimeSince(now, remoteSystem.timeLastDatagramArrived)
-							<< "ms;Connection time:" << ion::TimeSince(now, remoteSystem.connectionTime)
-							<< "ms;Since last ping request:" << ion::TimeSince(now, remoteSystem.pingTracker.GetLastPingTime()));
+					ION_NET_LOG_VERBOSE("Connection lost;Initiated:"
+										<< (remoteSystem.mIsRemoteInitiated ? "remote" : "local") << ";mMode=" << remoteSystem.mMode
+										<< ";Time since last datagram : " << ion::TimeSince(now, remoteSystem.timeLastDatagramArrived)
+										<< "ms;Connection time:" << ion::TimeSince(now, remoteSystem.connectionTime)
+										<< "ms;Since last ping request:"
+										<< ion::TimeSince(now, remoteSystem.pingTracker.GetLastPingTime()));
 					packet->mGUID = remoteSystem.guid;
 					packet->mAddress = remoteSystem.mAddress;
 					packet->mRemoteId = remoteSystem.mId;
@@ -279,7 +282,7 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 			}
 			if (remoteStore.mGuid != NetGuidAuthority)
 			{
-				ION_DBG("GUID collision: Connected with this IP, but GUID was taken by someone else");
+				ION_NET_LOG_VERBOSE("GUID collision: Connected with this IP, but GUID was taken by someone else");
 				result.outcome = ConnectionResponse::GUIDReserved;
 				return result;
 			}
@@ -288,7 +291,7 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 		{
 			// No disconnection notification was received and user has new GUID. Potentially a spoofed IP?
 			// If legit request, user should retry connection after old connection is dropped.
-			ION_ABNORMAL("Already connected with different GUID");
+			ION_NET_LOG_ABNORMAL("Already connected with different GUID");
 			result.outcome = ConnectionResponse::AlreadyConnected;
 			return result;
 		}
@@ -299,8 +302,8 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 
 		if (remoteStore.mGuid != ion::NetGuidAuthority)
 		{
-			ION_DBG("GUID collision at " << remoteStore.mIpList[0] << "(" << remoteStore.mGuid << "): Someone else took the guid " << guid
-										 << ";connectAddres=" << connectAddress);
+			ION_NET_LOG_VERBOSE("GUID collision at " << remoteStore.mIpList[0] << "(" << remoteStore.mGuid
+													 << "): Someone else took the guid " << guid << ";connectAddres=" << connectAddress);
 			result.outcome = ConnectionResponse::GUIDReserved;
 			return result;
 		}
@@ -309,14 +312,14 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 
 	if (!AllowIncomingConnections(remoteStore))
 	{
-		ION_DBG("No incoming connections allowed");
+		ION_NET_LOG_VERBOSE("No incoming connections allowed");
 		return result;
 	}
 	else if (GUIDInUse)
 	{
 		// Authority can give new GUID to replace reserved
 		guid = GenerateGUID(remoteStore);
-		ION_DBG("GUID collision: authority generated new GUID:" << guid);
+		ION_NET_LOG_VERBOSE("GUID collision: authority generated new GUID:" << guid);
 	}
 
 	RemoteSystemParameters rsp;
@@ -342,7 +345,7 @@ ConnectionResult AssignRemote(NetRemoteStore& remoteStore, NetInterfaceResource&
 	  AssignSystemAddressToRemoteSystemList(remoteStore, memoryResource, rsp, connectAddress, bindingAddress, &thisIPConnectedRecently);
 	if (thisIPConnectedRecently)
 	{
-		ION_ABNORMAL("IP recently connected");
+		ION_NET_LOG_ABNORMAL("IP recently connected");
 		result.outcome = ConnectionResponse::IPConnectedRecently;
 		remoteStore.mAuthorityConversations.RemoveKey(rsp.mConversationId);
 	}
@@ -471,7 +474,7 @@ void ResetRemoteSystem(NetRemoteStore& remoteStore, NetControl& control, NetInte
 		}
 		else
 		{
-			// #TODO: Time sync active, but no global clock found
+			ION_NET_LOG_ABNORMAL("Time sync was active without global clock. Trying to timesync with multiple peers?");
 		}
 		remote.timeSync.SetActive(false);
 	}
@@ -539,7 +542,7 @@ NetRemoteIndex GetRemoteSystemFromGUID(const NetRemoteStore& remoteStore, const 
 	}
 	else
 	{
-		ION_ABNORMAL("Invalid GUID");
+		ION_NET_LOG_ABNORMAL("Invalid GUID");
 	}
 	return ion::NetGUID::InvalidNetRemoteIndex;
 }
@@ -604,7 +607,7 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetRemoteStore& remo
 					remoteStore.mRemoteSystemList[i].mAddress.EqualsExcludingPort(connectAddress) &&
 					TimeSince(time, remoteStore.mRemoteSystemList[i].connectionTime) < ion::NetConnectFloodTimeout)
 				{
-					ION_ABNORMAL("Connection flood");
+					ION_NET_LOG_ABNORMAL("Connection flood");
 					// 4/13/09 Attackers can flood ID_OPEN_CONNECTION_REQUEST and use up all available connection slots
 					// Ignore connection attempts if this IP address connected within the last [NetConnectFloodTimeout] milliseconds
 					*thisIPConnectedRecently = true;
@@ -1095,7 +1098,7 @@ void LogUnreachable([[maybe_unused]] const NetSocketAddress& address)
 #if (ION_DEBUG_LOG_ENABLED == 1)
 	char buffer[128];
 	address.ToString(buffer, 128, true);
-	ION_LOG_INFO("Remote unreachable: " << buffer << ".");
+	ION_NET_LOG_INFO("Remote unreachable: " << buffer << ".");
 #endif
 }
 
@@ -1120,6 +1123,7 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 		[[fallthrough]];
 	case NetCommandType::SendRemote:
 	{
+		ION_ASSERT(command->mTarget.mRemoteId.RemoteIndex() <= remoteStore.mMaximumNumberOfPeers, "Invalid remote id");
 		auto& remoteSystem = remoteStore.mRemoteSystemList[command->mTarget.mRemoteId.RemoteIndex()];
 		if (command->mTarget.mRemoteId.IsValid() && remoteSystem.mId.load() == command->mTarget.mRemoteId)
 		{
@@ -1164,6 +1168,7 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 					 [&](NetRemoteId remoteId)
 					 {
 						 ION_ASSERT(remoteId.IsValid(), "Invalid remote");
+						 ION_ASSERT(remoteId.RemoteIndex() <= remoteStore.mMaximumNumberOfPeers, "Invalid remote id");
 						 auto& remoteSystem = remoteStore.mRemoteSystemList[remoteId.RemoteIndex()];
 						 if (remoteSystem.mId.load() == remoteId)
 						 {
@@ -1196,16 +1201,21 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 		}
 	}
 
-	constexpr const size_t MaxUnrealiablePayloadSize =
+	constexpr const size_t MaxSafeUnrealiablePayloadSize =	// Can send for all targets for sure
 	  NetUdpPayloadSize(NetIpMinimumReassemblyBufferSize - ion::NetConnectedProtocolOverHead - ion::NetSecure::AuthenticationTagLength);
-	if (command->mReliability != NetPacketReliability::Reliable && command->mNumberOfBytesToSend > MaxUnrealiablePayloadSize)
+	if (command->mReliability != NetPacketReliability::Reliable && command->mNumberOfBytesToSend > MaxSafeUnrealiablePayloadSize)
 	{
 		// If single target, compare remote MTU.
 		if (isExcluding || outRemoteIndices.Size() != 1 ||
-			(ion::NetMtuSize(command->mNumberOfBytesToSend + ion::NetConnectedProtocolOverHead + ion::NetSecure::AuthenticationTagLength) >
-			 remoteStore.mRemoteSystemList[outRemoteIndices.Front()].MTUSize))
+			command->mNumberOfBytesToSend >
+			  remoteStore.mRemoteSystemList[outRemoteIndices.Front()].PayloadSize() - ion::NetConnectedProtocolOverHead)
 		{
-			ION_DBG("Packet reliability changed to 'Reliable'. Too large packet to be unreliable;Size=" << command->mNumberOfBytesToSend);
+			ION_NET_LOG_VERBOSE(
+			  "Packet reliability changed to 'Reliable'. Too large packet to be unreliable;Size="
+			  << (command->mNumberOfBytesToSend) << ";Max="
+			  << ((isExcluding || outRemoteIndices.Size() != 1)
+					? MaxSafeUnrealiablePayloadSize
+					: remoteStore.mRemoteSystemList[outRemoteIndices.Front()].PayloadSize() - ion::NetConnectedProtocolOverHead));
 			command->mReliability = NetPacketReliability::Reliable;
 		}
 	}
@@ -1229,6 +1239,7 @@ void SendImmediate(NetRemoteStore& remoteStore, NetControl& control, NetCommandP
 		auto& remoteSystem = remoteStore.mRemoteSystemList[remoteIndex];
 		ION_ASSERT(NetModeIsOpen(remoteStore.mRemoteSystemList[remoteIndex].mMode), "Remote not reachable");
 		ION_ASSERT(remoteSystem.mMode != NetMode::Disconnected, "Invalid state to send reliable data");
+		ION_NET_LOG_VERBOSE_MSG("Msg: Sending id=" << Hex<uint8_t>(command.Get()->mData));
 		remoteSystem.reliableChannels.Send(control, now, remoteSystem, *command.Get(),
 										   (remoteSystem.mConversationId << 8) | uint32_t(command->mChannel));
 		if (remoteSystem.mMetrics)

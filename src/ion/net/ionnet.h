@@ -16,7 +16,6 @@ extern "C"
 
 		/* Connection attempt failure */
 		ION_NET_CODE_CANNOT_RESOLVE_DOMAIN_NAME = -10,
-		ION_NET_CODE_ALREADY_CONNECTED_TO_ENDPOINT = -9,
 		ION_NET_CODE_NO_FREE_CONNECTIONS = -8,
 		ION_NET_CODE_INVALID_PARAMETER = -7,
 
@@ -38,6 +37,7 @@ extern "C"
 		/* Connection attempt success */
 		ION_NET_CODE_CONNECTION_ATTEMPT_STARTED,
 		ION_NET_CODE_CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS,
+		ION_NET_CODE_ALREADY_CONNECTED_TO_ENDPOINT,
 
 		/* Connection State */
 		ION_NET_CODE_STATE_PENDING,
@@ -299,6 +299,8 @@ extern "C"
 	/*
 	 * Debugging
 	 */
+
+	void ion_net_set_logging_level(int level);
 
 	void ion_net_apply_network_simulator(ion_net_peer handle, ion_net_simulator_settings settings);
 

@@ -283,14 +283,14 @@ bool FromString(NetSocketAddress& address, const char* str, char portDelineator 
 			code = getaddrinfo(ipPart, nullptr, &hints, &servinfo);
 			if (servinfo == 0)
 			{
-				ION_ABNORMAL("getaddrinfo() returned " << code);
+				ION_NET_LOG_ABNORMAL("getaddrinfo() returned " << code);
 				return false;
 			}
 		}
 		else
 		{
 			// IPv4 fallback
-			ION_ABNORMAL("getaddrinfo() returned " << code);
+			ION_NET_LOG_ABNORMAL("getaddrinfo() returned " << code);
 			return SetBinaryAddress(address, str, portDelineator);
 		}
 	}

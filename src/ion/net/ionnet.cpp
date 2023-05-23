@@ -2,7 +2,7 @@
 
 #include <ion/net/NetConnectionLayer.h>
 #include <ion/net/NetControlLayer.h>
-#include <ion/net/NetGeneralPeer.h>
+#include <ion/net/NetGenericPeer.h>
 #include <ion/net/NetInterface.h>
 #include <ion/net/NetRawSendCommand.h>
 #include <ion/net/NetReceptionLayer.h>
@@ -61,7 +61,6 @@ static bool ion_net_send_out_of_band(ion_net_peer handle, const char* host, unsi
 	unsigned int realIndex = ion_net_user_index_to_socket_index(handle, connectionSocketIndex);
 	NetRawSendCommand cmd(*net.mConnections.mSocketList[realIndex], dataLength + 16);
 
-	// ion::BitStream bitStream;
 	{
 		auto writer(cmd.Writer());
 		writer.Process(NetMessageId::OutOfBandInternal);
@@ -94,9 +93,10 @@ static int ion_net_send_connection_request(ion_net_peer handle, ion_net_connect_
 	ION_NET_API_CHECK(target.remote_port != 0, INVALID_PARAMETER, "Invalid port");
 	if (!ion_net_resolve_target(target_ptr, (ion_net_socket)net.mConnections.mSocketList[connectionSocketIndex]))
 	{
-		ION_DBG("Cannot resolve domain name;host=" << target.mHost << ";port=" << target.mRemotePort << ";IPv="
-												   << mPeer->mConnections.mSocketList[connectionSocketIndex]->mBoundAddress.GetIPVersion()
-												   << ";bound=" << mPeer->mConnections.mSocketList[connectionSocketIndex]->mBoundAddress);
+		ION_NET_LOG_VERBOSE("Cannot resolve domain name;host="
+							<< target.host << ";port=" << target.remote_port
+							<< ";IPv=" << net.mConnections.mSocketList[connectionSocketIndex]->mBoundAddress.GetIPVersion()
+							<< ";bound=" << net.mConnections.mSocketList[connectionSocketIndex]->mBoundAddress);
 		return ION_NET_CODE_CANNOT_RESOLVE_DOMAIN_NAME;
 	}
 
@@ -131,7 +131,7 @@ static int ion_net_send_connection_request(ion_net_peer handle, ion_net_connect_
 		{
 			return NetConnectionAttemptResult::AlreadyConnectedToEndpoint;
 		}
-		ION_LOG_INFO("Started connecting to " << systemAddress);
+		ION_NET_LOG_INFO("Started connecting to " << systemAddress);
 		if (ion::SocketLayer::ConnectSocket(*socketLayer, systemAddress))
 		{
 			socketLayer->streamSocket = socketLayer->mNativeSocket;
@@ -372,6 +372,7 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 
 	// This needs to be done first to make sure all disconnects are sent and acked before shutdown can continue
 	ion::TimeMS now = ion::SteadyClock::GetTimeMS();
+	ION_NET_LOG_VERBOSE("Shutting down;block duration=" << blockDuration);
 	if (blockDuration > 0)
 	{
 		for (unsigned int i = 1; i <= systemListSize; i++)
@@ -379,6 +380,7 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 			// remoteSystemList in user thread
 			if (net.mRemoteStore.mRemoteSystemList[i].mMode != NetMode::Disconnected)
 			{
+				ION_NET_LOG_VERBOSE("Closing connection to " << net.mRemoteStore.mRemoteSystemList[i].guid);
 				NetControlLayer::CloseConnectionInternal(net.mControl, net.mRemoteStore, net.mConnections,
 														 net.mRemoteStore.mRemoteSystemList[i].mId.load(), true, !IsUpdateThreadRunning,
 														 orderingChannel, (NetPacketPriority)disconnectionNotificationPriority);
@@ -420,7 +422,7 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 		}
 		if (anyActive)
 		{
-			ION_DBG("Could not disconnect all remotes gracefully in " << blockDuration << "ms");
+			ION_NET_LOG_VERBOSE("Could not disconnect all remotes gracefully in " << blockDuration << "ms");
 		}
 	}
 
@@ -961,6 +963,8 @@ void ion_net_change_system_address(ion_net_peer handle, ion_net_remote_id_t remo
 	*reinterpret_cast<NetRemoteId*>(&bcs->mData) = *(NetRemoteId*)&remote_id;
 	net.mControl.mBufferedCommands.Enqueue(std::move(bcs));
 }
+
+void ion_net_set_logging_level(int level) { NetManager::mLoggingLevel = level; }
 
 void ion_net_apply_network_simulator([[maybe_unused]] ion_net_peer handle, [[maybe_unused]] ion_net_simulator_settings settings)
 {

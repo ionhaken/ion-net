@@ -62,7 +62,7 @@ struct NetRemoteSystem
 #endif
 	uint32_t mConversationId = 0;
 	std::atomic<NetRemoteId> mId;
-	uint16_t MTUSize = 0;
+	uint16_t MTUSize = 0; // MTU size without UDP/IP headers
 
 	// Connection handling
 	ion::TimeMS connectionTime;	 /// connection time, if active.
@@ -83,5 +83,18 @@ struct NetRemoteSystem
 	// Id
 	NetGUID guid;
 	NetSocketAddress mAddress;  /// Their external IP on the internet
+
+	int PayloadSize() const 
+	{
+		int payloadSize = ion::NetUdpPayloadSize(MTUSize);
+#if ION_NET_FEATURE_SECURITY
+		if (mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+		{
+			payloadSize -= ion::NetSecure::AuthenticationTagLength;
+		}
+#endif
+		return payloadSize;
+	}
+
 };
 }  // namespace ion

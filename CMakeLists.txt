@@ -135,7 +135,6 @@ install(TARGETS ion-net
 set_target_properties(ion-net PROPERTIES FOLDER "Lib")
 
 
-add_subdirectory(benchmark)
-add_subdirectory(fuzzer)
+add_subdirectory(samples)
 add_subdirectory(depend)
 

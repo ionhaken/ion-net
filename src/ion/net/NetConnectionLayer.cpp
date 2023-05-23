@@ -33,7 +33,7 @@ bool ValidateConnectionParameters(uint16_t mtu)
 {
 	if (mtu < NetPreferedMtuSize[NetNumMtuSizes - 1] || mtu > NetIpMaxMtuSize)
 	{
-		ION_ABNORMAL("Connection parameters has invalid MTU:" << mtu << ";min=" << NetPreferedMtuSize[NetNumMtuSizes - 1]
+		ION_NET_LOG_ABNORMAL("Connection parameters has invalid MTU:" << mtu << ";min=" << NetPreferedMtuSize[NetNumMtuSizes - 1]
 															  << ";max=" << NetIpMaxMtuSize);
 		return false;
 	}
@@ -44,18 +44,18 @@ bool ValidateConnectionParameters(ion::TimeMS timeRead, ion::TimeMS sentTime, io
 {
 	if (!NetIsTimeInRange(timeRead, sentTime, NetRttTracker::MaxPingTime))
 	{
-		ION_ABNORMAL("Connection parameters has invalid RTT");
+		ION_NET_LOG_ABNORMAL("Connection parameters has invalid RTT");
 		return false;
 	}
 	auto rtt = ion::DeltaTime(timeRead, sentTime);
 	if (rtt < 0)
 	{
-		ION_ABNORMAL("Connection parameters has invalid RTT");
+		ION_NET_LOG_ABNORMAL("Connection parameters has invalid RTT");
 		return false;
 	}
 	if (rtt > int32_t(defaultTimeout))
 	{
-		ION_ABNORMAL("Connection parameters timed out");
+		ION_NET_LOG_ABNORMAL("Connection parameters timed out");
 		return false;
 	}
 	return ValidateConnectionParameters(mtu);
@@ -109,7 +109,7 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 			  auto iter = rc.mRequests.Find(rc.mCancels.Back());
 			  if (iter != rc.mRequests.End())
 			  {
-				  ION_DBG("Connection request canceled by user request");
+				  ION_NET_LOG_VERBOSE("Connection request canceled by user request");
 				  ClearConnectionRequest(connections, iter->second);
 				  rc.mRequests.Erase(iter);
 			  }
@@ -163,17 +163,17 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 									ion::DeltaTime(now, rcs.nextRequestTime) > ReduceMTUSocketDelay)
 								{
 									// Go to lower MTU size if socket is not responsive
-									ION_DBG("Socket delay;MTU=" << NetPreferedMtuSize[MTUSizeIndex] << ";Request=" << rcs.requestsMade
+									ION_NET_LOG_VERBOSE("Socket delay;MTU=" << NetPreferedMtuSize[MTUSizeIndex] << ";Request=" << rcs.requestsMade
 																<< ";Delay=" << ion::DeltaTime(now, rcs.nextRequestTime));
 									rcs.requestsMade =
 									  (unsigned char)((MTUSizeIndex + 1) * (rcs.sendConnectionAttemptCount / NetNumMtuSizes));
 								}
-								ION_DBG("Connection request " << rcs.requestsMade << " sent;MTU=" << NetPreferedMtuSize[MTUSizeIndex]);
+								ION_NET_LOG_VERBOSE("Connection request " << rcs.requestsMade << " sent;MTU=" << NetPreferedMtuSize[MTUSizeIndex]);
 								rcs.nextRequestTime = now + rcs.timeBetweenSendConnectionAttemptsMS;
 							}
 							else
 							{
-								ION_ABNORMAL("Socket send error;MTU " << NetPreferedMtuSize[MTUSizeIndex] << ";Request=" << rcs.requestsMade
+								ION_NET_LOG_ABNORMAL("Socket send error;MTU " << NetPreferedMtuSize[MTUSizeIndex] << ";Request=" << rcs.requestsMade
 																	  << ";Code=" << socketCode);
 								if (socketCode == -10040)  // Message too large
 								{
@@ -200,7 +200,7 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 						{
 							if (condition1 && !condition2 && rcs.actionToTake == ion::RequestedConnection::CONNECT)
 							{
-								ION_DBG("Connection failed;attempts=" << rcs.sendConnectionAttemptCount);
+								ION_NET_LOG_VERBOSE("Connection failed;attempts=" << rcs.sendConnectionAttemptCount);
 								NetPacket* packet = AllocPacket(control, sizeof(char));
 								packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;	// Attempted a connection and couldn't
 								// packet->bitSize = (sizeof(char) * 8);
@@ -392,13 +392,13 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  ion::NetRemoteStoreLayer::GetInternalID(remoteStore, internalId);
 						  if (iter->second.systemAddress.GetPort() != internalId.GetPort())
 						  {
-							  ION_LOG_INFO("GUID collision. Cancel connection attempt;GUID=" << remoteGuid << ";RemoteAddress="
+							  ION_NET_LOG_INFO("GUID collision. Cancel connection attempt;GUID=" << remoteGuid << ";RemoteAddress="
 																							 << iter->second.systemAddress
 																							 << ";OwnAddress=" << internalId);
 						  }
 						  else
 						  {
-							  ION_DBG("GUID collision or tried to connect to self. Cancel connection attempt");
+							  ION_NET_LOG_VERBOSE("GUID collision or tried to connect to self. Cancel connection attempt");
 						  }
 						  packet = AllocPacket(control, sizeof(char));
 						  packet->Data()[0] = (byte)NetMessageId::ConnectionAttemptFailed;	// Attempted a connection and couldn't
@@ -412,7 +412,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  }
 					  else
 					  {
-						  ION_LOG_INFO("Duplicate GUID while not yet connected. Changed GUID to " << remoteStore.mGuid);
+						  ION_NET_LOG_INFO("Duplicate GUID while not yet connected. Changed GUID to " << remoteStore.mGuid);
 					  }
 				  }
 
@@ -467,7 +467,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		  });
 		if (!wasFound)
 		{
-			ION_DBG("Connection not found for open connection reply");
+			ION_NET_LOG_VERBOSE("Connection not found for open connection reply");
 		}
 		return true;
 	}
@@ -529,11 +529,11 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  if (thisGuid != remoteStore.mGuid)
 					  {
 						  // Authority gave new GUID for us
-						  ION_DBG("GUID changed from " << remoteStore.mGuid << " to " << thisGuid);
+						  ION_NET_LOG_VERBOSE("GUID changed from " << remoteStore.mGuid << " to " << thisGuid);
 						  remoteStore.mGuid = thisGuid;
 						  if (remoteStore.mActiveSystemListSize > 0)
 						  {
-							  ION_ABNORMAL("GUID changed when already connected");
+							  ION_NET_LOG_ABNORMAL("GUID changed when already connected");
 						  }
 					  }
 
@@ -552,7 +552,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  // ConversationId clash. System with lower GUID decides.
 						  if (remoteSystem->guid < remoteStore.mGuid)
 						  {
-							  ION_DBG("[" << remoteStore.mGuid << "] Using conversation key from remote " << remoteSystem->guid);
+							  ION_NET_LOG_VERBOSE("[" << remoteStore.mGuid << "] Using conversation key from remote " << remoteSystem->guid);
 							  if (remoteStore.mGuid == NetGuidAuthority)
 							  {
 								  remoteStore.mAuthorityConversations.RemoveKey(remoteSystem->mConversationId);
@@ -576,7 +576,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  remoteSystem->pingTracker.OnPong(timeRead, sentPingTime, remoteTime);
 						  if (!remoteSystem->pingTracker.HasSamples())
 						  {
-							  ION_ABNORMAL("Server clock synchronization failed");
+							  ION_NET_LOG_ABNORMAL("Server clock synchronization failed");
 							  // New connection attempt via request connection queue
 							  return;
 						  }
@@ -588,7 +588,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 								  if (remoteSystem->MTUSize != rsp.incomingMTU ||
 									  remoteSystem->mDataTransferSecurity != rsp.mDataTransferSecurity)
 								  {
-									  ION_ABNORMAL("Connection parameters renegotiated, flushing reliable channels");
+									  ION_NET_LOG_ABNORMAL("Connection parameters renegotiated, flushing reliable channels");
 									  remoteSystem->MTUSize = rsp.incomingMTU;
 									  remoteSystem->mDataTransferSecurity = rsp.mDataTransferSecurity;
 									  remoteSystem->reliableChannels.Reset(control, *remoteSystem);
@@ -624,11 +624,11 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 								  ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, cmd.Release(), timeRead);
 							  }
 						  }
-						  ION_DBG("[" << remoteStore.mGuid << "] Our connection request to " << remoteSystem->guid << " was accepted");
+						  ION_NET_LOG_VERBOSE("[" << remoteStore.mGuid << "] Our connection request to " << remoteSystem->guid << " was accepted");
 					  }
 					  else
 					  {
-						  ION_ABNORMAL("[" << remoteStore.mGuid << "] Failed, " << rsp.guid << " has no connections available");
+						  ION_NET_LOG_ABNORMAL("[" << remoteStore.mGuid << "] Failed, " << rsp.guid << " has no connections available");
 						  packet = AllocPacket(control, sizeof(char));
 						  packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;  // Attempted a connection and couldn't
 						  packet->mAddress = rcs->systemAddress;
@@ -642,7 +642,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		}
 		else
 		{
-			ION_ABNORMAL("Invalid message");
+			ION_NET_LOG_ABNORMAL("Invalid message");
 		}
 		return true;
 	}
@@ -654,7 +654,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			bs.Process(unconnectedHeader);
 			if ((NetMessageId)(data)[0] == NetMessageId::IncompatibleProtocolVersion)
 			{
-				ION_LOG_INFO("Remote protocol version=" << (unconnectedHeader >> 24))
+				ION_NET_LOG_INFO("Remote protocol version=" << (unconnectedHeader >> 24))
 			}
 			NetGUID guid;
 			bs.Process(guid);
@@ -681,11 +681,11 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  {
 							  // Note that GUID collision was checked first on connection reply 1 handling
 							  // If we still have GUID collision it's likely we are connecting to own address
-							  ION_LOG_INFO("GUID reserved: Trying to connect own address;Target=" << iter->second.systemAddress);
+							  ION_NET_LOG_INFO("GUID reserved: Trying to connect own address;Target=" << iter->second.systemAddress);
 						  }
 						  else if (ion::NetRemoteStoreLayer::RegenerateGuid(remoteStore))
 						  {
-							  ION_LOG_INFO("Duplicate GUID while not yet connected. Changed GUID from " << sentGuid << " to "
+							  ION_NET_LOG_INFO("Duplicate GUID while not yet connected. Changed GUID from " << sentGuid << " to "
 																										<< remoteStore.mGuid);
 							  return;
 						  }
@@ -693,10 +693,10 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  {
 							  // Cannot regenerate guid as we are probably already part of mesh->
 							  // We'll need to cancel connection attempt and let user use decide what to do.
-							  ION_LOG_INFO("GUID reserved: Our guid=" << remoteStore.mGuid << ";Remote=" << guid);
+							  ION_NET_LOG_INFO("GUID reserved: Our guid=" << remoteStore.mGuid << ";Remote=" << guid);
 						  }
 					  }
-					  ION_DBG("Connection request canceled due to message " << (unsigned char)(data)[0]);
+					  ION_NET_LOG_VERBOSE("Connection request canceled due to message " << (unsigned char)(data)[0]);
 					  ClearConnectionRequest(connections, iter->second);
 					  rc.mRequests.Erase(iter);
 				  }
@@ -731,7 +731,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 
 		if (remoteProtocolHeader != NetUnconnectedHeader)
 		{
-			ION_ABNORMAL("Incompatible protocol version: " << remoteProtocolHeader << ";expected:" << NetUnconnectedHeader);
+			ION_NET_LOG_ABNORMAL("Incompatible protocol version: " << remoteProtocolHeader << ";expected:" << NetUnconnectedHeader);
 			NetRawSendCommand cmd(*netSocket);
 			{
 				ByteWriter writer(cmd.Writer());
@@ -745,7 +745,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 
 		if (remoteStore.mMaximumIncomingConnections == 0)
 		{
-			ION_ABNORMAL("Connection attempt when not accepting connections");
+			ION_NET_LOG_ABNORMAL("Connection attempt when not accepting connections");
 			NetRawSendCommand cmd(*netSocket);
 			{
 				ByteWriter writer(cmd.Writer());
@@ -808,14 +808,14 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		isValid &= bs.Process(unconnectedHeader);
 		if (unconnectedHeader != NetUnconnectedHeader)
 		{
-			ION_ABNORMAL("Connection request 2 has invalid protocol header");
+			ION_NET_LOG_ABNORMAL("Connection request 2 has invalid protocol header");
 			break;
 		}
 		isValid &= bs.Process(bindingAddress);
 
 		if (!bindingAddress.IsValid())
 		{
-			ION_ABNORMAL("Connection request 2 has invalid binding address");
+			ION_NET_LOG_ABNORMAL("Connection request 2 has invalid binding address");
 			break;
 		}
 
@@ -830,7 +830,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 
 		if (!isValid || !ValidateConnectionParameters(timeRead, sentTime, remoteStore.mDefaultTimeoutTime, mtu))
 		{
-			ION_ABNORMAL("Invalid OpenConnectionRequest2");
+			ION_NET_LOG_ABNORMAL("Invalid OpenConnectionRequest2");
 			break;
 		}
 
@@ -873,8 +873,9 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 				if (!result.rssFromSA)
 				{
 					ION_ASSERT(result.outcome == ion::NetRemoteStoreLayer::ConnectionResponse::Ok, "Unhandled outcome");
-					ION_DBG("Out of free connections;Number of remote initiated connections="
-							<< remoteStore.mNumberOfIncomingConnections << ";MaxInconing=" << remoteStore.mMaximumIncomingConnections);
+					ION_NET_LOG_VERBOSE("Out of free connections;Number of remote initiated connections="
+										<< unsigned(remoteStore.mNumberOfIncomingConnections)
+										<< ";MaxInconing=" << unsigned(remoteStore.mMaximumIncomingConnections));
 					replyWriter.Process(NetMessageId::NoFreeIncomingConnections);
 					replyWriter.Process(NetUnconnectedHeader);
 					replyWriter.Process(remoteStore.mGuid);
@@ -927,7 +928,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					rssFromSA->pingTracker.OnPong(timeRead, sentTime, remoteTime);
 					if (!rssFromSA->pingTracker.HasSamples())
 					{
-						ION_ABNORMAL("Invalid RTT to remote client");
+						ION_NET_LOG_ABNORMAL("Invalid RTT to remote client");
 						rssFromSA->pingTracker.OnPing(timeRead - 250);
 						rssFromSA->pingTracker.OnPong(timeRead, timeRead - 250, remoteTime);
 					}

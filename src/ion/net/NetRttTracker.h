@@ -10,7 +10,7 @@
 #include <atomic>
 #include <ion/Base.h>
 
-#define ION_TIMESYNC_DBG(__msg, ...)  // ION_DBG(__msg, __VA_ARGS__);
+#define ION_TIMESYNC_DBG(__msg, ...)  // ION_NET_LOG_VERBOSE(__msg, __VA_ARGS__);
 
 namespace ion
 {

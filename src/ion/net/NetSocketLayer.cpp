@@ -155,17 +155,17 @@ private:
 #ifndef ION_PLATFORM_MICROSOFT
 			if (code != EAI_SYSTEM)
 			{
-				ION_ABNORMAL("getaddrinfo() returned: " << code);
+				ION_NET_LOG_ABNORMAL("getaddrinfo() returned: " << code);
 			}
 			else
 #endif
 			{
-				ION_ABNORMAL("getaddrinfo() error:" << ion::debug::GetLastErrorString());
+				ION_NET_LOG_ABNORMAL("getaddrinfo() error:" << ion::debug::GetLastErrorString());
 			}
 		}
 		else if (mServinfo == nullptr)
 		{
-			ION_ABNORMAL("getaddrinfo() returned no data");
+			ION_NET_LOG_ABNORMAL("getaddrinfo() returned no data");
 		}
 	}
 };
@@ -176,7 +176,7 @@ inline int SetSocketOption(ion::NetNativeSocket& nativeSocket, int level, int op
 	int result = setsockopt(nativeSocket, level, optname, reinterpret_cast<const char*>(&optVal), sizeof(T));
 	if (result != 0)
 	{
-		ION_ABNORMAL("setsockopt() failed. " << ion::debug::GetLastErrorString() << ";level=" << level << ";option=" << optname);
+		ION_NET_LOG_ABNORMAL("setsockopt() failed. " << ion::debug::GetLastErrorString() << ";level=" << level << ";option=" << optname);
 	}
 	return result;
 }
@@ -190,7 +190,7 @@ void GetSystemAddress(ion::NetNativeSocket& nativeSocket, ion::NetSocketAddress&
 
 	if (getsockname(nativeSocket, (struct sockaddr*)&ss, &slen) != 0)
 	{
-		ION_ABNORMAL("getsockname failed:" << ion::debug::GetLastErrorString());
+		ION_NET_LOG_ABNORMAL("getsockname failed:" << ion::debug::GetLastErrorString());
 		systemAddressOut = NetSocketAddress(nullptr);
 		return;
 	}
@@ -250,7 +250,7 @@ ion::NetBindResult BindSocket(NetSocket& socketLayer, ion::NetBindParameters& bi
 		  socketLayer.mNativeSocket = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
 		  if (!socketLayer.mNativeSocket)
 		  {
-			  ION_ABNORMAL("Invalid socket: " << ion::debug::GetLastErrorString());
+			  ION_NET_LOG_ABNORMAL("Invalid socket: " << ion::debug::GetLastErrorString());
 			  return ion::ForEachOp::Next;
 		  }
 #if ION_NET_FEATURE_IPV6 == 1
@@ -299,7 +299,7 @@ ion::NetBindResult BindSocket(NetSocket& socketLayer, ion::NetBindParameters& bi
 		  int ret = bind(socketLayer.mNativeSocket, aip->ai_addr, ion::SafeRangeCast<int>(aip->ai_addrlen));
 		  if (ret < 0)
 		  {
-			  ION_ABNORMAL("Bind failed: port " << bindParameters.port << " (" << ret << ") " << ion::debug::GetLastErrorString());
+			  ION_NET_LOG_ABNORMAL("Bind failed: port " << bindParameters.port << " (" << ret << ") " << ion::debug::GetLastErrorString());
 		  }
 		  else
 		  {
@@ -387,7 +387,7 @@ int ConnectSocket(NetSocket& socketLayer, ion::NetSocketAddress& systemAddress)
 			blockingSocketList.RemoveAtIndexFast(sockfdIndex);
 		blockingSocketListMutex.Unlock();*/
 	}
-	ION_LOG_INFO("Connect failed:" << ion::debug::GetLastErrorString() << " target=" << systemAddress);
+	ION_NET_LOG_INFO("Connect failed:" << ion::debug::GetLastErrorString() << " target=" << systemAddress);
 	CloseSocket(socketLayer);
 	return 0;
 }
@@ -473,7 +473,7 @@ void ConnectingThread(NetSocket& socket, SystemAddress& systemAddress)
 																			 &socketLayer, ion::NetGUID(1), false, TCP_IP_MAX_PACKET_SIZE);
 		  if (result.rssFromSA && result.outcome == ion::NetConnectionLayer::ConnectionResult::Verdict::Ok)
 		  {
-			  ION_LOG_INFO("Done connecting");
+			  ION_NET_LOG_INFO("Done connecting");
 			  result.rssFromSA->weInitiatedTheConnection = true;
 			  result.rssFromSA->mMode = NetMode::Connected;
 			  socketLayer.StreamSendThread(socketLayer.mNativeSocket);
@@ -491,7 +491,7 @@ void ConnectingThread(NetSocket& socket, SystemAddress& systemAddress)
 				  }
 				  else
 				  {
-					  //  ION_DBG("VAL=" << ion::debug::GetLastErrorString());
+					  //  ION_NET_LOG_VERBOSE("VAL=" << ion::debug::GetLastErrorString());
 					  ion::Thread::SleepMs(0);
 				  }
 			  }
@@ -535,15 +535,15 @@ void ListeningThread(NetSocket& socket)
 				  timeval tv;
 				  tv.tv_sec = 0;
 				  tv.tv_usec = 30000;
-				  // ION_LOG_INFO("Select");
+				  // ION_NET_LOG_INFO("Select");
 				  int selectResult = (int)select((int)(largestDescriptor) + 1, &readFD, &writeFD, &exceptionFD, &tv);
 				  if (selectResult > 0)
 				  {
 					  struct sockaddr_storage sockAddr;
 					  socklen_t sockAddrSize = sizeof(sockAddr);
-					  ION_LOG_INFO("Accepting");
+					  ION_NET_LOG_INFO("Accepting");
 					  __TCPSOCKET__ acceptedSocket = accept(mNativeSocket, (sockaddr*)&sockAddr, (socklen_t*)&sockAddrSize);
-					  ION_LOG_INFO("Accepted");
+					  ION_NET_LOG_INFO("Accepted");
 					  SystemAddress systemAddress;
 					  memcpy(&systemAddress.address, (sockaddr_in*)&sockAddr,
 							 sockAddr.ss_family == AF_INET ? sizeof(sockaddr_in) : sizeof(sockaddr_in6));

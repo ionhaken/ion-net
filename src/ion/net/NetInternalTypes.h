@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ion/net/NetInternalConfig.h>
+#include <ion/net/NetLogging.h>
 #include <ion/net/NetPayload.h>
 #include <ion/net/NetTypes.h>
 
@@ -158,9 +159,6 @@ struct NetUpstreamPacket
 using NetSocketSendParameters = NetUpstreamPacket<ion::NetMaxUdpPayloadSize()>;
 
 static constexpr const size_t NetSocketSendParametersHeaderSize = offsetof(NetSocketSendParameters, data);
-
-constexpr uint32_t NetConnectedProtocolOverHead = 22;
-constexpr uint32_t NetConnectedProtocolMinOverHead = 20;
 
 // [conversation id (4)][sequence number(4)][segment number(4)]
 constexpr int NetUnencryptedProtocolBytes = 8;

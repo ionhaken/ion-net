@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <utility>
 
-#define ION_NET_CHANNEL_TUNER_LOG(__msg, ...)  // ION_LOG_INFO(__msg, __VA_ARGS__)
+#define ION_NET_CHANNEL_TUNER_LOG(__msg, ...)  // ION_NET_LOG_INFO(__msg, __VA_ARGS__)
 
 namespace ion
 {
@@ -61,7 +61,7 @@ bool NetReliableChannels::Input(NetControl& control, NetRemoteSystem& remote, ui
 	{
 		if (length < (NetConnectedProtocolMinOverHead + ion::NetSecure::AuthenticationTagLength))
 		{
-			ION_ABNORMAL("Invalid packet size: " << length << "/"
+			ION_NET_LOG_ABNORMAL("Invalid packet size: " << length << "/"
 												 << ion::NetConnectedProtocolMinOverHead + ion::NetSecure::AuthenticationTagLength);
 			return false;
 		}
@@ -75,7 +75,7 @@ bool NetReliableChannels::Input(NetControl& control, NetRemoteSystem& remote, ui
 												   length - NetUnencryptedProtocolBytes, nonce, remote.mSharedKey);
 		if (!isDecrypted)
 		{
-			ION_ABNORMAL("Reliable layer decrypt failed");
+			ION_NET_LOG_ABNORMAL("Reliable layer decrypt failed");
 			return false;
 		}
 
@@ -135,13 +135,13 @@ NetPacket* NetReliableChannels::Receive(NetChannel& channel, NetControl& control
 						}
 						else
 						{
-							ION_ABNORMAL("Big data key mismatch");
+							ION_NET_LOG_ABNORMAL("Big data key mismatch");
 						}
 					}
 
 					if (totalSize <= maxSize)
 					{
-						ION_DBG("Received big data request from " << remote.guid.Raw() << ";size=" << (totalSize / 1024) << "KB");
+						ION_NET_LOG_VERBOSE("Received big data request from " << remote.guid.Raw() << ";size=" << (totalSize / 1024) << "KB");
 						NetPacket* buffer = ion::NetControlLayer::AllocateUserPacket(control, totalSize);
 						if (buffer)
 						{
@@ -158,17 +158,17 @@ NetPacket* NetReliableChannels::Receive(NetChannel& channel, NetControl& control
 						}
 						else
 						{
-							ION_ABNORMAL("Not enough memory for big data");
+							ION_NET_LOG_ABNORMAL("Not enough memory for big data");
 						}
 					}
 					else
 					{
-						ION_ABNORMAL("Too large packet");
+						ION_NET_LOG_ABNORMAL("Too large packet");
 					}
 				}
 				else
 				{
-					ION_ABNORMAL("Invalid big data");
+					ION_NET_LOG_ABNORMAL("Invalid big data");
 				}
 				NetControlLayer::DeallocateUserPacket(control, packet);
 			}
@@ -198,7 +198,7 @@ NetPacket* NetReliableChannels::Receive(NetChannel& channel, NetControl& control
 			}
 			else
 			{
-				ION_ABNORMAL("Invalid big data");
+				ION_NET_LOG_ABNORMAL("Invalid big data");
 				NetControlLayer::DeallocateUserPacket(control, buffer.mBuffer);
 				buffer.mBuffer = nullptr;
 				channel.mState.mIsBigDataActive = false;
@@ -353,14 +353,7 @@ NetChannel* NetReliableChannels::EnsureChannel(uint32_t conversation, NetRemoteS
 	if (channelIdx == 0xFF)
 	{
 		channelIdx = uint8_t(mOrderedChannels.Size());
-		int payloadSize = ion::NetUdpPayloadSize(remote.MTUSize);
-#if ION_NET_FEATURE_SECURITY
-		if (remote.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
-		{
-			payloadSize -= ion::NetSecure::AuthenticationTagLength;
-		}
-#endif
-		mOrderedChannels.Add(std::move(NetChannel(conversation, now, payloadSize)));
+		mOrderedChannels.Add(std::move(NetChannel(conversation, now, remote.PayloadSize())));
 		auto* channel = &mOrderedChannels.Back();
 
 		ION_ASSERT(channelIdx < NetNumberOfChannels, "Invalid channel index");

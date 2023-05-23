@@ -14,7 +14,7 @@
 #if TEST_RAKNET_REFERENCE == 0
 	#include <ion/core/Core.h>
 	#include <ion/jobs/JobScheduler.h>
-	#include <ion/net/NetGeneralPeer.h>
+	#include <ion/net/NetGenericPeer.h>
 	#include <ion/net/NetSecure.h>
 	#include <ion/net/NetStartupParameters.h>
 	#include <ion/net/NetMessageIdentifiers.h>
@@ -56,7 +56,7 @@ union TestBuffer
 static float gPacketLoss = 0.0f;
 static unsigned short gExtraPing = 20;
 
-using PeerInstance = BaseLib::NetGeneralPeer;
+using PeerInstance = BaseLib::NetGenericPeer;
 
 void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerInstance>>& peerList, ion::UniquePtr<PeerInstance>& server)
 {

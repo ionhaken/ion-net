@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ion/net/NetConfig.h>
+#include <ion/net/NetLogging.h>
 #include <ion/net/ionnet_types.h>
 
 #include <ion/byte/ByteSerialization.h>

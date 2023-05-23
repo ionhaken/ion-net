@@ -18,7 +18,9 @@
 namespace ion
 {
 
-#define ION_NET_CHANNEL_LOG(__msg, ...)	 // ION_LOG_INFO(__msg, __VA_ARGS__)
+	
+#define ION_NET_CHANNEL_LOG(__msg, ...)	ION_NET_LOG_VERBOSE_CHANNEL(__msg, __VA_ARGS__)
+	
 
 // Changes to original KCP code:
 // 1) Reduce KCP buffer size to max MTU size
@@ -127,7 +129,7 @@ static ION_FORCE_INLINE char* ikcp_decode32u(char* p, uint32_t* l)
 //---------------------------------------------------------------------
 // create a new kcpcb
 //---------------------------------------------------------------------
-NetChannel::NetChannel(uint32_t conv, ion::TimeMS currentTime, int mtu)
+NetChannel::NetChannel(uint32_t conv, ion::TimeMS currentTime, int payloadSizeWithoutAuthenticantionTag)
 {
 	mState.conv = conv;
 	mState.snd_una = 0;
@@ -143,8 +145,8 @@ NetChannel::NetChannel(uint32_t conv, ion::TimeMS currentTime, int mtu)
 	mState.cwnd = 1;
 	mState.incr = 0;
 	mState.probe = 0;
-	mState.mtu = mtu;
-	mState.mss = mState.mtu - NetConnectedProtocolOverHead;
+	mState.mtu = payloadSizeWithoutAuthenticantionTag;
+	mState.mss = mState.mtu - NetConnectedProtocolOverHead; // #TODO: Support optimized MSS (separate CMD for segments without length)
 
 #if ION_NET_KCP_STREAMING
 	mState.stream = 0;
@@ -244,7 +246,7 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 			packet->mDataPtr = seg->data;
 			mRcvQueue.PopFront();
 			ReceivePost(isRecover);
-			ION_NET_CHANNEL_LOG("Channel in: packet " << seg->len << " bytes");
+			ION_NET_CHANNEL_LOG("Channel in: Packet " << seg->len << " bytes;GUID=" << packet->mGUID);
 		}
 		else
 		{
@@ -256,7 +258,7 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 				ION_ASSERT(ret == int(size), "Invalid reception");
 				packet->mAddress = remote.mAddress;
 				packet->mLength = size;
-				ION_NET_CHANNEL_LOG("Channel in: Packet " << size << " bytes");
+				ION_NET_CHANNEL_LOG("Channel in: Packet " << size << " bytes;GUID=" << packet->mGUID);
 			}
 		}
 	}
@@ -478,7 +480,7 @@ int NetChannel::Send(NetRemoteSystem& remote, NetCommand& command, uint64_t data
 			seg = remote.Allocate<NetUpstreamSegment>(sizeof(NetUpstreamSegment));
 			if (seg == NULL)
 			{
-				ION_ABNORMAL("Out of KCP memory");
+				ION_NET_LOG_ABNORMAL("Out of KCP memory");
 				return -2;
 			}
 			seg->mCommand = &command;
@@ -681,7 +683,7 @@ int NetChannel::FindRcvIndex(uint32_t sn)
 bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::NetSocketReceiveData& packet, ion::TimeMS currentTime,
 					   size_t size, uint32_t& outAckedBytes, Deque<NetPacket*, NetAllocator<NetPacket*>>& recvQ)
 {
-	ION_NET_CHANNEL_LOG("Channel in: receive;size=" << size << " bytes");
+	ION_NET_CHANNEL_LOG("Channel in: receive;size=" << size << " bytes;GUID=" << remote.guid);
 
 	bool packetMoved = false;
 	uint32_t prev_una = mState.snd_una;
@@ -701,7 +703,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 		data = ikcp_decode32u(data, &conv);
 		if (conv != mState.conv)
 		{
-			ION_ABNORMAL("Invalid conversation at " << size_t((byte*)data - packet.mPayload));
+			ION_NET_LOG_ABNORMAL("Invalid conversation at " << size_t((byte*)data - packet.mPayload));
 			break;
 		}
 
@@ -724,7 +726,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 
 		if ((long)size < (long)len)
 		{
-			ION_ABNORMAL("Invalid segment length");
+			ION_NET_LOG_ABNORMAL("Invalid segment length");
 			break;
 		}
 
@@ -836,8 +838,11 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 		}
 		else if (cmd == IKCP_CMD_UNRELIABLE_NO_ACK)
 		{
+			ION_NET_CHANNEL_LOG("Channel in: Unrealiable packet;Len=" << len);
 			NetPacket* p = NetControlLayer::AllocateUserPacket(control, len);
 			p->mAddress = remote.mAddress;
+			p->mGUID = remote.guid;
+			p->mRemoteId = remote.mId.load();
 			p->mLength = len;
 			memcpy(p->mDataPtr, (byte*)data, len);
 			recvQ.PushBack(p);
@@ -856,7 +861,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 		}
 		else
 		{
-			ION_ABNORMAL("Channel in: invalid cmd");
+			ION_NET_LOG_ABNORMAL("Channel in: invalid cmd:" << cmd);
 			break;
 		}
 
@@ -867,7 +872,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 
 	if (size != 0)
 	{
-		ION_ABNORMAL("Unprocessed data in packet");
+		ION_NET_LOG_ABNORMAL("Unprocessed data in packet");
 	}
 
 	if (flag != 0)
@@ -925,7 +930,6 @@ NetChannelWriteContext ::~NetChannelWriteContext()
 int SendKCPPacket(NetChannelWriteContext& context, int len)
 {
 	context.mRemote.lastReliableSend = context.mCurrentTime;
-	ION_NET_CHANNEL_LOG("Channel out: send;size=" << len << " bytes");
 #if ION_NET_FEATURE_SECURITY
 	if (context.mRemote.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
 	{
@@ -950,6 +954,10 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 		ION_ASSERT(len <= ion::NetMaxUdpPayloadSize(), "Too large packet");
 		context.mSsp->length = len;
 	}
+	ION_NET_CHANNEL_LOG("Channel out: send;size=" << len << " bytes"
+												  << ";channel=" << uint8_t(context.mSsp->data[0])
+												  << ";conv=" << *reinterpret_cast<uint32_t*>(&context.mSsp->data[0])
+												  << ";sn=" << *reinterpret_cast<uint32_t*>(&context.mSsp->data[4]));
 	if (context.mRemote.mMetrics)
 	{
 		context.mRemote.mMetrics->OnSent(context.mCurrentTime, ion::PacketType::Raw,
@@ -991,7 +999,6 @@ static void ikcp_encode_seg(ByteWriterUnsafe& writer, const NetUpstreamSegmentHe
 
 void NetChannel::Flush(NetChannelWriteContext& context)
 {
-	ION_NET_CHANNEL_LOG("Channel flush;SndBuf=" << mSndBuf.Size() << ";SndQ=" << mSndQueue.Size());
 	uint32_t resent, cwnd;
 	uint32_t rtomin;
 	NetUpstreamSegmentHeader seg;
@@ -1104,8 +1111,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	}
 
 	auto WriteDataSegment = [&context](NetCommand* cmd, size_t pos, size_t len)
-	{
-		
+	{	
 		context.mWriter.Write((uint16_t)len);
 		ION_ASSERT(len > 0, "Invalid data segment");
 		context.mWriter.WriteArray((byte*)(&cmd->mData) + pos, len);
@@ -1148,6 +1154,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 		if (FlushBufferIfNeeded(NetConnectedProtocolOverHead + SafeRangeCast<uint32_t>(cmd->mNumberOfBytesToSend)))
 		{
 			context.mWriter.Write(mState.conv);
+			// #TODO: Free 9 bytes for unreliable data
 			context.mWriter.Write(uint32_t(0));// sn
 			context.mWriter.Write(uint32_t(0));// ts
 			context.mWriter.Write(uint8_t(0));	// frg
@@ -1191,8 +1198,8 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 				int32_t step = (mState.nodelay < 2) ? ((int32_t)(segment->mHeader.rto)) : mState.rx_rto;
 				segment->mHeader.rto += step / 2;
 			}
-			ION_NET_CHANNEL_LOG("Segment lost after " << _itimediff(currentTime, segment->resendts) + segment->rto
-													  << "ms;rto=" << segment->rto << ";rx_rto=" << mState.rx_rto);
+			ION_NET_CHANNEL_LOG("Segment lost after " << _itimediff(context.mCurrentTime, segment->mHeader.resendts) + segment->mHeader.rto
+													  << "ms;rto=" << segment->mHeader.rto << ";rx_rto=" << mState.rx_rto);
 			segment->mHeader.resendts = context.mCurrentTime + segment->mHeader.rto;
 			if (segment->mHeader.cmd == IKCP_CMD_PUSH)
 			{
@@ -1222,7 +1229,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 
 			FlushBufferIfNeeded(NetConnectedProtocolOverHead + segment->mHeader.len);
 
-			ION_NET_CHANNEL_LOG("Channel out: data;conv=" << segment->conv << ";size=" << segment->mHeader.len);
+			ION_NET_CHANNEL_LOG("Channel out: data;conv=" << segment->mHeader.conv << ";size=" << segment->mHeader.len);
 
 
 			ikcp_encode_seg(context.mWriter, segment->mHeader);

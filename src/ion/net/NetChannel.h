@@ -103,7 +103,9 @@ public:
 
 	struct State
 	{
-		uint32_t conv, mtu, mss;
+		uint32_t conv;
+		uint32_t mtu; // Maximum transmission unit
+		uint32_t mss; // Maximum segment size
 		// Next serial number to be confirmed
 		uint32_t snd_una;
 		// The next one to be sent packet serial number

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ion/net/NetLogging.h>
 #include <ion/net/NetTime.h>
 
 namespace ion

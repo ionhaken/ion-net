@@ -29,6 +29,8 @@ namespace ion
 NetManager::NetManager(NetResource&) {}
 NetManager::~NetManager() {}
 
+int NetManager::mLoggingLevel = 3;
+
 namespace net
 {
 STATIC_INSTANCE(NetManager, NetResource);
@@ -53,7 +55,7 @@ bool NetInit()
 	netStartup = WSAStartup(MAKEWORD(2, 2), &winsockInfo);
 	if (netStartup != 0)
 	{
-		ION_ABNORMAL("WSA startup failed: " << ion::debug::GetLastErrorString());
+		ION_NET_LOG_ABNORMAL("WSA startup failed: " << ion::debug::GetLastErrorString());
 	}
 #endif
 
@@ -103,7 +105,7 @@ void NetDeinit()
 	int ret = WSACleanup();
 	if (ret != 0)
 	{
-		ION_ABNORMAL("WSA cleanup failed: " << ion::debug::GetLastErrorString());
+		ION_NET_LOG_ABNORMAL("WSA cleanup failed: " << ion::debug::GetLastErrorString());
 	}
 #endif
 	randombytes_close();

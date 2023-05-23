@@ -23,7 +23,7 @@
 	#endif
 #endif
 
-#define ION_NET_SOCKET_LOG(__msg, ...)	// ION_LOG_INFO(__msg, __VA_ARGS__)
+#define ION_NET_SOCKET_LOG(__msg, ...)	// ION_NET_LOG_INFO(__msg, __VA_ARGS__)
 
 namespace ion
 {

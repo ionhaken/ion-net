@@ -176,7 +176,7 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 				}
 				else
 				{
-					ION_ABNORMAL("No remote system for time sync;id=" << bcs->mTarget.mRemoteId);
+					ION_NET_LOG_ABNORMAL("No remote system for time sync;id=" << bcs->mTarget.mRemoteId);
 					srcClock->OnOutOfSync();
 					remoteStore.mGlobalClock = nullptr;
 				}
@@ -219,10 +219,10 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 		ion::DeleteArenaPtr(&control.mMemoryResource, bcs);
 	}
 	uint32_t updateDelta = TimeSince(now, control.mLastUpdate);
-	if (updateDelta > NetUpdateInterval)
+	if (updateDelta > NetUpdateInterval*2)
 	{
 		control.mResendExtraDelay = Min(Max(control.mResendExtraDelay, updateDelta * uint32_t(8)), NetMaxResendAlleviation);
-		ION_DBG("Update took " << updateDelta << ", which is longer than update interval " << NetUpdateInterval
+		ION_NET_LOG_VERBOSE("Update took " << updateDelta << ", which is longer than update interval " << NetUpdateInterval
 							   << ";ResendExtraDelay=" << control.mResendExtraDelay);
 	}
 	if (control.mResendExtraDelay > 0)

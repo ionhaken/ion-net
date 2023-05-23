@@ -19,11 +19,11 @@ namespace ion
 enum class NetConnectionAttemptResult : int
 {
 	CannotResolveDomainName = ION_NET_CODE_CANNOT_RESOLVE_DOMAIN_NAME,
-	AlreadyConnectedToEndpoint = ION_NET_CODE_ALREADY_CONNECTED_TO_ENDPOINT,
 	NoFreeConnections = ION_NET_CODE_NO_FREE_CONNECTIONS,
 	InvalidParameter = ION_NET_CODE_INVALID_PARAMETER,
 	Started = ION_NET_CODE_CONNECTION_ATTEMPT_STARTED,
-	AlreadyInProgress = ION_NET_CODE_CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS
+	AlreadyInProgress = ION_NET_CODE_CONNECTION_ATTEMPT_ALREADY_IN_PROGRESS,
+	AlreadyConnectedToEndpoint = ION_NET_CODE_ALREADY_CONNECTED_TO_ENDPOINT
 };
 
 enum class NetStartupResult : int
@@ -105,7 +105,7 @@ public:
 														   sendConnectionAttemptCount, timeBetweenSendConnectionAttemptsMS, timeoutTime);
 	}
 
-	NetConnectionAttemptResult Connect(const char* host, unsigned short remotePort, const char* passwordData, int passwordDataLength,
+	NetConnectionAttemptResult Connect(const char* host, unsigned short remotePort, const char* passwordData = nullptr, int passwordDataLength = 0,
 									   ion::NetSecure::PublicKey* publicKey = 0, unsigned connectionSocketIndex = 0,
 									   unsigned sendConnectionAttemptCount = 6, unsigned timeBetweenSendConnectionAttemptsMS = 1000,
 									   ion::TimeMS timeoutTime = 0);
@@ -436,39 +436,12 @@ public:
 		return NetRemoteStoreLayer::GetStatisticsList(mPeer->mRemoteStore, mPeer->mControl.mMemoryResource, addresses, guids, statistics);
 	}*/
 
-	// #TODO: Following should be moved to generic peer
-
-	inline ion::NetPacket* Receive()
-	{
-		ion::NetPacket* packet = nullptr;
-		mPeer->mControl.mPacketReturnQueue.Dequeue(packet);
-		ION_ASSERT(packet == nullptr || packet->Data(), "Invalid packet");
-		return packet;
-	}
-
-	inline unsigned int GetReceiveBufferSize() { return static_cast<unsigned int>(mPeer->mControl.mPacketReturnQueue.Size()); }
-
-	class SocketListAccess
-	{
-		ion::NetConnections& mNetConnections;
-
-	public:
-		SocketListAccess(ion::NetConnections& connections) : mNetConnections(connections) { mNetConnections.mSocketListMutex.Lock(); }
-		~SocketListAccess() { mNetConnections.mSocketListMutex.Unlock(); }
-
-		const NetVector<NetSocket*>& Get() const { return mNetConnections.mSocketList; }
-
-	private:
-	};
-
-	SocketListAccess GetSockets() { return SocketListAccess(mPeer->mConnections); }
 
 protected:
 	static constexpr unsigned int ShutdownWaitTimeMs = 500;
 	void Init(ion::NetInterfaceResource& resource);
 	void Deinit(unsigned int blockingTime = ShutdownWaitTimeMs);
 
-private:
 	// #TODO: Convert to custom command
 	void SendBufferedList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,
 						  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,

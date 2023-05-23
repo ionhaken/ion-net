@@ -17,8 +17,7 @@ class NetManager
 public:
 	NetManager(NetResource&);
 	~NetManager();
-
-private:
+	static int mLoggingLevel;
 };
 
 bool NetInit();

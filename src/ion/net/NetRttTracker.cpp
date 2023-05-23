@@ -66,13 +66,13 @@ void ion::NetRttTracker::OnPong(TimeMS now, TimeMS sentPingTime, TimeMS remoteTi
 		
 	if (!ClearActivePing())
 	{
-		ION_ABNORMAL("Ping not found from active list;ts=" << sentPingTime << ";last=" << mLastPingTime);
+		ION_NET_LOG_ABNORMAL("Ping not found from active list;ts=" << sentPingTime << ";last=" << mLastPingTime);
 		return;
 	}
 	mPingsReceived++;
 	if (!NetIsTimeInRange(now, sentPingTime, MaxPingTime))
 	{
-		ION_ABNORMAL("Invalid ping time");
+		ION_NET_LOG_ABNORMAL("Invalid ping time");
 		return;
 	}
 	
@@ -86,7 +86,7 @@ void ion::NetRttTracker::OnPong(TimeMS now, TimeMS sentPingTime, TimeMS remoteTi
 	}
 	else
 	{
-		ION_ABNORMAL("Negative ping;" << deltaTime << "ms");
+		ION_NET_LOG_ABNORMAL("Negative ping;" << deltaTime << "ms");
 	}
 
 	mSamples[mLastSample].ping = ping;

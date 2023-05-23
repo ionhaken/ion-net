@@ -7166,7 +7166,7 @@ namespace Catch {
 
             template <typename Clock>
             Environment<FloatDuration<Clock>> measure_environment() {
-                ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);
+                ION_MEMORY_SCOPE(::ion::tag::IgnoreLeaks);
                 static Environment<FloatDuration<Clock>>* env = nullptr;
                 if (env) {
                     return *env;

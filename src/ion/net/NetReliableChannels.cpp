@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <utility>
 
-#define ION_NET_CHANNEL_TUNER_LOG(__msg, ...)  // ION_NET_LOG_INFO(__msg, __VA_ARGS__)
+#define ION_NET_CHANNEL_TUNER_LOG(__msg, ...) ION_NET_LOG_VERBOSE_CHANNEL_TUNER(__msg, __VA_ARGS__)
 
 namespace ion
 {

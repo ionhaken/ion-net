@@ -1,7 +1,7 @@
 #include <ion/net/NetBasePeer.h>
 #include <ion/net/NetControlLayer.h>
 #include <ion/net/NetMemory.h>
-#include <ion/net/NetRemoteStoreLayer.h>
+#include <ion/net/NetExchangeLayer.h>
 #include <ion/net/NetStartupParameters.h>
 
 #include <ion/concurrency/Runner.h>
@@ -44,7 +44,7 @@ int NetBasePeer::SendList(const char** data, const int* lengths, const int numPa
 	ION_NET_API_CHECK(numParameters, -1, "invalid data");
 	ION_ASSERT(IsActive(), "Not active");
 
-	if (mPeer->mRemoteStore.mRemoteSystemList == nullptr)
+	if (mPeer->mExchange.mRemoteSystemList == nullptr)
 		return 0;
 
 	if (broadcast == false && systemIdentifier.IsUndefined())
@@ -91,7 +91,7 @@ void NetBasePeer::SendBufferedList(const char** data, const int* lengths, const 
 	ptr->mChannel = orderingChannel;
 	ptr->mPriority = priority;
 	ptr->mReliability = reliability;
-	if (broadcast == false && ion::NetRemoteStoreLayer::IsLoopbackAddress(mPeer->mRemoteStore, systemIdentifier, true))
+	if (broadcast == false && ion::NetExchangeLayer::IsLoopbackAddress(mPeer->mExchange, systemIdentifier, true))
 	{
 		SendLoopback(dataAggregate, totalLength);
 		DeleteArenaPtr(&mPeer->mControl.mMemoryResource, ptr);

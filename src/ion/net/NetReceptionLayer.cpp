@@ -2,15 +2,15 @@
 #include <ion/net/NetConnectionLayer.h>
 #include <ion/net/NetControl.h>
 #include <ion/net/NetControlLayer.h>
+#include <ion/net/NetExchangeLayer.h>
 #include <ion/net/NetInternalTypes.h>
 #include <ion/net/NetMessages.h>
 #include <ion/net/NetRawSendCommand.h>
 #include <ion/net/NetReception.h>
 #include <ion/net/NetReceptionLayer.h>
-#include <ion/net/NetRemoteStore.h>
-#include <ion/net/NetRemoteStoreLayer.h>
 #include <ion/net/NetSendCommand.h>
 #include <ion/net/NetSocketLayer.h>
+#include <ion/net/NetTransportLayer.h>
 
 #include <ion/jobs/JobScheduler.h>
 #include <ion/jobs/TimedJob.h>
@@ -22,9 +22,21 @@ namespace ion::NetReceptionLayer
 
 namespace
 {
-// --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-void ParseConnectionRequestPacket(NetReception& reception, NetControl& control, NetRemoteStore& remoteStore,
-								  ion::NetRemoteSystem* remoteSystem, unsigned char* data, int byteSize, ion::TimeMS now)
+
+NetPacket* ReceiveFromReassebly(NetTransport& transport)
+{
+	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
+	if (!transport.mRcvQueue.IsEmpty())
+	{
+		NetPacket* p = transport.mRcvQueue.Front();
+		transport.mRcvQueue.PopFront();
+		return p;
+	}
+	return nullptr;
+}
+
+void ParseConnectionRequestPacket(NetReception& reception, NetControl& control, NetExchange& exchange, ion::NetRemoteSystem* remoteSystem,
+								  unsigned char* data, int byteSize, ion::TimeMS now)
 {
 	ion::ByteReader bs(data, byteSize);
 	bs.SkipBytes(sizeof(NetMessageId));
@@ -49,24 +61,24 @@ void ParseConnectionRequestPacket(NetReception& reception, NetControl& control, 
 			{
 				ByteWriter writer(cmd.Writer());
 				writer.Process(NetMessageId::InvalidPassword);
-				writer.Process(remoteStore.mGuid);
+				writer.Process(exchange.mGuid);
 			}
 			cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
-			ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, cmd.Release(), now);
+			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
 		}
-		ion::NetRemoteStoreLayer::SetMode(remoteStore, *remoteSystem, NetMode::DisconnectAsapSilently);
+		ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, NetMode::DisconnectAsapSilently);
 		return;
 	}
 
 	// OK
 	ION_ASSERT(remoteSystem->mMode == ion::NetMode::RequestedConnection || remoteSystem->mMode == ion::NetMode::UnverifiedSender,
 			   "Invalid connect state");
-	ion::NetRemoteStoreLayer::SetMode(remoteStore, *remoteSystem, NetMode::HandlingConnectionRequest);
-	NetRemoteStoreLayer::SendConnectionRequestAccepted(remoteStore, control, remoteSystem, incomingTimestamp, now);
+	ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, NetMode::HandlingConnectionRequest);
+	NetExchangeLayer::SendConnectionRequestAccepted(exchange, control, remoteSystem, incomingTimestamp, now);
 }
 
-bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections,
+bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchange& exchange, const NetConnections& connections,
 						 ion::NetRemoteSystem* remoteSystem, ion::TimeMS now, ion::NetPacket* packet)
 {
 	byte* data = packet->Data();
@@ -78,7 +90,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		if (data[0] == NetMessageId::ConnectionRequest)
 		{
 			ION_PROFILER_SCOPE(Network, "Connection Req");
-			ParseConnectionRequestPacket(reception, control, remoteStore, remoteSystem, data, byteSize, now);
+			ParseConnectionRequestPacket(reception, control, exchange, remoteSystem, data, byteSize, now);
 		}
 		else
 		{
@@ -89,10 +101,10 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 											  << ";packetId=" << (unsigned char)(data[0]));
 
 			AddToBanList(reception, control, str1, remoteSystem->timeoutTime);
-			remoteSystem->reliableChannels.Reset(control, *remoteSystem);
+			NetTransportLayer::Reset(remoteSystem->mTransport, control, *remoteSystem);
 
 			// Note: Cannot be immediate as we are still using remote system socket.
-			NetControlLayer::CloseConnectionInternal(control, remoteStore, connections, remoteSystem->mId.load(), false, false, 0,
+			NetControlLayer::CloseConnectionInternal(control, exchange, connections, remoteSystem->mId.load(), false, false, 0,
 													 NetPacketPriority::Low);
 		}
 		return false;
@@ -107,7 +119,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 
 		if (remoteSystem->mMode == ion::NetMode::RequestedConnection)
 		{
-			ParseConnectionRequestPacket(reception, control, remoteStore, remoteSystem, data, byteSize, now);
+			ParseConnectionRequestPacket(reception, control, exchange, remoteSystem, data, byteSize, now);
 		}
 		else
 		{
@@ -122,12 +134,12 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 			{
 				// Got a connection request message from someone we are already connected to. Just reply normally.
 				// This can happen due to race conditions with the fully connected mesh
-				NetRemoteStoreLayer::SendConnectionRequestAccepted(remoteStore, control, remoteSystem, incomingTimestamp, now);
+				NetExchangeLayer::SendConnectionRequestAccepted(exchange, control, remoteSystem, incomingTimestamp, now);
 			}
 			else
 			{
 				// Do not flag this as bad, as GUID can change.
-				ION_NET_LOG_ABNORMAL("[" << remoteStore.mGuid << "] Ignored invalid connection request from " << remoteSystem->guid
+				ION_NET_LOG_ABNORMAL("[" << exchange.mGuid << "] Ignored invalid connection request from " << remoteSystem->guid
 										 << " when already connected");
 			}
 		}
@@ -144,7 +156,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		if (remoteSystem->mMode != NetMode::HandlingConnectionRequest)
 		{
 			// Ignore, already connected. Not abnormal as happens on cross connection case
-			ION_NET_LOG_VERBOSE("[" << remoteStore.mGuid << "] Connect request received from " << remoteSystem->guid
+			ION_NET_LOG_VERBOSE("[" << exchange.mGuid << "] Connect request received from " << remoteSystem->guid
 									<< " when already connected");
 			return false;
 		}
@@ -157,7 +169,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 		{
 			isValid &=
-			  inBitStream.Process(remoteStore.mSystemAddressDetails[remoteSystem->mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
+			  inBitStream.Process(exchange.mSystemAddressDetails[remoteSystem->mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
 		}
 
 		ion::Time sentPingTime, remoteTime;
@@ -168,9 +180,9 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 			ION_NET_LOG_ABNORMAL("Invalid Message: NewIncomingConnection");
 			return false;
 		}
-		ion::NetRemoteStoreLayer::OnConnectedPong(remoteStore, now, sentPingTime, remoteTime, remoteSystem);
+		ion::NetExchangeLayer::OnConnectedPong(exchange, now, sentPingTime, remoteTime, remoteSystem);
 
-		ion::NetRemoteStoreLayer::SetConnected(remoteStore, *remoteSystem, bsSystemAddress);
+		ion::NetExchangeLayer::SetConnected(exchange, *remoteSystem, bsSystemAddress);
 		// PingInternal(systemAddress, true, NetPacketReliability::Unreliable, timeRead);
 
 		// Update again immediately after this tick so the ping goes out right away
@@ -179,9 +191,9 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		// Bug: If A connects to B through R, A's mFirstExternalID is set to R. If A tries to send to R, sends to loopback
 		// because R==mFirstExternalID Correct fix is to specify in Connect() if target is through a proxy. However, in practice
 		// you have to connect to something else first anyway to know about the proxy. So setting once only is good enough
-		if (remoteStore.mFirstExternalID == NetUnassignedSocketAddress)
+		if (exchange.mFirstExternalID == NetUnassignedSocketAddress)
 		{
-			remoteStore.mFirstExternalID = bsSystemAddress;
+			exchange.mFirstExternalID = bsSystemAddress;
 		}
 
 		// Send this info down to the game
@@ -199,7 +211,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 			isValid &= inBitStream.Process(sentPingTime);
 			if (isValid)
 			{
-				ion::NetRemoteStoreLayer::OnConnectedPong(remoteStore, now, sentPingTime, remoteTime, remoteSystem);
+				ion::NetExchangeLayer::OnConnectedPong(exchange, now, sentPingTime, remoteTime, remoteSystem);
 			}
 		}
 		return false;
@@ -227,7 +239,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 				cmd.Parameters().mReliability = NetPacketReliability::Unreliable;
 				cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
-				ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, cmd.Release(), sendPongTime);
+				ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), sendPongTime);
 
 				// Update again immediately after this tick so the ping goes out right away
 				ion::NetControlLayer::Trigger(control);
@@ -247,14 +259,14 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		{
 			disconnectMode = NetMode::DisconnectOnNoAck;
 		}
-		ion::NetRemoteStoreLayer::SetMode(remoteStore, *remoteSystem, disconnectMode);
+		ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, disconnectMode);
 		return false;
 	}
 	case NetMessageId::InvalidPassword:
 	{
 		if (remoteSystem->mMode == NetMode::RequestedConnection)
 		{
-			ion::NetRemoteStoreLayer::SetMode(remoteStore, *remoteSystem, NetMode::DisconnectAsapSilently);
+			ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, NetMode::DisconnectAsapSilently);
 			break;
 		}
 		else
@@ -294,7 +306,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 		for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 		{
 			isValid &=
-			  reader.Process(remoteStore.mSystemAddressDetails[remoteSystem->mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
+			  reader.Process(exchange.mSystemAddressDetails[remoteSystem->mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
 		}
 
 		ion::Time sentPingTime, remoteTime;
@@ -305,17 +317,17 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 			ION_NET_LOG_ABNORMAL("Invalid connection request accepted");
 			return false;
 		}
-		ion::NetRemoteStoreLayer::OnConnectedPong(remoteStore, now, sentPingTime, remoteTime, remoteSystem);
+		ion::NetExchangeLayer::OnConnectedPong(exchange, now, sentPingTime, remoteTime, remoteSystem);
 
-		ion::NetRemoteStoreLayer::SetConnected(remoteStore, *remoteSystem, externalID);
+		ion::NetExchangeLayer::SetConnected(exchange, *remoteSystem, externalID);
 
 		// Bug: If A connects to B through R, A's mFirstExternalID is set to R. If A tries to send to R, sends to loopback
 		// because R==mFirstExternalID Correct fix is to specify in Connect() if target is through a proxy. However, in
 		// practice you have to connect to something else first anyway to know about the proxy. So setting once only is good
 		// enough
-		if (remoteStore.mFirstExternalID == NetUnassignedSocketAddress)
+		if (exchange.mFirstExternalID == NetUnassignedSocketAddress)
 		{
-			remoteStore.mFirstExternalID = externalID;
+			exchange.mFirstExternalID = externalID;
 		}
 
 		// Send the connection request complete to the game
@@ -328,7 +340,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 				writer.Process(remoteSystem->mAddress);
 				for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 				{
-					writer.Process(remoteStore.mIpList[i]);
+					writer.Process(exchange.mIpList[i]);
 				}
 				writer.Process(now);
 				writer.Process(remoteTime);
@@ -336,14 +348,14 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 
 			cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
-			ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, cmd.Release(), now);
+			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
 		}
 
 		if (alreadyConnected == false)
 		{
-			ION_NET_LOG_VERBOSE("[" << remoteStore.mGuid << "] Ping accepting connection " << remoteSystem->guid);
+			ION_NET_LOG_VERBOSE("[" << exchange.mGuid << "] Ping accepting connection " << remoteSystem->guid);
 			remoteSystem->pingTracker.OnPing(now);
-			NetControlLayer::PingInternal(control, remoteStore, remoteSystem->mAddress, true, NetPacketReliability::Unreliable, now);
+			NetControlLayer::PingInternal(control, exchange, remoteSystem->mAddress, true, NetPacketReliability::Unreliable, now);
 		}
 		break;
 	}
@@ -377,21 +389,19 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 	return true;
 }
 
-void RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections,
+void RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchange& exchange, const NetConnections& connections,
 						 ion::NetRemoteSystem* remoteSystem, const TimeMS now)
 {
-	// Does the reliability layer have any packets waiting for us?
-	// To be thread safe, this has to be called in the same thread as HandleSocketReceiveFromConnectedPlayer
-	while (ion::NetPacket* packet = remoteSystem->reliableChannels.Receive())
+	while (ion::NetPacket* packet = ReceiveFromReassebly(remoteSystem->mTransport))
 	{
 		ION_NET_LOG_VERBOSE_MSG("Msg: Receiving id=" << Hex<uint8_t>(packet->Data()[0]) << ";Length=" << packet->Length()
-													<< ";GUID=" << packet->mGUID << ";InternalType=" << packet->mInternalPacketType);
+													 << ";GUID=" << packet->mGUID << ";InternalType=" << packet->mInternalPacketType);
 		if (remoteSystem->mMetrics)
 		{
 			// #TODO: Not always reliable.
 			remoteSystem->mMetrics->OnReceived(now, ion::PacketType::UserReliable, packet->Length());
 		}
-		if (!RemoteSystemReceive(reception, control, remoteStore, connections, remoteSystem, now, packet))
+		if (!RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, now, packet))
 		{
 			ion::NetControlLayer::DeallocateUserPacket(control, packet);
 		}
@@ -399,7 +409,7 @@ void RemoteSystemReceive(NetReception& reception, NetControl& control, NetRemote
 }
 
 // Return true if packet can be deallocated
-bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemoteStore& remoteStore, ion::NetConnections& connections,
+bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetExchange& exchange, ion::NetConnections& connections,
 						  ion::NetSocketReceiveData& recvFromStruct, TimeMS timeRead)
 
 {
@@ -419,7 +429,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 					auto out = reply.Writer();
 					out.Process(NetMessageId::ConnectionBanned);
 					out.Process(NetUnconnectedHeader);
-					out.Process(remoteStore.mGuid);
+					out.Process(exchange.mGuid);
 				}
 				reply.Dispatch(socketAddress);
 			}
@@ -429,12 +439,12 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 
 	if (length < ion::NetConnectedProtocolMinOverHead || (data[1] == 'I' && data[2] == 'O' && data[3] == 'N'))
 	{
-		ion::NetConnectionLayer::ProcessOfflineNetworkPacket(connections, control, remoteStore, recvFromStruct, timeRead);
+		ion::NetConnectionLayer::ProcessOfflineNetworkPacket(connections, control, exchange, recvFromStruct, timeRead);
 		return true;
 	}
 
 	// See if this datagram came from a connected system
-	ion::NetRemoteSystem* remoteSystem = NetRemoteStoreLayer::GetRemoteFromSocketAddress(remoteStore, recvFromStruct.Address(), true, true);
+	ion::NetRemoteSystem* remoteSystem = NetExchangeLayer::GetRemoteFromSocketAddress(exchange, recvFromStruct.Address(), true, true);
 
 	if (uint8_t(data[0]) < NetNumberOfChannels)
 	{
@@ -444,13 +454,13 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 		if (remoteSystem == nullptr)
 		{
 			// If this is authority, it can try to find remote system via conversation
-			remoteSystem = ion::NetRemoteStoreLayer::GetRemoteSystemFromAuthorityConversation(remoteStore, conversation);
+			remoteSystem = ion::NetExchangeLayer::GetRemoteSystemFromAuthorityConversation(exchange, conversation);
 			if (remoteSystem == nullptr || !remoteSystem->mAllowFastReroute)
 			{
 				return true;
 			}
 			// Reroute clients using conversation key, but only if the remote packet is valid.
-			if (remoteSystem->reliableChannels.Input(control, *remoteSystem, conversation, recvFromStruct, timeRead))
+			if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
 			{
 				ION_NET_LOG_INFO("Rerouted system " << remoteSystem->mAddress << " to new adress " << recvFromStruct.Address());
 				if (remoteSystem->mMetrics)
@@ -459,8 +469,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 													   ion::NetMtuSize(length, remoteSystem->mAddress.GetIPVersion()));
 				}
 				remoteSystem->timeLastDatagramArrived = timeRead;
-				ion::NetRemoteStoreLayer::ReferenceRemoteSystem(remoteStore, recvFromStruct.Address(),
-																remoteSystem->mId.load().RemoteIndex());
+				ion::NetExchangeLayer::ReferenceRemoteSystem(exchange, recvFromStruct.Address(), remoteSystem->mId.load().RemoteIndex());
 				return false;
 			}
 			else
@@ -478,7 +487,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 		}
 		if ((conversation >> 8) == (remoteSystem->mConversationId & 0xFFFFFFu))
 		{
-			if (remoteSystem->reliableChannels.Input(control, *remoteSystem, conversation, recvFromStruct, timeRead))
+			if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
 			{
 				// Data was stored -> Update reliable metrics for when reading data back
 				remoteSystem->timeLastDatagramArrived = timeRead;
@@ -505,7 +514,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetRemot
 		remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::UserUnreliable, length);
 		remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::Raw, ion::NetMtuSize(length, remoteSystem->mAddress.GetIPVersion()));
 	}
-	if (RemoteSystemReceive(reception, control, remoteStore, connections, remoteSystem, timeRead, packet))
+	if (RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, timeRead, packet))
 	{
 		return false;
 	}
@@ -529,15 +538,15 @@ ion::NetSocketReceiveData* Receive(NetReception& reception, NetControl& control,
 	return ptr;
 }
 
-void ProcessBufferedPackets(ion::NetReception& reception, NetControl& control, NetRemoteStore& remoteStore,
-							ion::NetConnections& connections, JobScheduler* js, const TimeMS now)
+void ProcessBufferedPackets(ion::NetReception& reception, NetControl& control, NetExchange& exchange, ion::NetConnections& connections,
+							JobScheduler* js, const TimeMS now)
 {
 	size_t totalBytesHandled = 0;
 	ion::NetSocketReceiveData* elem = nullptr;
 	while (reception.mReceiveBuffer.Dequeue(elem))
 	{
 		totalBytesHandled += elem->SocketBytesRead();
-		if (ProcessNetworkPacket(reception, control, remoteStore, connections, *elem, now))
+		if (ProcessNetworkPacket(reception, control, exchange, connections, *elem, now))
 		{
 			ion::NetControlLayer::DeallocateReceiveBuffer(control, elem);
 		}
@@ -547,16 +556,16 @@ void ProcessBufferedPackets(ion::NetReception& reception, NetControl& control, N
 
 	if (js != nullptr)
 	{
-		js->ParallelFor(remoteStore.mActiveSystems.Get(), remoteStore.mActiveSystems.Get() + remoteStore.mActiveSystemListSize,
+		js->ParallelFor(exchange.mActiveSystems.Get(), exchange.mActiveSystems.Get() + exchange.mActiveSystemListSize,
 						[&](ion::NetRemoteIndex index)
-						{ RemoteSystemReceive(reception, control, remoteStore, connections, &remoteStore.mRemoteSystemList[index], now); });
+						{ RemoteSystemReceive(reception, control, exchange, connections, &exchange.mRemoteSystemList[index], now); });
 	}
 	else
 	{
-		for (unsigned int activeSystemListIndex = 0; activeSystemListIndex < remoteStore.mActiveSystemListSize; ++activeSystemListIndex)
+		for (unsigned int activeSystemListIndex = 0; activeSystemListIndex < exchange.mActiveSystemListSize; ++activeSystemListIndex)
 		{
-			ion::NetRemoteSystem* remoteSystem = &remoteStore.mRemoteSystemList[remoteStore.mActiveSystems[activeSystemListIndex]];
-			RemoteSystemReceive(reception, control, remoteStore, connections, remoteSystem, now);
+			ion::NetRemoteSystem* remoteSystem = &exchange.mRemoteSystemList[exchange.mActiveSystems[activeSystemListIndex]];
+			RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, now);
 		}
 	}
 }

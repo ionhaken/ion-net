@@ -1,5 +1,5 @@
 #include <ion/net/NetControlLayer.h>
-#include <ion/net/NetRemoteStoreLayer.h>
+#include <ion/net/NetExchangeLayer.h>
 #include <ion/net/NetSendCommand.h>
 
 #include <ion/arena/ArenaAllocator.h>

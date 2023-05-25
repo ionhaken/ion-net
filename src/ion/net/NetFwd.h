@@ -31,7 +31,7 @@ struct NetConnections;
 struct NetControl;
 struct NetInterface;
 struct NetReception;
-struct NetRemoteStore;
+struct NetExchange;
 struct NetStartupParameters;
 
 template <typename T, typename ResourceProxy>

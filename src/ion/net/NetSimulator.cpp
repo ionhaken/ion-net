@@ -56,8 +56,8 @@ void NetworkSimulator::Configure(const NetworkSimulatorSettings& settings) { mSe
 
 bool NetworkSimulator::IsActive() const
 {
-	return mSettings.duplicates > 0.0f || mSettings.packetloss > 0.0f || mSettings.extraPingVariance > 0 || mSettings.minExtraPing > 0 ||
-		   mSettings.mtu != NetIpMaxMtuSize || mSettings.bandwidthMBps > 0.0;
+	return mSettings.corruptRate > 0.0 || mSettings.duplicates > 0.0 || mSettings.packetloss > 0.0 || mSettings.extraPingVariance > 0 ||
+		   mSettings.minExtraPing > 0 || mSettings.mtu != NetIpMaxMtuSize || mSettings.bandwidthMBps > 0.0;
 }
 
 void NetworkSimulator::Send(NetSocketSendParameters* ssp, NetSocket& socket)
@@ -71,6 +71,11 @@ void NetworkSimulator::Send(NetSocketSendParameters* ssp, NetSocket& socket)
 		}
 		socket.DeallocateSend(ssp);
 		return;
+	}
+
+	if (ion::Random::FastFloat() < mSettings.corruptRate)
+	{
+		ssp->data[ion::Random::UInt32Tl() % sizeof(ssp->data)] = byte(ion::Random::UInt32Tl());
 	}
 
 	const size_t numCopies = mSettings.duplicates > 0.0f && ion::Random::FastFloat() < mSettings.duplicates ? 2 : 1;

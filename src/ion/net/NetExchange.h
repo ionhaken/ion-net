@@ -18,9 +18,9 @@ using NetMap = UnorderedMap<TKey, TValue, Hasher<TKey>, NetAllocator<Pair<TKey c
 
 class GlobalClock;
 
-struct NetRemoteStore
+struct NetExchange
 {
-	~NetRemoteStore()
+	~NetExchange()
 	{
 		ION_ASSERT(mAddressToRemoteIndex.IsEmpty(), "Address to remote index mapping leaking");
 		ION_ASSERT(mGuidToRemoteIndex.IsEmpty(), "Guid to remote index mapping leaking");
@@ -57,7 +57,6 @@ struct NetRemoteStore
 	std::atomic<uint16_t> mMaximumNumberOfPeers = 0;
 
 #if ION_NET_FEATURE_SECURITY == 1
-
 	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::EncryptionAndReplayProtection;
 #else
 	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::ReplayProtectionAndChecksum;

@@ -85,13 +85,9 @@ const uint32_t IKCP_FASTACK_LIMIT = 5;	   // max times to trigger fastack
 // encode / decode
 //---------------------------------------------------------------------
 
-static ION_FORCE_INLINE uint32_t _imin_(uint32_t a, uint32_t b) { return a <= b ? a : b; }
+static ION_FORCE_INLINE uint32_t _ibound_(uint32_t lower, uint32_t middle, uint32_t upper) { return Min(Max(lower, middle), upper); }
 
-static ION_FORCE_INLINE uint32_t _imax_(uint32_t a, uint32_t b) { return a >= b ? a : b; }
-
-static ION_FORCE_INLINE uint32_t _ibound_(uint32_t lower, uint32_t middle, uint32_t upper) { return _imin_(_imax_(lower, middle), upper); }
-
-static ION_FORCE_INLINE long _itimediff(uint32_t later, uint32_t earlier) { return ((int32_t)(later - earlier)); }
+//static ION_FORCE_INLINE long _itimediff(uint32_t later, uint32_t earlier) { return ((int32_t)(later - earlier)); }
 /* decode 8 bits unsigned int */
 static ION_FORCE_INLINE char* ikcp_decode8u(char* p, unsigned char* c)
 {
@@ -178,7 +174,6 @@ NetChannel::NetChannel(uint32_t conv, ion::TimeMS currentTime, int payloadSizeWi
 
 void NetChannel::Reset(NetControl& control, NetRemoteSystem& remote)
 {
-
 	while (!mSndQueue.IsEmpty())
 	{
 		FreeSendSegment(mSndQueue.Front(), remote, control);
@@ -192,8 +187,7 @@ void NetChannel::Reset(NetControl& control, NetRemoteSystem& remote)
 	while (!mUnrealiableSndQueue.IsEmpty())
 	{
 		NetUpstreamSegment tmp;
-		tmp.mCommand = mUnrealiableSndQueue.Front();
-		ClearCommand(&tmp, control);
+		ClearCommand(mUnrealiableSndQueue.Front(), control);
 		mUnrealiableSndQueue.PopFront();
 	}
 
@@ -234,9 +228,8 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 	if (!mRcvQueue.IsEmpty())
 	{
 		auto* seg = mRcvQueue.Front();
-		if (seg->frg == 0 && seg->mOffset != 0)
+		if (seg->frg == 0 && seg->mOffset != 0 && seg->len > 0)
 		{
-			ION_ASSERT(seg->len > 0, "Invalid fragment");
 			bool isRecover = IsReceiveRecovering();
 			packet = reinterpret_cast<NetPacket*>(seg->data - seg->mOffset);
 			ION_ASSERT(packet->mAddress == remote.mAddress, "Invalid address"); // Set by socket layer
@@ -342,7 +335,7 @@ int NetChannel::PeekSize(ion::NetControl& control, ion::NetRemoteSystem& remote)
 
 		if (mRcvQueue.Front()->frg == 0)
 		{
-			if (mRcvQueue.Front()->len == 0)
+			if (mRcvQueue.Front()->len == 0) // Unreliable segment was lost
 			{
 				ion::NetControlLayer::DeallocateSegment(control, remote, mRcvQueue.Front());
 				mRcvQueue.PopFront();
@@ -370,9 +363,9 @@ int NetChannel::PeekSize(ion::NetControl& control, ion::NetRemoteSystem& remote)
 	}
 }
 
-void NetChannel::ClearCommand(NetUpstreamSegment* seg, NetControl& control)
+void NetChannel::ClearCommand(NetCommand*& command, NetControl& control)
 {
-	const auto packetPriority = seg->mCommand->mPriority;
+	const auto packetPriority = command->mPriority;
 	ION_ASSERT(mState.bufferedPriorities[int(packetPriority)], "Invalid buffered priority count");
 	ION_ASSERT(int(mState.currentPriority) <= int(packetPriority), "Invalid priority");
 	mState.bufferedPriorities[int(packetPriority)]--;
@@ -389,7 +382,7 @@ void NetChannel::ClearCommand(NetUpstreamSegment* seg, NetControl& control)
 		}
 		ReconfigureChannelPriority(NetPacketPriority(nextPriority));
 	}
-	NetControlLayer::ClearCommand(control, seg);
+	NetControlLayer::ClearCommand(control, command);
 }
 
 uint32_t NetChannel::FreeSendSegment(NetUpstreamSegment* seg, NetRemoteSystem& remote, NetControl& control)
@@ -397,7 +390,7 @@ uint32_t NetChannel::FreeSendSegment(NetUpstreamSegment* seg, NetRemoteSystem& r
 	const uint32_t ackedBytes = seg->mHeader.len;
 	if (seg->mCommand)
 	{
-		ClearCommand(seg, control);
+		ClearCommand(seg->mCommand, control);
 	}
 	remote.Deallocate<NetUpstreamSegment>(seg);
 	return ackedBytes;
@@ -509,7 +502,7 @@ int NetChannel::Send(NetRemoteSystem& remote, NetCommand& command, uint64_t data
 	return 0;
 }
 
-static void ikcp_update_ack(NetChannel* kcp, int32_t rtt)
+static void ikcp_update_ack(NetChannel* kcp, uint32_t rtt)
 {
 	int32_t rto = 0;
 	if (kcp->mState.rx_srtt == 0)
@@ -524,14 +517,14 @@ static void ikcp_update_ack(NetChannel* kcp, int32_t rtt)
 		{
 			delta = -delta;
 		}
-		kcp->mState.rx_rttval = (3 * kcp->mState.rx_rttval + delta) / 4;
+		kcp->mState.rx_rttval = (3 * kcp->mState.rx_rttval + uint32_t(delta)) / 4;
 		kcp->mState.rx_srtt = (7 * kcp->mState.rx_srtt + rtt) / 8;
 		if (kcp->mState.rx_srtt < 1)
 		{
 			kcp->mState.rx_srtt = 1;
 		}
 	}
-	rto = kcp->mState.rx_srtt + _imax_(kcp->mState.interval, 4 * kcp->mState.rx_rttval);
+	rto = kcp->mState.rx_srtt + Max(kcp->mState.interval, 4 * kcp->mState.rx_rttval);
 	kcp->mState.rx_rto = _ibound_(kcp->mState.rx_minrto, rto, IKCP_RTO_MAX);
 }
 
@@ -549,7 +542,7 @@ static void ikcp_shrink_buf(NetChannel* kcp)
 
 uint32_t NetChannel::ParseAck(NetRemoteSystem& remote, uint32_t sn, NetControl& control)
 {
-	if (_itimediff(sn, mState.snd_una) < 0 || _itimediff(sn, mState.snd_nxt) >= 0)
+	if (DeltaTime(sn, mState.snd_una) < 0 || DeltaTime(sn, mState.snd_nxt) >= 0)
 	{
 		return 0;
 	}
@@ -564,7 +557,7 @@ uint32_t NetChannel::ParseAck(NetRemoteSystem& remote, uint32_t sn, NetControl& 
 			mSndBuf.Erase(iter);
 			break;
 		}
-		if (_itimediff(sn, seg->mHeader.sn) < 0)
+		if (DeltaTime(sn, seg->mHeader.sn) < 0)
 		{
 			break;
 		}
@@ -578,7 +571,7 @@ uint32_t NetChannel::ParseUna(NetRemoteSystem& remote, uint32_t una, NetControl&
 	while (!mSndBuf.IsEmpty())
 	{
 		NetUpstreamSegment* seg = mSndBuf.Back();
-		if (_itimediff(una, seg->mHeader.sn) > 0)
+		if (DeltaTime(una, seg->mHeader.sn) > 0)
 		{
 			ackedBytes += FreeSendSegment(seg, remote, control);
 			mSndBuf.PopBack();
@@ -595,12 +588,12 @@ static void ikcp_parse_fastack(NetChannel* kcp, uint32_t sn, uint32_t ts)
 {
 	(void)(ts);
 
-	if (_itimediff(sn, kcp->mState.snd_una) < 0 || _itimediff(sn, kcp->mState.snd_nxt) >= 0)
+	if (DeltaTime(sn, kcp->mState.snd_una) < 0 || DeltaTime(sn, kcp->mState.snd_nxt) >= 0)
 		return;
 
 	for (NetUpstreamSegment* seg : kcp->mSndBuf)
 	{
-		if (_itimediff(sn, seg->mHeader.sn) < 0)
+		if (DeltaTime(sn, seg->mHeader.sn) < 0)
 		{
 			break;
 		}
@@ -609,7 +602,7 @@ static void ikcp_parse_fastack(NetChannel* kcp, uint32_t sn, uint32_t ts)
 #ifndef IKCP_FASTACK_CONSERVE
 			seg->mHeader.fastack++;
 #else
-			if (_itimediff(ts, seg->ts) >= 0)
+			if (DeltaTime(ts, seg->ts) >= 0)
 				seg->fastack++;
 #endif
 		}
@@ -665,7 +658,7 @@ static void ikcp_ack_push(NetRemoteSystem& remote, NetChannel* kcp, uint32_t sn,
 
 int NetChannel::FindRcvIndex(uint32_t sn)
 {
-	ION_ASSERT(_itimediff(sn, mState.rcv_nxt + mState.rcv_wnd) < 0 && _itimediff(sn, mState.rcv_nxt) >= 0, "Invalid serial number");
+	ION_ASSERT(DeltaTime(sn, mState.rcv_nxt + mState.rcv_wnd) < 0 && DeltaTime(sn, mState.rcv_nxt) >= 0, "Invalid serial number");
 
 	int index = int(mRcvBuf.Size()) - 1;
 	for (; index >= 0; --index)
@@ -675,7 +668,7 @@ int NetChannel::FindRcvIndex(uint32_t sn)
 		{
 			return -1;
 		}
-		if (_itimediff(sn, seg->sn) > 0)
+		if (DeltaTime(sn, seg->sn) > 0)
 		{
 			break;
 		}
@@ -699,7 +692,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 	do
 	{
 		ION_ASSERT(size >= (int)NetConnectedProtocolMinOverHead, "Invalid data");
-		uint32_t ts, sn, una, conv;
+		uint32_t sn, una, conv;
 		uint16_t wnd, len = 0;
 		uint8_t cmd, frg;
 
@@ -711,6 +704,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 		}
 
 		data = ikcp_decode32u(data, &sn);
+		TimeMS ts;
 		data = ikcp_decode32u(data, &ts);
 		data = ikcp_decode8u(data, &frg);
 		data = ikcp_decode8u(data, &cmd);
@@ -743,9 +737,10 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 		if (cmd == IKCP_CMD_ACK)
 		{
 			// ts is our sent time on IKCP_CMD_ACK
-			if (_itimediff(currentTime, ts) >= 0)
+			auto delta = DeltaTime(currentTime, ts);
+			if (delta >= 0)
 			{
-				ikcp_update_ack(this, _itimediff(currentTime, ts));
+				ikcp_update_ack(this, uint32_t(delta));
 			}
 			outAckedBytes += ParseAck(remote, sn, control);
 			ikcp_shrink_buf(this);
@@ -757,13 +752,13 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 			}
 			else
 			{
-				if (_itimediff(sn, maxack) > 0)
+				if (DeltaTime(sn, maxack) > 0)
 				{
 #ifndef IKCP_FASTACK_CONSERVE
 					maxack = sn;
 					latest_ts = ts;
 #else
-					if (_itimediff(ts, latest_ts) > 0)
+					if (DeltaTime(ts, latest_ts) > 0)
 					{
 						maxack = sn;
 						latest_ts = ts;
@@ -771,17 +766,16 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 #endif
 				}
 			}
-			ION_NET_CHANNEL_LOG("Channel in: ack;conv=" << conv << ";sn=" << sn << ";rtt=" << _itimediff(currentTime, ts)
-														<< ";rto=" << mState.rx_rto);
+			ION_NET_CHANNEL_LOG("Channel in: ack;conv=" << conv << ";sn=" << sn << ";rtt=" << delta << ";rto=" << mState.rx_rto);
 		}
 		else if (cmd == IKCP_CMD_PUSH || cmd == IKCP_CMD_IMMEDIATE)
 		{
 			ION_NET_CHANNEL_LOG("Channel in: data;sn=" << sn << ";ts=" << ts << ";len=" << len);			
-			if (_itimediff(sn, mState.rcv_nxt + mState.rcv_wnd) < 0)
+			if (DeltaTime(sn, mState.rcv_nxt + mState.rcv_wnd) < 0)
 			{
 				// ts is their sent time on IKCP_CMD_PUSH or IKCP_CMD_IMMEDIATE
 				ikcp_ack_push(remote, this, sn, ts);
-				if (_itimediff(sn, mState.rcv_nxt) >= 0)
+				if (DeltaTime(sn, mState.rcv_nxt) >= 0)
 				{
 					int rcvIndex = FindRcvIndex(sn);
 					if (rcvIndex != -1) // Not duplicate
@@ -883,7 +877,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 		ikcp_parse_fastack(this, maxack, latest_ts);
 	}
 
-	if (_itimediff(mState.snd_una, prev_una) > 0)
+	if (DeltaTime(mState.snd_una, prev_una) > 0)
 	{
 		if (mState.cwnd < mState.rmt_wnd)
 		{
@@ -1064,13 +1058,17 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 		}
 		else
 		{
-			if (_itimediff(context.mCurrentTime, mState.ts_probe) >= 0)
+			if (DeltaTime(context.mCurrentTime, mState.ts_probe) >= 0)
 			{
 				if (mState.probe_wait < IKCP_PROBE_INIT)
+				{
 					mState.probe_wait = IKCP_PROBE_INIT;
+				}
 				mState.probe_wait += mState.probe_wait / 2;
 				if (mState.probe_wait > IKCP_PROBE_LIMIT)
+				{
 					mState.probe_wait = IKCP_PROBE_LIMIT;
+				}
 				mState.ts_probe = context.mCurrentTime + mState.probe_wait;
 				mState.probe |= IKCP_ASK_SEND;
 			}
@@ -1107,10 +1105,10 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	mState.probe = 0;
 
 	// calculate window size
-	cwnd = _imin_(mState.snd_wnd, mState.rmt_wnd);
+	cwnd = Min(mState.snd_wnd, mState.rmt_wnd);
 	if (mState.nocwnd == 0)
 	{
-		cwnd = _imin_(mState.cwnd, cwnd);
+		cwnd = Min(mState.cwnd, cwnd);
 	}
 
 	auto WriteDataSegment = [&context](NetCommand* cmd, size_t pos, size_t len)
@@ -1121,7 +1119,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	};
 
 	// move data from snd_queue to snd_buf
-	while (_itimediff(mState.snd_nxt, mState.snd_una + cwnd) < 0)
+	while (DeltaTime(mState.snd_nxt, mState.snd_una + cwnd) < 0)
 	{
 		if (mSndQueue.IsEmpty())
 		{
@@ -1167,9 +1165,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 			WriteDataSegment(cmd, 0, cmd->mNumberOfBytesToSend);
 		}
 		mUnrealiableSndQueue.PopFront();
-		NetUpstreamSegment tmp;
-		tmp.mCommand = cmd;
-		ClearCommand(&tmp, context.mControl);
+		ClearCommand(cmd, context.mControl);
 	}
 
 	int change = 0;
@@ -1186,7 +1182,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 			segment->mHeader.rto = mState.rx_rto;
 			segment->mHeader.resendts = context.mCurrentTime + segment->mHeader.rto + rtomin;
 		}
-		else if (_itimediff(context.mCurrentTime, segment->mHeader.resendts) >= 
+		else if (DeltaTime(context.mCurrentTime, segment->mHeader.resendts) >= 
 						 long(Max(mState.interval, context.mControl.mResendExtraDelay)))
 		{
 			needsend = 1;
@@ -1194,14 +1190,14 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 			mState.xmit++;
 			if (mState.nodelay == 0)
 			{
-				segment->mHeader.rto += _imax_(segment->mHeader.rto, (uint32_t)mState.rx_rto);
+				segment->mHeader.rto += Max(segment->mHeader.rto, (uint32_t)mState.rx_rto);
 			}
 			else
 			{
 				int32_t step = (mState.nodelay < 2) ? ((int32_t)(segment->mHeader.rto)) : mState.rx_rto;
 				segment->mHeader.rto += step / 2;
 			}
-			ION_NET_CHANNEL_LOG("Segment lost after " << _itimediff(context.mCurrentTime, segment->mHeader.resendts) + segment->mHeader.rto
+			ION_NET_CHANNEL_LOG("Segment lost after " << DeltaTime(context.mCurrentTime, segment->mHeader.resendts) + segment->mHeader.rto
 													  << "ms;rto=" << segment->mHeader.rto << ";rx_rto=" << mState.rx_rto);
 			segment->mHeader.resendts = context.mCurrentTime + segment->mHeader.rto;
 			if (segment->mHeader.cmd == IKCP_CMD_PUSH)
@@ -1241,7 +1237,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 				WriteDataSegment(segment->mCommand, segment->mPos, segment->mHeader.len);
 				if (segment->mCommand->mReliability != NetPacketReliability::Reliable)
 				{
-					ClearCommand(segment, context.mControl);
+					ClearCommand(segment->mCommand, context.mControl);
 				}
 			}
 			else
@@ -1279,7 +1275,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	// update ssthresh
 	if (change)
 	{
-		long inflight = _itimediff(mState.snd_nxt, mState.snd_una);
+		long inflight = DeltaTime(mState.snd_nxt, mState.snd_una);
 		ION_ASSERT(inflight >= 0, "Invalid difference");
 		mState.ssthresh = ion::SafeRangeCast<uint32_t>(inflight / 2);
 		if (mState.ssthresh < IKCP_THRESH_MIN)

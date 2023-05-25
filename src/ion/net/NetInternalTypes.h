@@ -96,7 +96,7 @@ struct NetUpstreamSegmentHeader
 	uint32_t wnd;
 	uint32_t una;
 	uint32_t len;
-	uint32_t resendts;
+	TimeMS resendts;
 	uint32_t rto;
 	uint32_t fastack;
 	uint32_t xmit;

@@ -10,7 +10,7 @@ class BasePeer;
 class BitStream;
 struct NetControl;
 struct NetRemoteSystem;
-struct NetRemoteStore;
+struct NetExchange;
 struct NetReception;
 struct NetConnections;
 class JobScheduler;
@@ -21,7 +21,7 @@ namespace NetReceptionLayer
 
 ion::NetSocketReceiveData* Receive(NetReception& reception, NetControl& control, ion::NetSocketReceiveData* recvStruct);
 
-void ProcessBufferedPackets(ion::NetReception& reception, NetControl& control, NetRemoteStore& remoteStore,
+void ProcessBufferedPackets(ion::NetReception& reception, NetControl& control, NetExchange& exchange,
 							ion::NetConnections& connections, JobScheduler* js, const TimeMS now);
 
 void Reset(NetReception& reception, NetControl& control);

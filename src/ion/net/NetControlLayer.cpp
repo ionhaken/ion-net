@@ -1,12 +1,11 @@
 #include <ion/net/NetCommand.h>
 #include <ion/net/NetConfig.h>
 #include <ion/net/NetControlLayer.h>
+#include <ion/net/NetExchangeLayer.h>
 #include <ion/net/NetGUID.h>
 #include <ion/net/NetGlobalClock.h>
 #include <ion/net/NetInterface.h>
 #include <ion/net/NetMemory.h>
-#include <ion/net/NetRemoteStore.h>
-#include <ion/net/NetRemoteStoreLayer.h>
 #include <ion/net/NetSendCommand.h>
 #include <ion/net/NetSocket.h>
 #include <ion/net/NetStartupParameters.h>
@@ -108,7 +107,7 @@ void ClearBufferedCommands(NetControl& control)
 	control.mBufferedCommands.DequeueAll([&](ion::NetCommandPtr& bcs) { ion::DeleteArenaPtr(&control.mMemoryResource, bcs); });
 }
 
-void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections, ion::TimeMS now)
+void Process(NetControl& control, NetExchange& exchange, const NetConnections& connections, ion::TimeMS now)
 {
 	SmallVector<NetRemoteIndex, 16, NetAllocator<NetRemoteIndex>> remoteIndices;
 	ion::NetCommandPtr bcs;
@@ -120,7 +119,7 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 			ION_ASSERT(connectionMode == NetMode::Disconnected ||
 						 (bcs->mCommand == NetCommandType::SendRemote || bcs->mCommand == NetCommandType::SendRemotes),
 					   "Invalid command to change remote mode");
-			ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, std::move(bcs), now, remoteIndices);
+			ion::NetExchangeLayer::SendImmediate(exchange, control, std::move(bcs), now, remoteIndices);
 
 			// Set the new connection state AFTER we call sendImmediate in case we are setting it to a disconnection state, which does
 			// not allow further sends
@@ -129,13 +128,13 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 				ForEach(remoteIndices,
 						[&](auto index)
 						{
-							auto& remoteSystem = remoteStore.mRemoteSystemList[index];
+							auto& remoteSystem = exchange.mRemoteSystemList[index];
 							ION_ASSERT(remoteSystem.mMode != NetMode::Disconnected, "Invalid remote");
-							ion::NetRemoteStoreLayer::SetMode(remoteStore, remoteSystem, connectionMode);
+							ion::NetExchangeLayer::SetMode(exchange, remoteSystem, connectionMode);
 						});
 			}
 			remoteIndices.Clear();
-			continue;  // Command ownership moved to remote store
+			continue;  // Command ownership moved to exchange layer
 		}
 		else
 		{
@@ -143,22 +142,22 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 			{
 			case NetCommandType::CloseConnection:
 			{
-				CloseConnectionInternal(control, remoteStore, connections, NetAddressOrRemoteRef(bcs->mTarget.mRemoteId), false, true,
+				CloseConnectionInternal(control, exchange, connections, NetAddressOrRemoteRef(bcs->mTarget.mRemoteId), false, true,
 										bcs->mChannel, bcs->mPriority);
 				break;
 			}
 			case NetCommandType::ChangeSystemAddress:
 			{
 				ion::NetRemoteSystem* rssFromGuid =
-				  ion::NetRemoteStoreLayer::GetRemoteSystem(remoteStore, *reinterpret_cast<NetRemoteId*>(&bcs->mData), true, true);
+				  ion::NetExchangeLayer::GetRemoteSystem(exchange, *reinterpret_cast<NetRemoteId*>(&bcs->mData), true, true);
 				if (rssFromGuid != 0)
 				{
 					ion::NetRemoteId existingRemote =
-					  NetRemoteStoreLayer::GetRemoteIdFromSocketAddress(remoteStore, rssFromGuid->mAddress, true, false);
+					  NetExchangeLayer::GetRemoteIdFromSocketAddress(exchange, rssFromGuid->mAddress, true, false);
 					if (existingRemote.IsValid())
 					{
-						ion::NetRemoteStoreLayer::ReferenceRemoteSystem(remoteStore, bcs->mTarget.mAddressList.Front(),
-																		existingRemote.RemoteIndex());
+						ion::NetExchangeLayer::ReferenceRemoteSystem(exchange, bcs->mTarget.mAddressList.Front(),
+																	 existingRemote.RemoteIndex());
 					}
 				}
 				break;
@@ -167,42 +166,42 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 			{
 				ion::GlobalClock* srcClock;
 				memcpy((char*)&srcClock, &bcs->mData, sizeof(char*));
-				auto remoteSystem = ion::NetRemoteStoreLayer::GetRemoteSystem(remoteStore, bcs->mTarget.mRemoteId, true, true);
+				auto remoteSystem = ion::NetExchangeLayer::GetRemoteSystem(exchange, bcs->mTarget.mRemoteId, true, true);
 				if (remoteSystem)
 				{
-					remoteStore.mGlobalClock = srcClock;
-					remoteStore.mGlobalClock->OnTimeSync(remoteSystem->timeSync.GetClock(), remoteSystem->timeSync.SyncState());
+					exchange.mGlobalClock = srcClock;
+					exchange.mGlobalClock->OnTimeSync(remoteSystem->timeSync.GetClock(), remoteSystem->timeSync.SyncState());
 					remoteSystem->timeSync.SetActive(true);
 				}
 				else
 				{
 					ION_NET_LOG_ABNORMAL("No remote system for time sync;id=" << bcs->mTarget.mRemoteId);
 					srcClock->OnOutOfSync();
-					remoteStore.mGlobalClock = nullptr;
+					exchange.mGlobalClock = nullptr;
 				}
 				break;
 			}
 			case NetCommandType::DisableTimeSync:
 			{
-				auto remoteSystem = ion::NetRemoteStoreLayer::GetRemoteSystem(remoteStore, bcs->mTarget.mRemoteId, true, true);
+				auto remoteSystem = ion::NetExchangeLayer::GetRemoteSystem(exchange, bcs->mTarget.mRemoteId, true, true);
 				if (remoteSystem)
 				{
 					remoteSystem->timeSync.SetActive(false);
 				}
-				if (remoteStore.mGlobalClock)
+				if (exchange.mGlobalClock)
 				{
-					remoteStore.mGlobalClock->OnOutOfSync();
-					remoteStore.mGlobalClock = nullptr;
+					exchange.mGlobalClock->OnOutOfSync();
+					exchange.mGlobalClock = nullptr;
 				}
 				break;
 			}
 			case ion::NetCommandType::PingAddress:
 			{
-				auto* remoteSystem = ion::NetRemoteStoreLayer::GetRemoteSystem(remoteStore, *bcs->mTarget.mAddressList.Begin(), true, true);
+				auto* remoteSystem = ion::NetExchangeLayer::GetRemoteSystem(exchange, *bcs->mTarget.mAddressList.Begin(), true, true);
 				if (remoteSystem)
 				{
 					remoteSystem->pingTracker.OnPing(now);
-					PingInternal(control, remoteStore, remoteSystem->mAddress, false, NetPacketReliability::Unreliable, now);
+					PingInternal(control, exchange, remoteSystem->mAddress, false, NetPacketReliability::Unreliable, now);
 				}
 				break;
 			}
@@ -219,11 +218,11 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 		ion::DeleteArenaPtr(&control.mMemoryResource, bcs);
 	}
 	uint32_t updateDelta = TimeSince(now, control.mLastUpdate);
-	if (updateDelta > NetUpdateInterval*2)
+	if (updateDelta > 200)
 	{
 		control.mResendExtraDelay = Min(Max(control.mResendExtraDelay, updateDelta * uint32_t(8)), NetMaxResendAlleviation);
-		ION_NET_LOG_VERBOSE("Update took " << updateDelta << ", which is longer than update interval " << NetUpdateInterval
-							   << ";ResendExtraDelay=" << control.mResendExtraDelay);
+		ION_NET_LOG_VERBOSE("Update took " << updateDelta << ", configured interval is " << NetUpdateInterval
+										   << ";ResendExtraDelay=" << control.mResendExtraDelay);
 	}
 	if (control.mResendExtraDelay > 0)
 	{
@@ -240,7 +239,7 @@ void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnecti
 	control.mLastUpdate = now;
 }
 
-void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections,
+void CloseConnectionInternal(NetControl& control, NetExchange& exchange, const NetConnections& connections,
 							 const NetAddressOrRemoteRef& systemIdentifier, bool sendDisconnectionNotification, bool performImmediate,
 							 unsigned char orderingChannel, NetPacketPriority disconnectionNotificationPriority)
 {
@@ -256,7 +255,7 @@ void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, c
 		ION_ASSERT(systemIdentifier.mAddress != NetUnassignedSocketAddress, "Invalid target");
 		NetSocketAddress targetAddress = systemIdentifier.mAddress;
 		targetAddress.FixForIPVersion(connections.mSocketList[0]->mBoundAddress.GetIPVersion());
-		remoteId = NetRemoteStoreLayer::GetRemoteIdFromSocketAddress(remoteStore, targetAddress, performImmediate, false);
+		remoteId = NetExchangeLayer::GetRemoteIdFromSocketAddress(exchange, targetAddress, performImmediate, false);
 		if (!remoteId.IsValid())
 		{
 			return;	 // Already closed
@@ -281,8 +280,8 @@ void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, c
 
 		if (performImmediate)
 		{
-			ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, cmd.Release(), ion::SteadyClock::GetTimeMS());
-			ion::NetRemoteSystem* rss = ion::NetRemoteStoreLayer::GetRemoteSystem(remoteStore, remoteId, true, true);
+			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), ion::SteadyClock::GetTimeMS());
+			ion::NetRemoteSystem* rss = ion::NetExchangeLayer::GetRemoteSystem(exchange, remoteId, true, true);
 			ION_ASSERT(rss->mMode != NetMode::Disconnected, "Invalid connection to start disconnecting");
 			if (rss->mMode == NetMode::DisconnectOnNoAck)
 			{
@@ -295,8 +294,8 @@ void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, c
 			if (rss->timeSync.IsActive())
 			{
 				rss->timeSync.SetActive(false);
-				remoteStore.mGlobalClock->OnOutOfSync();
-				remoteStore.mGlobalClock = nullptr;
+				exchange.mGlobalClock->OnOutOfSync();
+				exchange.mGlobalClock = nullptr;
 			}
 		}
 		else
@@ -308,12 +307,12 @@ void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, c
 	{
 		if (performImmediate)
 		{
-			if (remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].mMode != NetMode::Disconnected &&
-				remoteStore.mRemoteSystemList[remoteId.RemoteIndex()].mId.load() == remoteId)
+			if (exchange.mRemoteSystemList[remoteId.RemoteIndex()].mMode != NetMode::Disconnected &&
+				exchange.mRemoteSystemList[remoteId.RemoteIndex()].mId.load() == remoteId)
 			{
-				ion::NetRemoteStoreLayer::ResetRemoteSystem(remoteStore, control, control.mMemoryResource, remoteId.RemoteIndex(),
-															ion::SteadyClock::GetTimeMS());
-				ion::NetRemoteStoreLayer::RemoveFromActiveSystemList(remoteStore, remoteId.RemoteIndex());
+				ion::NetExchangeLayer::ResetRemoteSystem(exchange, control, control.mMemoryResource, remoteId.RemoteIndex(),
+														 ion::SteadyClock::GetTimeMS());
+				ion::NetExchangeLayer::RemoveFromActiveSystemList(exchange, remoteId.RemoteIndex());
 			}
 		}
 		else
@@ -384,7 +383,7 @@ void SendBuffered(NetControl& control, NetCommandPtr&& cmd)
 	}
 }
 
-void PingInternal(NetControl& control, NetRemoteStore& remoteStore, const NetSocketAddress& target, bool performImmediate,
+void PingInternal(NetControl& control, NetExchange& exchange, const NetSocketAddress& target, bool performImmediate,
 				  NetPacketReliability reliability, ion::TimeMS now)
 {
 	if (!control.mIsActive)
@@ -403,14 +402,14 @@ void PingInternal(NetControl& control, NetRemoteStore& remoteStore, const NetSoc
 
 		if (performImmediate)
 		{
-			ion::NetRemoteStoreLayer::SendImmediate(remoteStore, control, std::move(cmd.Release()), now);
+			ion::NetExchangeLayer::SendImmediate(exchange, control, std::move(cmd.Release()), now);
 			return;
 		}
 	}
 	cmd.Dispatch();
 }
 
-int Send(NetControl& control, const NetRemoteStore& remoteStore, const char* data, const int length, NetPacketPriority priority,
+int Send(NetControl& control, const NetExchange& exchange, const char* data, const int length, NetPacketPriority priority,
 		 NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast)
 {
 	ION_NET_API_CHECK(data && length > 0, -1, "Invalid data");
@@ -419,7 +418,7 @@ int Send(NetControl& control, const NetRemoteStore& remoteStore, const char* dat
 	ION_NET_API_CHECK(!(orderingChannel >= NetNumberOfChannels), -1, "Invalid channel");
 	ION_ASSERT(control.mIsActive, "Not active");
 
-	if (remoteStore.mRemoteSystemList == nullptr)
+	if (exchange.mRemoteSystemList == nullptr)
 		return 0;
 
 	if (broadcast == false)
@@ -428,9 +427,9 @@ int Send(NetControl& control, const NetRemoteStore& remoteStore, const char* dat
 		{
 			return 0;
 		}
-		if (ion::NetRemoteStoreLayer::IsLoopbackAddress(remoteStore, systemIdentifier, true))
+		if (ion::NetExchangeLayer::IsLoopbackAddress(exchange, systemIdentifier, true))
 		{
-			SendLoopback(control, remoteStore, data, length);
+			SendLoopback(control, exchange, data, length);
 			return 1;
 		}
 	}
@@ -439,7 +438,7 @@ int Send(NetControl& control, const NetRemoteStore& remoteStore, const char* dat
 	return 1;
 }
 
-void SendLoopback(NetControl& control, const NetRemoteStore& remoteStore, const char* data, const int length)
+void SendLoopback(NetControl& control, const NetExchange& exchange, const char* data, const int length)
 {
 	if (data == 0 || length < 0)
 		return;
@@ -450,8 +449,8 @@ void SendLoopback(NetControl& control, const NetRemoteStore& remoteStore, const 
 
 	// NetPacket* packet = AllocPacket(length);
 	memcpy(packet->Data(), data, length);
-	packet->mAddress = ion::NetRemoteStoreLayer::GetLoopbackAddress(remoteStore);
-	packet->mGUID = remoteStore.mGuid;
+	packet->mAddress = ion::NetExchangeLayer::GetLoopbackAddress(exchange);
+	packet->mGUID = exchange.mGuid;
 	packet->mRemoteId = NetRemoteId();
 	control.mPacketReturnQueue.Enqueue(std::move(packet));
 }
@@ -562,14 +561,14 @@ void DeallocateReceiveBuffer(NetControl& control, ion::NetSocketReceiveData* con
 	ion::Destroy(control.mReceiveAllocator, rcv);
 }
 
-void ClearCommand(NetControl& control, NetUpstreamSegment* seg)
+void ClearCommand(NetControl& control, NetCommand*& command)
 {
-	if (1 == seg->mCommand->mRefCount--)
+	if (1 == command->mRefCount--)
 	{
-		NetCommandPtr ptr(seg->mCommand);
+		NetCommandPtr ptr(command);
 		DeleteArenaPtr(&control.mMemoryResource, ptr);
 	}
-	seg->mCommand = nullptr;
+	command = nullptr;
 }
 
 void DeallocateSegment(NetControl& control, NetRemoteSystem& remote, NetDownstreamSegment* seg)

@@ -20,9 +20,9 @@ void Deinit(NetControl& control);
 
 void ClearBufferedCommands(NetControl& control);
 
-void Process(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections, ion::TimeMS now);
+void Process(NetControl& control, NetExchange& exchange, const NetConnections& connections, ion::TimeMS now);
 
-void CloseConnectionInternal(NetControl& control, NetRemoteStore& remoteStore, const NetConnections& connections,
+void CloseConnectionInternal(NetControl& control, NetExchange& exchange, const NetConnections& connections,
 							 const NetAddressOrRemoteRef& systemIdentifier, bool sendDisconnectionNotification, bool performImmediate,
 							 unsigned char orderingChannel, NetPacketPriority disconnectionNotificationPriority);
 
@@ -32,13 +32,13 @@ void SendBuffered(NetControl& control, const char* data, size_t numberOfBytesToS
 				  NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast,
 				  NetMode connectionMode);
 
-void PingInternal(NetControl& control, NetRemoteStore& remoteStore, const NetSocketAddress& target, bool performImmediate,
+void PingInternal(NetControl& control, NetExchange& exchange, const NetSocketAddress& target, bool performImmediate,
 				  NetPacketReliability reliability, ion::TimeMS now);
 
-int Send(NetControl& control, const NetRemoteStore& remoteStore, const char* data, const int length, NetPacketPriority priority,
+int Send(NetControl& control, const NetExchange& exchange, const char* data, const int length, NetPacketPriority priority,
 		 NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast);
 
-void SendLoopback(NetControl& control, const NetRemoteStore& remoteStore, const char* data, const int length);
+void SendLoopback(NetControl& control, const NetExchange& exchange, const char* data, const int length);
 
 ion::NetSocketReceiveData* AllocateReceiveBuffer(NetControl& control);
 
@@ -50,7 +50,7 @@ void DeallocateUserPacket(NetControl& control, NetPacket* packet);
 
 void DeallocateSegment(NetControl& control, NetRemoteSystem& remote, NetDownstreamSegment* seg);
 
-void ClearCommand(NetControl& control, NetUpstreamSegment* seg);
+void ClearCommand(NetControl& control, NetCommand*& command);
 
 void AddPacketToProducer(NetControl& control, ion::NetPacket* p);
 

@@ -1,11 +1,11 @@
 #pragma once
 
 #include <ion/net/NetMemory.h>
-#include <ion/net/NetReliableChannels.h>
 #include <ion/net/NetSecureTypes.h>
 #include <ion/net/NetSimulator.h>
 #include <ion/net/NetStats.h>
 #include <ion/net/NetTimeSync.h>
+#include <ion/net/NetTransport.h>
 
 #include <ion/arena/UniqueArenaPtr.h>
 
@@ -20,7 +20,7 @@ using NetRemoteSystemResource = ion::TLSFResource<PolymorphicResource, ion::tag:
 
 enum class NetDataTransferSecurity : uint8_t
 {
-	EncryptionAndReplayProtection,  // #TODO: Impl replay protection & checksum
+	EncryptionAndReplayProtection,	// #TODO: Impl replay protection & checksum
 	ReplayProtectionAndChecksum,
 	Checksum,
 	Disabled
@@ -48,8 +48,8 @@ struct NetRemoteSystem
 	}
 
 	// Data transport
-	NetSocket* netSocket = nullptr;  // Reference counted socket to send back on
-	ion::NetReliableChannels reliableChannels;
+	NetSocket* netSocket = nullptr;	 // Reference counted socket to send back on
+	ion::NetTransport mTransport;
 
 	// Qos
 	ion::Mutex mMetrixInitMutex;
@@ -62,7 +62,7 @@ struct NetRemoteSystem
 #endif
 	uint32_t mConversationId = 0;
 	std::atomic<NetRemoteId> mId;
-	uint16_t MTUSize = 0; // MTU size without UDP/IP headers
+	uint16_t MTUSize = 0;  // MTU size without UDP/IP headers
 
 	// Connection handling
 	ion::TimeMS connectionTime;	 /// connection time, if active.
@@ -77,14 +77,13 @@ struct NetRemoteSystem
 	ion::NetTimeSync timeSync;
 	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::Disabled;
 	bool mIsRemoteInitiated = false;
-	bool mAllowFastReroute = false;	// Sender can change system address without need to renegotiate connection.
-
+	bool mAllowFastReroute = false;	 // Sender can change system address without need to renegotiate connection.
 
 	// Id
 	NetGUID guid;
-	NetSocketAddress mAddress;  /// Their external IP on the internet
+	NetSocketAddress mAddress;	/// Their external IP on the internet
 
-	int PayloadSize() const 
+	int PayloadSize() const
 	{
 		int payloadSize = ion::NetUdpPayloadSize(MTUSize);
 #if ION_NET_FEATURE_SECURITY
@@ -95,6 +94,5 @@ struct NetRemoteSystem
 #endif
 		return payloadSize;
 	}
-
 };
 }  // namespace ion

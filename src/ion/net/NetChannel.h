@@ -115,8 +115,8 @@ public:
 		uint32_t ts_recent, ts_lastack;
 		// threshold of congestion window
 		uint32_t ssthresh;
-		int32_t rx_rttval;
-		int32_t rx_srtt;  // smoothed rtt average
+		uint32_t rx_rttval;
+		uint32_t rx_srtt;  // smoothed rtt average
 		int32_t rx_rto, rx_minrto;
 		// maximum sending window size
 		uint32_t snd_wnd;
@@ -128,9 +128,12 @@ public:
 		// receiver window and network status
 		uint32_t cwnd;
 		uint32_t probe;
-		uint32_t interval, ts_flush, xmit;
+		uint32_t interval;
+		TimeMS ts_flush;
+		uint32_t xmit;
 		uint32_t nodelay;
-		uint32_t ts_probe, probe_wait;
+		TimeMS ts_probe;
+		uint32_t probe_wait;
 		uint32_t dead_link, incr;
 		uint32_t ackcount;
 		uint32_t ackblock;
@@ -154,7 +157,7 @@ public:
 	} mState;
 
 private:
-	void ClearCommand(NetUpstreamSegment* seg, NetControl& control);
+	void ClearCommand(NetCommand*& command, NetControl& control);
 	uint32_t FreeSendSegment(NetUpstreamSegment* seg, NetRemoteSystem& remote, NetControl& control);
 	int FindRcvIndex(uint32_t sn);
 	[[nodiscard]] uint32_t ParseUna(NetRemoteSystem& remote, uint32_t una, NetControl& control);

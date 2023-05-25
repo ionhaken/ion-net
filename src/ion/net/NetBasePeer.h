@@ -217,7 +217,7 @@ public:
 
 	inline bool GetSystemList(NetVector<NetRemoteId>& outRemoteIds) const
 	{
-		unsigned int numSystems = mPeer.Get()->mRemoteStore.mActiveSystemListSize;
+		unsigned int numSystems = mPeer.Get()->mExchange.mActiveSystemListSize;
 		outRemoteIds.Resize(numSystems);
 		int result = ion_net_get_connection_list((ion_net_peer)mPeer.Get(), (ion_net_remote_id)outRemoteIds.Data(), &numSystems);
 		outRemoteIds.Resize(numSystems);
@@ -395,7 +395,7 @@ public:
 
 	void ClearBanList() { ion_net_clear_ban_list((ion_net_peer)mPeer.Get()); }
 
-	inline void SetLimitIPConnectionFrequency(bool b) { mPeer->mRemoteStore.mLimitConnectionFrequencyFromTheSameIP = b; }
+	inline void SetLimitIPConnectionFrequency(bool b) { mPeer->mExchange.mLimitConnectionFrequencyFromTheSameIP = b; }
 
 	int GetAveragePing(const NetAddressOrRemoteRef& remoteRef) { return ion_net_average_ping((ion_net_peer)mPeer.Get(), (ion_net_remote_ref)&remoteRef); }
 
@@ -433,7 +433,7 @@ public:
 
 	/*void GetStatisticsList(NetVector<NetSocketAddress>& addresses, NetVector<NetGUID>& guids, NetVector<NetStats>& statistics)
 	{
-		return NetRemoteStoreLayer::GetStatisticsList(mPeer->mRemoteStore, mPeer->mControl.mMemoryResource, addresses, guids, statistics);
+		return NetExchangeLayer::GetStatisticsList(mPeer->mExchange, mPeer->mControl.mMemoryResource, addresses, guids, statistics);
 	}*/
 
 

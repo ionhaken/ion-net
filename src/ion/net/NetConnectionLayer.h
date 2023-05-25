@@ -14,9 +14,9 @@ namespace ion
 
 namespace NetConnectionLayer
 {
-void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& control, NetRemoteStore& remoteStore, ion::TimeMS now);
+void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& control, NetExchange& exchange, ion::TimeMS now);
 
-bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& control, NetRemoteStore& remoteStore,
+bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& control, NetExchange& exchange,
 								 ion::NetSocketReceiveData& recvFromStruct, ion::TimeMS timeRead);
 
 void DerefAllSockets(ion::NetConnections& connections, NetInterfaceResource& resource);

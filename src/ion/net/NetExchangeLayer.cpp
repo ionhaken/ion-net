@@ -1295,6 +1295,7 @@ void SendConnectionRequestAccepted(NetExchange& exchange, NetControl& control, i
 	NetSendCommand cmd(control, remoteSystem->mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
 	if (cmd.HasBuffer())
 	{
+		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 		{
 			ByteWriter writer(cmd.Writer());
 
@@ -1310,8 +1311,6 @@ void SendConnectionRequestAccepted(NetExchange& exchange, NetControl& control, i
 			writer.Process(now);
 			writer.Process(incomingTimestamp);
 		}
-		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
-
 		NetExchangeLayer::SendImmediate(exchange, control, std::move(cmd.Release()), now);
 	}
 }

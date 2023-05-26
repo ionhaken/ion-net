@@ -392,21 +392,23 @@ void PingInternal(NetControl& control, NetExchange& exchange, const NetSocketAdd
 	NetSendCommand cmd(control, target, sizeof(unsigned char) + sizeof(ion::TimeMS));
 	if (cmd.HasBuffer())
 	{
+		cmd.Parameters().mReliability = reliability;
+		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 		{
 			ByteWriter writer(cmd.Writer());
 			writer.Process(NetMessageId::ConnectedPing);
 			writer.Process(now);
 		}
-		cmd.Parameters().mReliability = reliability;
-		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
 		if (performImmediate)
 		{
 			ion::NetExchangeLayer::SendImmediate(exchange, control, std::move(cmd.Release()), now);
-			return;
+		}
+		else
+		{
+			cmd.Dispatch();
 		}
 	}
-	cmd.Dispatch();
 }
 
 int Send(NetControl& control, const NetExchange& exchange, const char* data, const int length, NetPacketPriority priority,

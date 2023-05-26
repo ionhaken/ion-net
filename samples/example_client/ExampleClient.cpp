@@ -65,18 +65,20 @@ int main()
 
 				// Send back message with string "World\n"
 				ion::NetSendCommand cmd = client->CreateSendCommand(packet->mRemoteId, 64 /* max msg lenght */);
+				client->DeallocatePacket(packet);
 				if (cmd.HasBuffer())
 				{
-					ion::ByteWriter writer = cmd.Writer();
-					writer.Write(ion::NetMessageId::UserPacket);
-					writer.Write("World");
 					cmd.Parameters().mChannel = 16;
 					cmd.Parameters().mPriority = ion::NetPacketPriority::Low;
 					cmd.Parameters().mReliability = ion::NetPacketReliability::Reliable;
+					{
+						ion::ByteWriter writer = cmd.Writer();
+						writer.Write(ion::NetMessageId::UserPacket);
+						writer.Write("World");
+					}
+					cmd.Dispatch();
 				}
-				cmd.Dispatch();
-
-				client->DeallocatePacket(packet);
+								
 			}
 			ion::Thread::Sleep(5 * 1000);
 		}

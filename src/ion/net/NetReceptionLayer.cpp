@@ -331,9 +331,10 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		}
 
 		// Send the connection request complete to the game
-		NetSendCommand cmd(control, remoteSystem->mId, 64);
+		NetSendCommand cmd(control, remoteSystem->mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
 		if (cmd.HasBuffer())
 		{
+			cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 			{
 				ByteWriter writer(cmd.Writer());
 				writer.Process(NetMessageId::NewIncomingConnection);
@@ -345,9 +346,6 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 				writer.Process(now);
 				writer.Process(remoteTime);
 			}
-
-			cmd.Parameters().mPriority = NetPacketPriority::Immediate;
-
 			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
 		}
 

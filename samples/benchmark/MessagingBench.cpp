@@ -196,19 +196,20 @@ void ReadAndSend(const Pars& pars, PeerInstance* instance, uint32_t nextSend, io
 		ion::NetSendCommand cmd = instance->CreateSendCommand(remoteId, pars.packetSize, !remoteId.IsValid());
 		if (cmd.HasBuffer())
 		{
-			auto writer = cmd.Writer();
-			writer.Write(UserPacketId);
-			writer.Process(uint64_t(0xABBAFCED));
-			writer.Process(nextSend);
-			for (int k = 0; k < (pars.packetSize - 13)/8; ++k) 
-			{
-				writer.Write(uint64_t(k));
-			}
 			cmd.Parameters().mPriority = pars.packetPriority;
 			cmd.Parameters().mReliability = pars.packetReliability;
+			{
+				auto writer = cmd.Writer();
+				writer.Write(UserPacketId);
+				writer.Process(uint64_t(0xABBAFCED));
+				writer.Process(nextSend);
+				for (int k = 0; k < (pars.packetSize - 13) / 8; ++k)
+				{
+					writer.Write(uint64_t(k));
+				}
+			}
+			cmd.Dispatch();
 		}
-		
-		cmd.Dispatch();
 	}
 }
 

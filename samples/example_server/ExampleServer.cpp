@@ -53,18 +53,19 @@ int main()
 
 				// Send back message with string "Hello\n"
 				ion::NetSendCommand cmd = server->CreateSendCommand(packet->mRemoteId, 64 /* max msg lenght */);
+				server->DeallocatePacket(packet);
 				if (cmd.HasBuffer())
 				{
-					ion::ByteWriter writer = cmd.Writer();
-					writer.Write(ion::NetMessageId::UserPacket);
-					writer.Write("Hello");
 					cmd.Parameters().mChannel = 16;
 					cmd.Parameters().mPriority = ion::NetPacketPriority::Low;
 					cmd.Parameters().mReliability = ion::NetPacketReliability::Reliable;
+					{
+						ion::ByteWriter writer = cmd.Writer();
+						writer.Write(ion::NetMessageId::UserPacket);
+						writer.Write("Hello");
+					}
+					cmd.Dispatch();
 				}
-				cmd.Dispatch();
-
-				server->DeallocatePacket(packet);
 			}
 			ion::Thread::Sleep(5 * 1000);
 		}

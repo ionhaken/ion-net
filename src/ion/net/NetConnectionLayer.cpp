@@ -631,7 +631,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  }
 					  else
 					  {
-						  ION_NET_LOG_ABNORMAL("[" << exchange.mGuid << "] Failed, " << rsp.guid << " has no connections available");
+						  ION_NET_LOG_ABNORMAL("[" << exchange.mGuid << "] Cannot connect " << rsp.guid << ", no connections available");
 						  packet = AllocPacket(control, sizeof(char));
 						  packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;  // Attempted a connection and couldn't
 						  packet->mAddress = rcs->systemAddress;

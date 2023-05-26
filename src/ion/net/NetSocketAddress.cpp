@@ -542,7 +542,10 @@ void Serialize(const NetSocketAddress& src, ion::ByteWriter& writer)
 #if ION_NET_FEATURE_IPV6
 	if (src.GetIPVersion() == 6)
 	{
-		writer.Write(src.addr6);
+		writer.Write(src.addr6.sin6_flowinfo);
+		writer.Write(src.addr6.sin6_addr);
+		writer.Write(src.addr6.sin6_scope_id);
+		writer.Write(src.GetPortNetworkOrder());
 	}
 	else
 #endif
@@ -557,13 +560,16 @@ template <>
 bool Deserialize(NetSocketAddress& dst, ion::ByteReader& reader, void*)
 {
 	bool isValid = true;
-	unsigned char ipVersion;
+	unsigned char ipVersion = 0;
 	isValid &= reader.Read(ipVersion);
 #if ION_NET_FEATURE_IPV6
 	if (ipVersion == 6)
 	{
-		dst.addr4.sin_family = AF_INET6;
-		isValid &= reader.Read(dst.addr6);
+		dst.addr6.sin6_family = AF_INET6;
+		isValid &= reader.Read(dst.addr6.sin6_flowinfo);
+		isValid &= reader.Read(dst.addr6.sin6_addr);
+		isValid &= reader.Read(dst.addr6.sin6_scope_id);
+		isValid &= reader.Read(dst.addr6.sin6_port);
 	}
 	else if (ipVersion == 4)
 #endif

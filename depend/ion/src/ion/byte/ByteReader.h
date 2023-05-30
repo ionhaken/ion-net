@@ -122,6 +122,8 @@ public:
 		return numRead;
 	}
 
+	const u8* Data() { return mBuffer; }
+
 private:
 	const u8* mBuffer;
 	const u8* mEnd;

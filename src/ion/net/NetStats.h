@@ -133,16 +133,18 @@ struct NetStats
 	// Note: resent raw data is counted for packet even if only part of it is data that is being resent
 	uint64_t RawBytesResent() const { return Total(ion::PacketType::Raw, ion::DataType::Bytes, ion::DirectionType::Resent); }
 
-	uint64_t UserBytesSent() const
+	uint64_t UserBytesSent() const { return UserReliableBytesSent() + UserReliableBytesReceived(); }
+
+	uint64_t UserBytesReceived() const { return UserUnreliableBytesReceived() + UserReliableBytesReceived(); }
+
+	uint64_t UserUnreliableBytesSent() const
 	{
-		return Total(ion::PacketType::UserReliable, ion::DataType::Bytes, ion::DirectionType::Sent) +
-			   Total(ion::PacketType::UserUnreliable, ion::DataType::Bytes, ion::DirectionType::Sent);
+		return Total(ion::PacketType::UserUnreliable, ion::DataType::Bytes, ion::DirectionType::Sent);
 	}
 
-	uint64_t UserBytesReceived() const
+	uint64_t UserUnreliableBytesReceived() const
 	{
-		return Total(ion::PacketType::UserReliable, ion::DataType::Bytes, ion::DirectionType::Received) +
-			   Total(ion::PacketType::UserUnreliable, ion::DataType::Bytes, ion::DirectionType::Received);
+		return Total(ion::PacketType::UserUnreliable, ion::DataType::Bytes, ion::DirectionType::Received);
 	}
 
 	uint64_t UserReliableBytesSent() const { return Total(ion::PacketType::UserReliable, ion::DataType::Bytes, ion::DirectionType::Sent); }

@@ -4,11 +4,11 @@
 #include <ion/net/NetMessages.h>
 #include <ion/net/NetPacketPriority.h>
 #include <ion/net/NetTime.h>
-#include <ion/net/NetTransport.h>
 
 namespace ion
 {
 struct NetControl;
+struct NetTransport;
 
 namespace NetTransportLayer
 {
@@ -20,13 +20,11 @@ void Deinit(NetTransport& transport);
 void Reset(NetTransport& transport, NetControl& control, NetRemoteSystem& remote);
 
 bool Input(NetTransport& transport, NetControl& control, NetRemoteSystem& remoteSystem, uint32_t conversation,
-		   ion::NetSocketReceiveData& recvFromStruct, ion::TimeMS now);
+		   NetSocketReceiveData& recvFromStruct, TimeMS now);
 
+bool Send(NetTransport& transport, NetControl& control, TimeMS time, NetRemoteSystem& remoteSystem, NetCommand& command);
 
-bool Send(NetTransport& transport, NetControl& control, TimeMS time, NetRemoteSystem& remoteSystem, NetCommand& command,
-		  uint32_t conversation);
-void Update(NetTransport& transport, NetControl& control, NetRemoteSystem& remoteSystem, ion::TimeMS now);
-
+TimeMS Update(NetTransport& transport, NetControl& control, NetRemoteSystem& remoteSystem, TimeMS now);
 
 }  // namespace NetTransportLayer
 

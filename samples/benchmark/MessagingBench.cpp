@@ -371,9 +371,9 @@ TEST_CASE("mass_send", "[ideal]")
 	ion::String strBuffer;
 
 	{
-		ion::UniquePtr<test::PeerInstance> server;
 		ion::Vector<ion::UniquePtr<test::PeerInstance>> peerList;
-		constexpr unsigned short MaxClients = 1000;
+		ion::UniquePtr<test::PeerInstance> server;
+		constexpr unsigned short MaxClients = 4096;
 
 		peerList.Reserve(MaxClients);
 
@@ -386,19 +386,20 @@ TEST_CASE("mass_send", "[ideal]")
 			server->GetStatistics(ion::NetUnassignedSocketAddress, stats);	// Reset stats
 		}
 
+		unsigned long numBytesToSend = 4 * 1024;
 		for (int i = 0; i < 20; ++i)
 		{
 			ion::StopClock c;
 			
 			test::RunBenchmark(
-			  {1000 * 32, MaxClients, 1, 20, ion::NetPacketReliability::Reliable, packetPriority, peerList, server, 1, nullptr, true});
+			  {numBytesToSend, MaxClients, 1, 20, ion::NetPacketReliability::Reliable, packetPriority, peerList, server, 1, nullptr, true});
 			auto totalTime = c.GetMillis();
 
 			ion::NetStats stats;
 			server->GetStatistics(ion::NetUnassignedSocketAddress, stats);
-			size_t totalSize = (1000 * 32 * MaxClients);
-			ION_LOG_INFO("Server sending 32KB to " << MaxClients << " clients in " << totalTime << " ms ("
-												   << ((1000 * 32 * MaxClients) / (1000 * 1000)) << " MB) MB - Calculated "
+			size_t totalSize = (numBytesToSend * MaxClients);
+			ION_LOG_INFO("Server sending " << (numBytesToSend / 1024) << "KB to " << MaxClients << " clients in " << totalTime << " ms ("
+												   << ((numBytesToSend * MaxClients) / (1000 * 1000)) << " MB) MB - Calculated "
 												   << (float(totalSize) / (float(totalTime) / 1000.0)) / (1000 * 1000) << " MB/s"
 												   << " Metrics: RawSent:" << stats.RawBytesPerSecondSent() / (1000 * 1000) << " MB/s "
 												   << " RawSent:" << stats.RawBytesSent() / (1000 * 1000) << " MB"

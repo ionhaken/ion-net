@@ -257,7 +257,12 @@ public:
 
 	inline void DisableSecurity()
 	{
-		ion_net_set_data_transfer_security_level((ion_net_peer)mPeer.Get(), uint8_t(NetDataTransferSecurity::ReplayProtectionAndChecksum));
+		ion_net_set_data_transfer_security_level((ion_net_peer)mPeer.Get(), uint8_t(NetDataTransferSecurity::Protected));
+	}
+
+	inline void DisableSecurityAndProtection()
+	{
+		ion_net_set_data_transfer_security_level((ion_net_peer)mPeer.Get(), uint8_t(NetDataTransferSecurity::Disabled));
 	}
 
 	inline void SetMaximumIncomingConnections(unsigned int numberAllowed)
@@ -438,9 +443,8 @@ public:
 
 
 protected:
-	static constexpr unsigned int ShutdownWaitTimeMs = 500;
 	void Init(ion::NetInterfaceResource& resource);
-	void Deinit(unsigned int blockingTime = ShutdownWaitTimeMs);
+	void Deinit(unsigned int blockingTime = 0);
 
 	// #TODO: Convert to custom command
 	void SendBufferedList(const char** data, const int* lengths, const int numParameters, NetPacketPriority priority,

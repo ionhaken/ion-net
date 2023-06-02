@@ -68,19 +68,11 @@ union ION_EXPORT NetSocketAddress
 
 extern const NetSocketAddress NetUnassignedSocketAddress;
 
-#if 0  // #TODO: Explore using storage only for writing data
-	#if ION_NET_FEATURE_IPV6 == 1
-static_assert(sizeof(NetSocketAddress) == 32);
-	#endif
-union NetSocketAddressStorage
+#if 0  // #TODO: Explore using storage for writing data only
+struct NetSocketAddressStorage
 {
-	static constexpr const unsigned short InvalidFamily = AF_UNSPEC;
-	struct sockaddr_storage sa_stor;
-	NetSocketAddress mAddr;
-};
-	#if ION_NET_FEATURE_IPV6 == 1
-static_assert(sizeof(NetSocketAddressStorage) == 128);
-	#endif
+	byte mData[32];
+}
 #endif
 
 template <>

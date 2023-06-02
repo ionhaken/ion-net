@@ -372,61 +372,63 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 
 	// This needs to be done first to make sure all disconnects are sent and acked before shutdown can continue
 	ion::TimeMS now = ion::SteadyClock::GetTimeMS();
-	if (blockDuration > 0)
+
+	for (unsigned int i = 1; i <= systemListSize; i++)
 	{
-		for (unsigned int i = 1; i <= systemListSize; i++)
+		// remoteSystemList in user thread
+		if (net.mExchange.mRemoteSystemList[i].mMode != NetMode::Disconnected)
 		{
-			// remoteSystemList in user thread
-			if (net.mExchange.mRemoteSystemList[i].mMode != NetMode::Disconnected)
-			{
-				ION_NET_LOG_VERBOSE("[" << net.mExchange.mGuid << "] Shutdown: Closing connection to "
-										<< net.mExchange.mRemoteSystemList[i].guid);
-				NetControlLayer::CloseConnectionInternal(net.mControl, net.mExchange, net.mConnections,
-														 net.mExchange.mRemoteSystemList[i].mId.load(), true, !IsUpdateThreadRunning,
-														 orderingChannel, (NetPacketPriority)disconnectionNotificationPriority);
-			}
-		}
-
-		bool anyActive = false;
-		ion::TimeMS startWaitingTime = now;
-		while (TimeSince(now, startWaitingTime) < blockDuration)
-		{
-			anyActive = false;
-			for (unsigned int j = 1; j <= systemListSize; j++)
-			{
-				// remoteSystemList in user thread
-				if (net.mExchange.mRemoteSystemList[j].mMode != NetMode::Disconnected)
-				{
-					anyActive = true;
-					break;
-				}
-			}
-
-			// If this system is out of packets to send, then stop waiting
-			if (anyActive == false)
-			{
-				break;
-			}
-
-			if (IsUpdateThreadRunning)
-			{
-				ion::NetControlLayer::Trigger(net.mControl);
-				ion::Thread::Sleep(ion::NetUpdateInterval * 1000);
-			}
-			else
-			{
-				ion_net_preupdate(handle, nullptr);
-				ion_net_postupdate(handle, nullptr);
-			}
-			now = ion::SteadyClock::GetTimeMS();
-		}
-		if (anyActive)
-		{
-			ION_NET_LOG_VERBOSE("[" << net.mExchange.mGuid << "] Shutdown: Could not disconnect all remotes gracefully in "
-									<< blockDuration << "ms");
+			ION_NET_LOG_VERBOSE("[" << net.mExchange.mGuid << "] Shutdown: Closing connection to "
+									<< net.mExchange.mRemoteSystemList[i].guid);
+			NetControlLayer::CloseConnectionInternal(net.mControl, net.mExchange, net.mConnections,
+													 net.mExchange.mRemoteSystemList[i].mId.load(), true, !IsUpdateThreadRunning,
+													 orderingChannel, (NetPacketPriority)disconnectionNotificationPriority);
 		}
 	}
 
+	bool anyActive = false;
+	ion::TimeMS startWaitingTime = now;
+	do
+	{
+		anyActive = false;
+		for (unsigned int j = 1; j <= systemListSize; j++)
+		{
+			// remoteSystemList in user thread
+			if (net.mExchange.mRemoteSystemList[j].mMode != NetMode::Disconnected)
+			{
+				anyActive = true;
+				break;
+			}
+		}
+
+		// If this system is out of packets to send, then stop waiting
+		if (anyActive == false)
+		{
+			break;
+		}
+
+		if (IsUpdateThreadRunning)
+		{
+			ion::NetControlLayer::Trigger(net.mControl);
+			if (blockDuration > 0)
+			{
+				ion::Thread::Sleep(ion::NetUpdateInterval * 1000);
+			}
+		}
+		else
+		{
+			ion_net_preupdate(handle, nullptr);
+			ion_net_postupdate(handle, nullptr);
+		}
+		now = ion::SteadyClock::GetTimeMS();
+	} while (TimeSince(now, startWaitingTime) < blockDuration);
+
+	if (anyActive && blockDuration > 0)
+	{
+		ION_NET_LOG_VERBOSE("[" << net.mExchange.mGuid << "] Shutdown: Could not disconnect all remotes gracefully in " << blockDuration
+								<< "ms");
+	}
+	
 	ion::NetControlLayer::StopUpdating(net.mControl);
 
 	// Send thread might leak memory if stopping while there's active data sending, thus,

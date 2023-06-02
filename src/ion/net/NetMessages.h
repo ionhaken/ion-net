@@ -6,8 +6,6 @@
 
 namespace ion
 {
-// 0...31 KCP channel reservation
-constexpr uint8_t NetNumberOfChannels = 32;
 
 enum NetMessageId : byte
 {
@@ -17,6 +15,7 @@ enum NetMessageId : byte
 
 	Invalid = 0,
 	ConnectionAttemptFailed,
+	SocketStatus,
 	// InvalidSecretKey,
 	LastInternal,
 
@@ -40,7 +39,7 @@ enum NetMessageId : byte
 	// #TODO: Some types generate events like unconnected ping
 	//
 
-	ConnectedPing = ion::NetNumberOfChannels,
+	ConnectedPing,
 	UnconnectedPing,
 	UnconnectedPingOpenConnections,
 	ConnectedPong,
@@ -69,11 +68,9 @@ enum NetMessageId : byte
 	UnconnectedPong,
 	AdvertiseSystem,
 
-	// #TODO: Impl
+	// #TODO: Full-mesh support
 	RemoteDisconnectionNotification,
-	// #TODO: Impl
 	RemoteConnectionLost,
-	// #TODO: Impl
 	RemoteNewIncomingConnection,
 
 	// First user packet id

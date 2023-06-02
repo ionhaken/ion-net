@@ -1,5 +1,7 @@
 #include <ion/net/NetCommand.h>
+#include <ion/net/NetControl.h>
 #include <ion/net/NetControlLayer.h>
+#include <ion/net/NetMessages.h>
 #include <ion/net/NetPayload.h>
 #include <ion/net/NetReceptionLayer.h>
 #include <ion/net/NetSocketLayer.h>
@@ -20,13 +22,11 @@ struct AddressInfo
 {
 	AddressInfo(int type)
 	{
-		char ac[256];
-		int err = gethostname(ac, sizeof(ac));
-		ION_ASSERT(err != -1, "No hostname: " << ion::debug::GetLastErrorString());
-
 		ion::NetBindParameters bindParameters;
 		memset(&bindParameters, 0x0, sizeof(ion::NetBindParameters));
-		bindParameters.hostAddress = ac;
+		int err = gethostname(bindParameters.hostAddress, sizeof(bindParameters.hostAddress));
+		ION_ASSERT(err != -1, "No hostname: " << ion::debug::GetLastErrorString());
+
 		bindParameters.type = type;
 		Load(bindParameters);
 	}
@@ -230,17 +230,8 @@ void GetSystemAddress(ion::NetNativeSocket& nativeSocket, ion::NetSocketAddress&
 #endif
 }
 
-}  // namespace
 
-#if ION_PLATFORM_MICROSOFT
-int CloseSocket(NetSocket& socket) { return closesocket(socket.mNativeSocket); };
-#elif ION_PLATFORM_APPLE
-int CloseSocket(NetSocket& socket) { return CFSocketInvalidate(socket.mNativeSocket); };
-#else
-int CloseSocket(NetSocket& socket) { return close(socket.mNativeSocket); };
-#endif
-
-ion::NetBindResult BindSocket(NetSocket& socketLayer, ion::NetBindParameters& bindParameters)
+ion::NetBindResult BindSocketInternal(NetSocket& socketLayer, ion::NetBindParameters& bindParameters)
 {
 	ion::NetBindResult result = ion::NetBindResult::FailedToBind;
 	AddressInfo addressInfo(bindParameters);
@@ -332,6 +323,31 @@ ion::NetBindResult BindSocket(NetSocket& socketLayer, ion::NetBindParameters& bi
 		  return ion::ForEachOp::Next;
 	  });
 	return result;
+}
+
+
+}  // namespace
+
+#if ION_PLATFORM_MICROSOFT
+int CloseSocket(NetSocket& socket) { return closesocket(socket.mNativeSocket); };
+#elif ION_PLATFORM_APPLE
+int CloseSocket(NetSocket& socket) { return CFSocketInvalidate(socket.mNativeSocket); };
+#else
+int CloseSocket(NetSocket& socket) { return close(socket.mNativeSocket); };
+#endif
+
+ion::NetBindResult BindSocket(NetSocket& socket, ion::NetBindParameters& bindParameters)
+{
+	ion::NetBindResult bindResult = BindSocketInternal(socket, bindParameters);
+#if ION_PLATFORM_MICROSOFT
+	if (bindResult == NetBindResult::FailedToBind)
+	{
+		// Sometimes Windows will fail if the socket is recreated too quickly
+		ion::Thread::SleepMs(100);
+		bindResult = BindSocketInternal(socket, bindParameters);
+	}
+#endif
+	return bindResult;
 }
 
 void GetInternalAddresses(ion::Array<NetSocketAddress, NetMaximumNumberOfInternalIds>& addresses)
@@ -582,12 +598,41 @@ void ListeningThread(NetSocket& socket)
 }
 #endif
 
+void SendSocketStatus(NetControl& control, int status)
+{
+	if (NetPacket* packet = ion::NetControlLayer::AllocateUserPacket(control, sizeof(NetMessageId) + sizeof(int)))
+	{
+		packet->mLength = sizeof(NetMessageId) + sizeof(int);
+		{
+			ByteWriterUnsafe writer(packet->Data());
+			writer.Write(NetMessageId::SocketStatus);
+			writer.Write(status);
+		}		
+		control.mPacketReturnQueue.Enqueue(std::move((NetPacket*)packet));
+	}
+}
+
 bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& control, const NetStartupParameters& parameters)
 {
 	socket.mReceiveThread.SetEntryPoint(
 	  [&socket, &control, &reception]()
 	  {
 		  ion::NetSocketReceiveData* recvFromStruct = ion::NetControlLayer::AllocateReceiveBuffer(control);
+		  if (!recvFromStruct)
+		  {
+			  SendSocketStatus(control, -1);
+			  return;
+		  }
+#if 0
+		  auto bindResult = ion::SocketLayer::BindSocket(socket, socket.mBindParameters);
+		  if (bindResult != NetBindResult::Success)
+		  {
+			  socket.userConnectionSocketIndex = -1
+		  }
+#endif
+	
+		  SendSocketStatus(control, 1);
+
 		  while (socket.mIsReceiveThreadActive)
 		  {
 			  recvFromStruct->Socket() = &socket;
@@ -595,7 +640,7 @@ bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& contro
 			  ION_PROFILER_SCOPE(Network, "Socket Receive");
 			  if (recvFromStruct->SocketBytesRead() > 0)
 			  {
-				  recvFromStruct->mHeader.mSocket.mInternalPacketType = NetInternalPacketType::DownstreamSegment;
+				  recvFromStruct->mHeader.mSocket.mFlags = NetPacketFlags::DownstreamSegment;
 				  ION_ASSERT(recvFromStruct->Address().IsAssigned() && recvFromStruct->Address().GetPort(), "Invalid source");
 				  recvFromStruct = ion::NetReceptionLayer::Receive(reception, control, recvFromStruct);
 			  }
@@ -605,6 +650,7 @@ bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& contro
 			  }
 		  }
 		  ion::NetControlLayer::DeallocateReceiveBuffer(control, recvFromStruct);
+		  SendSocketStatus(control, 0);
 	  });
 	socket.mIsReceiveThreadActive = true;
 	if (!socket.mReceiveThread.Start(32 * 1024, parameters.mReceiveThreadPriority))

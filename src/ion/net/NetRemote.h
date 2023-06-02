@@ -20,9 +20,8 @@ using NetRemoteSystemResource = ion::TLSFResource<PolymorphicResource, ion::tag:
 
 enum class NetDataTransferSecurity : uint8_t
 {
-	EncryptionAndReplayProtection,	// #TODO: Impl replay protection & checksum
-	ReplayProtectionAndChecksum,
-	Checksum,
+	Secure,		// Data is encrypted, verified and protected against replay attacks.
+	Protected,	// Data is protected against packet duplication.
 	Disabled
 };
 
@@ -87,7 +86,7 @@ struct NetRemoteSystem
 	{
 		int payloadSize = ion::NetUdpPayloadSize(MTUSize);
 #if ION_NET_FEATURE_SECURITY
-		if (mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+		if (mDataTransferSecurity == NetDataTransferSecurity::Secure)
 		{
 			payloadSize -= ion::NetSecure::AuthenticationTagLength;
 		}

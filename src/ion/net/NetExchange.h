@@ -57,24 +57,22 @@ struct NetExchange
 	std::atomic<uint16_t> mMaximumNumberOfPeers = 0;
 
 #if ION_NET_FEATURE_SECURITY == 1
-	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::EncryptionAndReplayProtection;
+	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::Secure;
 #else
-	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::ReplayProtectionAndChecksum;
+	NetDataTransferSecurity mDataTransferSecurity = NetDataTransferSecurity::Protected;
 #endif
 	bool mLimitConnectionFrequencyFromTheSameIP = false;
 	bool mIsStatsEnabledByDefault = true;
 
 	// Conversation bookkeeping for authority only.
-	// Conversation id is 32-bit, but for network frames, first 8 bits is replaced with channel id, thus,
-	// the bookkeeping is done only for the 24-bit part
 	struct AuthorityConversations
 	{
 	public:
 		// Authority can store keys for fast rerouting
-		void StoreKey(uint32_t key, NetRemoteIndex index) { mKeys.Insert(key >> 8, index); }
+		void StoreKey(uint32_t key, NetRemoteIndex index) { mKeys.Insert(key, index); }
 		void RemoveKey(uint32_t key)
 		{
-			auto iter = mKeys.Find(key >> 8);
+			auto iter = mKeys.Find(key);
 			if (iter != mKeys.End())
 			{
 				mKeys.Erase(iter);
@@ -83,7 +81,7 @@ struct NetExchange
 
 		NetRemoteIndex FindRemote(uint32_t key) const
 		{
-			auto iter = mKeys.Find(key >> 8);
+			auto iter = mKeys.Find(key);
 			return iter != mKeys.End() ? iter->second : NetGUID::InvalidNetRemoteIndex;
 		}
 		~AuthorityConversations() { ION_ASSERT(mKeys.IsEmpty(), "Old conversations left"); }

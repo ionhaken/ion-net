@@ -595,7 +595,7 @@ ion::NetPacket* AllocateUserPacket(NetControl& control, size_t size)
 #if (ION_ASSERTS_ENABLED == 1)
 		control.mUserPacketCount++;
 #endif
-		packet->mInternalPacketType = NetInternalPacketType::User;
+		packet->mFlags = NetPacketFlags::Clear;
 		packet->mDataPtr = NetPacketHeader(packet);
 	}
 	return packet;
@@ -603,21 +603,17 @@ ion::NetPacket* AllocateUserPacket(NetControl& control, size_t size)
 
 void DeallocateUserPacket(NetControl& control, NetPacket* packet)
 {
-	if (packet->mInternalPacketType == NetInternalPacketType::DownstreamSegment)
+	if (packet->IsDirectSocketData())
 	{
 		DeallocateReceiveBuffer(control, reinterpret_cast<ion::NetSocketReceiveData*>(packet));
 	}
-	else if (packet->mInternalPacketType == NetInternalPacketType::User)
+	else
 	{
 #if (ION_ASSERTS_ENABLED == 1)
 		control.mUserPacketCount--;
 #endif
 		ion::NetInterfaceAllocator<ion::NetPacket> allocator(control.mReceiveAllocator.GetSource());
 		allocator.DeallocateRaw(packet, packet->mLength + NetPacketPayloadOffset);
-	}
-	else
-	{
-		ION_ASSERT(false, "Invalid packet");
 	}
 }
 

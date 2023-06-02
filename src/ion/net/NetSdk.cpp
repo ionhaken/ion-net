@@ -29,7 +29,7 @@ namespace ion
 NetManager::NetManager(NetResource&) {}
 NetManager::~NetManager() {}
 
-int NetManager::mLoggingLevel = 3;
+int NetManager::mLoggingLevel = 1;
 
 namespace net
 {

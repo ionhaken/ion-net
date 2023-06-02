@@ -35,7 +35,6 @@ struct NetDownstreamSegment
 
 struct NetDownstreamSocketHeader
 {
-	// GUID
 	uint64_t mGuid;
 
 	NetSocket* mSource;
@@ -43,12 +42,12 @@ struct NetDownstreamSocketHeader
 
 	NetRemoteId mRemoteId;
 
-	NetInternalPacketType mInternalPacketType;
+	NetPacketFlags mFlags;
 	uint8_t mPadding2[sizeof(NetRemoteId) - 1];
 
-	NetSocketAddress mAddress;
-
 	uint32_t mBytesRead;
+	
+	NetSocketAddress mAddress;
 };
 static_assert(offsetof(NetPacket, mAddress) == offsetof(NetDownstreamSocketHeader, mAddress));
 static_assert(offsetof(NetPacket, mRemoteId) == offsetof(NetDownstreamSocketHeader, mRemoteId));
@@ -160,7 +159,7 @@ using NetSocketSendParameters = NetUpstreamPacket<ion::NetMaxUdpPayloadSize()>;
 
 static constexpr const size_t NetSocketSendParametersHeaderSize = offsetof(NetSocketSendParameters, data);
 
-// [conversation id (4)][sequence number(4)][segment number(4)]
+// [conversation id (4)][packet sequence number(4)]
 constexpr int NetUnencryptedProtocolBytes = 8;
 
 // Header for unconnected messages. Replaces conversation id to distinguish between unconnected and connected messages.

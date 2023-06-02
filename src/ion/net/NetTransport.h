@@ -11,11 +11,57 @@
 
 namespace ion
 {
+// 0...31 KCP channel reservation
+constexpr uint8_t NetNumberOfChannels = 32;
+
 struct NetTransport
 {
-	Vector<NetChannel, NetAllocator<NetChannel>> mOrderedChannels;  // #TODO: Move to NetExchange
-	Deque<NetPacket*, NetAllocator<NetPacket*>> mRcvQueue; // #TODO: Move to NetReception
+	Vector<NetChannel, NetAllocator<NetChannel>> mOrderedChannels;	// #TODO: Move to NetExchange
+	Deque<NetPacket*, NetAllocator<NetPacket*>> mRcvQueue;			// #TODO: Move to NetReception
 	std::array<uint8_t, NetNumberOfChannels> mIdToChannel;
+
+	// Filters out duplicate packets. It's also needed for security reasons to prevent malicious users replaying old packets to break
+	// connected protocol. See. https://en.wikipedia.org/wiki/Replay_attack
+	struct DuplicateProtection
+	{
+		static constexpr uint32_t NumSequences = 256;
+		Array<uint32_t, NumSequences> mReceivedSequences;
+		uint32_t mLatestSequence = 0;
+
+		DuplicateProtection()
+		{
+			mLatestSequence = 0;
+			memset(mReceivedSequences.Data(), 0x0, sizeof(mReceivedSequences));
+		}
+
+		bool OnSequenceReceived(uint32_t sequence)
+		{
+			size_t index = sequence % NumSequences;
+			int32_t deltaToLatestSequence = int32_t(mLatestSequence - sequence);
+			if (deltaToLatestSequence < 0)
+			{
+				mLatestSequence = sequence;
+			}
+			else if (deltaToLatestSequence >= NumSequences)
+			{
+				return false;
+			}
+			else
+			{
+				int32_t deltaToCurrentSequence = int32_t(mReceivedSequences[index] - sequence);
+				if (deltaToCurrentSequence > 0)
+				{
+					return false;
+				}
+			}
+			mReceivedSequences[index] = sequence;
+			return true;
+		}
+	};
+
+	DuplicateProtection mDuplicateProtection;
+
+	uint32_t mNextSequence = 1;
 
 	// Channel tuner for channel that has most traffic. It is used to change channel parameters to optimize the channel bandwidth.
 	struct ChannelTuner

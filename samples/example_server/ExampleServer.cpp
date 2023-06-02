@@ -51,7 +51,7 @@ int main()
 							 << ";Address=" << server->GetAddress(packet->mRemoteId));
 				ION_LOG_INFO("Payload='" << buffer << "'");
 
-				// Send back message with string "Hello\n"
+				// Send back message with string "Hello Client\n"
 				ion::NetSendCommand cmd = server->CreateSendCommand(packet->mRemoteId, 64 /* max msg lenght */);
 				server->DeallocatePacket(packet);
 				if (cmd.HasBuffer())
@@ -62,7 +62,7 @@ int main()
 					{
 						ion::ByteWriter writer = cmd.Writer();
 						writer.Write(ion::NetMessageId::UserPacket);
-						writer.Write("Hello");
+						writer.Write("Hello Client");
 					}
 					cmd.Dispatch();
 				}

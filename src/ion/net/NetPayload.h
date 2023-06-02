@@ -57,13 +57,31 @@ constexpr uint16_t NetIpMaxMtuSize = 1492;
 
 constexpr uint16_t NetMaxUdpPayloadSize() { return NetUdpPayloadSize(NetIpMaxMtuSize, 4); }
 
-constexpr uint32_t NetConnectedProtocolOverHead = 22;
-constexpr uint32_t NetConnectedProtocolMinOverHead = 20; // No length included
+// Connected protocol header: [conv (4 bytes)][packet sequence number (4 bytes)]
+constexpr uint32_t NetConnectedProtocolHeaderSize = 8;
+// Segment header: [cmd (1 byte)][frg (1 byte)[wnd (2 bytes)][sn (4 bytes)][una (4 bytes)][ts (4 bytes)]
+constexpr uint32_t NetSegmentHeaderSize = 16;
+// Unreliable Segment header: [cmd (1 byte)][wnd (2 bytes)][una (4 bytes)]
+constexpr uint32_t NetSegmentHeaderUnrealiableSize = 7;
 
-constexpr uint16_t NetConnectedProtocolPayloadSize(bool useEncryption = true)
+constexpr uint32_t NetSegmentHeaderDataLengthSize = 2;
+
+constexpr uint32_t NetConnectedProtocolMinOverHead =
+  NetSegmentHeaderUnrealiableSize + NetConnectedProtocolHeaderSize + NetSegmentHeaderDataLengthSize;
+constexpr uint32_t NetConnectedProtocolOverHead = NetConnectedProtocolHeaderSize + NetSegmentHeaderSize + NetSegmentHeaderDataLengthSize;
+
+constexpr uint16_t NetConnectedProtocolPayloadSize(bool useEncryption = true, bool isAckedData = true)
 {
-	return NetUdpPayloadSize(NetIpMaxMtuSize) - uint16_t(ion::NetConnectedProtocolOverHead) -
-		   (useEncryption ? uint16_t(ion::NetSecure::AuthenticationTagLength) : 0);
+	return NetUdpPayloadSize(NetIpMaxMtuSize) - uint16_t(ion::NetConnectedProtocolHeaderSize) -
+		   (isAckedData ? uint16_t(NetSegmentHeaderSize) : uint16_t(NetSegmentHeaderUnrealiableSize)) -
+		   (useEncryption ? uint16_t(ion::NetSecure::AuthenticationTagLength) : 0) - NetSegmentHeaderDataLengthSize;
+}
+
+constexpr uint16_t NetConnectedProtocolSafePayloadSize(bool useEncryption = true, bool isAckedData = true)
+{
+	return NetUdpPayloadSize(NetIpMinimumReassemblyBufferSize) - uint16_t(ion::NetConnectedProtocolHeaderSize) -
+		   (isAckedData ? uint16_t(NetSegmentHeaderSize) : uint16_t(NetSegmentHeaderUnrealiableSize)) -
+		   (useEncryption ? uint16_t(ion::NetSecure::AuthenticationTagLength) : 0) - NetSegmentHeaderDataLengthSize;
 }
 
 constexpr uint16_t NetPreferedMtuSize[] = {ion::NetIpMaxMtuSize, 1200, ion::NetIpMinimumReassemblyBufferSize};

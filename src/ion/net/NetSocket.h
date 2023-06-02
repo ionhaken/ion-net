@@ -52,7 +52,7 @@ struct NetBindParameters
 {
 	// Input parameters
 	unsigned short port;
-	char* hostAddress;
+	char hostAddress[256];
 	unsigned short addressFamily;  // AF_INET or AF_INET6
 	int type;					   // SOCK_DGRAM
 	int protocol;				   // 0

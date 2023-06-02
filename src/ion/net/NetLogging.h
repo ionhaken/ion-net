@@ -7,7 +7,7 @@
 #if (ION_ABORT_ON_FAILURE == 1)
 	#define ION_NET_LOG_ABNORMAL(__msg, ...) ION_ABNORMAL(__msg, __VA_ARGS__)
 #else
-	#define ION_NET_LOG_ABNORMAL(__format, ...)                                        \
+	#define ION_NET_LOG_ABNORMAL(__msg, ...)                                        \
 		if (ion::NetManager::mLoggingLevel > 0)                                        \
 		{                                                                              \
 			ION_LOG_CALL(::ion::tracing::EventType::EventWarning, __msg, __VA_ARGS__); \

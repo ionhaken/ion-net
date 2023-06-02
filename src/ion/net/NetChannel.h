@@ -20,6 +20,7 @@
 
 #include <ion/container/Array.h>
 #include <ion/container/RingBuffer.h>
+#include <ion/container/Set.h>
 
 namespace ion
 {
@@ -28,6 +29,8 @@ struct NetRemoteSystem;
 
 namespace ion
 {
+
+constexpr uint32_t NetChannelIndexBit = 3;
 
 constexpr const uint32_t MinSndWindowSize = 32;
 constexpr const uint32_t MaxNumberOfFragments = 127;
@@ -45,6 +48,17 @@ struct NetPacket;
 
 struct NetUpstreamSegment;
 
+struct NetChannelReadContext
+{
+	ion::NetControl& mControl;
+	NetRemoteSystem& mRemote;
+	ion::TimeMS mCurrentTime;
+	uint8_t mChannel;
+	uint8_t mCmd;
+	bool mPacketMoved = false;	// Converted to user data, cannot deallocate
+	ByteReader mReader;
+};
+
 struct NetChannelWriteContext
 {
 	~NetChannelWriteContext();
@@ -58,7 +72,7 @@ struct NetChannelWriteContext
 class NetChannel
 {
 public:
-	NetChannel(uint32_t conv, ion::TimeMS currentTime, int payloadSize);
+	NetChannel(uint8_t conv, ion::TimeMS currentTime, int payloadSize);
 	~NetChannel()
 	{
 		ION_ASSERT(mSndQueue.IsEmpty(), "Send queu left");
@@ -68,12 +82,13 @@ public:
 	}
 	void Reset(NetControl& control, NetRemoteSystem& user);
 	ION_CLASS_NON_COPYABLE(NetChannel);
-	NetChannel(NetChannel&& other);
+	NetChannel(NetChannel&& other) noexcept;
 
 	void Update(NetChannelWriteContext& context);
+	static void FlushRemaining(NetChannelWriteContext& context);
 	void Flush(NetChannelWriteContext& context);
-	bool Input(NetControl& control, NetRemoteSystem& remoteSystem, NetSocketReceiveData& packet, ion::TimeMS currentTime, size_t dataLen,
-			   uint32_t& outAckedBytes, Deque<NetPacket*, NetAllocator<NetPacket*>>& recvQ);
+	bool Input(NetChannelReadContext& context, NetSocketReceiveData& packet, uint32_t& outAckedBytes,
+			   Deque<NetPacket*, NetAllocator<NetPacket*>>& recvQ);
 	int PeekSize(ion::NetControl& control, ion::NetRemoteSystem& remote);
 	NetPacket* Receive(NetControl& control, ion::NetRemoteSystem& remote);
 	int Receive(NetControl& control, NetRemoteSystem& remote, unsigned char* buffer, int len);
@@ -103,9 +118,8 @@ public:
 
 	struct State
 	{
-		uint32_t conv;
-		uint32_t mtu; // Maximum transmission unit
-		uint32_t mss; // Maximum segment size
+		uint32_t mtu;  // Maximum transmission unit
+		uint32_t mss;  // Maximum segment size (acked data only)
 		// Next serial number to be confirmed
 		uint32_t snd_una;
 		// The next one to be sent packet serial number
@@ -154,6 +168,7 @@ public:
 
 		BigDataBuffer mBigDataBuffer;
 		bool mIsBigDataActive = false;
+		uint8_t mChannel;
 	} mState;
 
 private:

@@ -7,14 +7,29 @@ namespace ion
 {
 class NetSocket;
 
-enum class NetInternalPacketType : uint8_t
+enum class NetPacketFlags : uint8_t
 {
-	DownstreamSegment = 0,	// Variable payload offset
-	User = 1
+	Clear = 0,
+	DownstreamSegment = (1 << 0),  // Variable payload offset
+	Unreliable = (1 << 1)
 };
 
 struct NetPacket
 {
+	[[nodiscard]] inline uint32_t Length() const { return mLength; }
+
+	[[nodiscard]] inline byte* Data() { return mDataPtr; }
+
+	inline bool IsUnreliablePacket() const
+	{
+		return (unsigned(mFlags) & unsigned(NetPacketFlags::Unreliable)) == unsigned(NetPacketFlags::Unreliable);
+	}
+
+	inline bool IsDirectSocketData() const
+	{
+		return (unsigned(mFlags) & unsigned(NetPacketFlags::DownstreamSegment)) == unsigned(NetPacketFlags::DownstreamSegment);
+	}
+
 	ion::NetGUID mGUID;
 	NetSocket* mSource;
 
@@ -24,16 +39,13 @@ struct NetPacket
 
 	NetRemoteId mRemoteId;
 
-	NetInternalPacketType mInternalPacketType;
-	uint8_t mPadding1[sizeof(NetRemoteId) - 1];
+	NetPacketFlags mFlags;
 
-	NetSocketAddress mAddress;
+	uint8_t mPadding1[sizeof(NetRemoteId) - 1];
 
 	uint32_t mLength;
 
-	uint32_t Length() const { return mLength; }
-
-	byte* Data() { return mDataPtr; }
+	NetSocketAddress mAddress;
 };
 
 // struct AddressOrGUID;

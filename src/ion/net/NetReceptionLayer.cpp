@@ -377,7 +377,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		}
 		else
 		{
-			ION_NET_LOG_ABNORMAL("Invalid packet from " << remoteSystem->guid << ";id=" << data[0]);
+			ION_NET_LOG_ABNORMAL("Invalid packet " << data[0] << " from " << remoteSystem->guid << ";id=" << data[0]);
 		}
 		return false;
 	}
@@ -393,11 +393,11 @@ void RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 	while (ion::NetPacket* packet = ReceiveFromReassebly(remoteSystem->mTransport))
 	{
 		ION_NET_LOG_VERBOSE_MSG("Msg: Receiving id=" << Hex<uint8_t>(packet->Data()[0]) << ";Length=" << packet->Length()
-													 << ";GUID=" << packet->mGUID << ";InternalType=" << packet->mInternalPacketType);
+													 << ";GUID=" << packet->mGUID << ";Flags=" << int(packet->mFlags));
 		if (remoteSystem->mMetrics)
 		{
-			// #TODO: Not always reliable.
-			remoteSystem->mMetrics->OnReceived(now, ion::PacketType::UserReliable, packet->Length());
+			remoteSystem->mMetrics->OnReceived(
+			  now, !packet->IsUnreliablePacket() ? ion::PacketType::UserReliable : ion::PacketType::UserUnreliable, packet->Length());
 		}
 		if (!RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, now, packet))
 		{
@@ -435,7 +435,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetExcha
 		}
 	}
 
-	if (length < ion::NetConnectedProtocolMinOverHead || (data[1] == 'I' && data[2] == 'O' && data[3] == 'N'))
+	if (length < ion::NetConnectedProtocolMinOverHead || (NetIsUnconnectedId(AssumeAligned<uint32_t>(*reinterpret_cast<uint32_t*>(data)))))
 	{
 		ion::NetConnectionLayer::ProcessOfflineNetworkPacket(connections, control, exchange, recvFromStruct, timeRead);
 		return true;
@@ -444,76 +444,46 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetExcha
 	// See if this datagram came from a connected system
 	ion::NetRemoteSystem* remoteSystem = NetExchangeLayer::GetRemoteFromSocketAddress(exchange, recvFromStruct.Address(), true, true);
 
-	if (uint8_t(data[0]) < NetNumberOfChannels)
+	// Reliable data
+	uint32_t conversation;
+	memcpy(&conversation, data, sizeof(uint32_t));
+	if (remoteSystem == nullptr)
 	{
-		// Reliable data
-		uint32_t conversation;
-		memcpy(&conversation, data, sizeof(uint32_t));
-		if (remoteSystem == nullptr)
+		// If this is authority, it can try to find remote system via conversation
+		remoteSystem = ion::NetExchangeLayer::GetRemoteSystemFromAuthorityConversation(exchange, conversation);
+		if (remoteSystem == nullptr || !remoteSystem->mAllowFastReroute)
 		{
-			// If this is authority, it can try to find remote system via conversation
-			remoteSystem = ion::NetExchangeLayer::GetRemoteSystemFromAuthorityConversation(exchange, conversation);
-			if (remoteSystem == nullptr || !remoteSystem->mAllowFastReroute)
-			{
-				return true;
-			}
-			// Reroute clients using conversation key, but only if the remote packet is valid.
-			if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
-			{
-				ION_NET_LOG_INFO("Rerouted system " << remoteSystem->mAddress << " to new adress " << recvFromStruct.Address());
-				if (remoteSystem->mMetrics)
-				{
-					remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::Raw,
-													   ion::NetMtuSize(length, remoteSystem->mAddress.GetIPVersion()));
-				}
-				remoteSystem->timeLastDatagramArrived = timeRead;
-				ion::NetExchangeLayer::ReferenceRemoteSystem(exchange, recvFromStruct.Address(), remoteSystem->mId.load().RemoteIndex());
-				return false;
-			}
-			else
-			{
-				ION_NET_LOG_ABNORMAL("Invalid conversation key change attempt. Disable fast rerouting as a security measure.");
-				remoteSystem->mAllowFastReroute = false;
-				return true;
-			}
+			return true;
 		}
-
-		if (remoteSystem->mMetrics)
+		// Reroute clients using conversation key, but only if the remote packet is valid.
+		if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
 		{
-			remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::Raw,
-											   ion::NetMtuSize(length, remoteSystem->mAddress.GetIPVersion()));
-		}
-		if ((conversation >> 8) == (remoteSystem->mConversationId & 0xFFFFFFu))
-		{
-			if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
+			ION_NET_LOG_INFO("Rerouted system " << remoteSystem->mAddress << " to new adress " << recvFromStruct.Address());
+			if (remoteSystem->mMetrics)
 			{
-				// Data was stored -> Update reliable metrics for when reading data back
-				remoteSystem->timeLastDatagramArrived = timeRead;
-				return false;
+				remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::Raw,
+												   ion::NetMtuSize(length, remoteSystem->mAddress.GetIPVersion()));
 			}
+			remoteSystem->timeLastDatagramArrived = timeRead;
+			ion::NetExchangeLayer::ReferenceRemoteSystem(exchange, recvFromStruct.Address(), remoteSystem->mId.load().RemoteIndex());
+			return false;
 		}
-		// Invalid reliable layer data.
-		return true;
-	}
-	else if (!remoteSystem)
-	{
-		// No listener
-		return true;
+		else
+		{
+			ION_NET_LOG_ABNORMAL("Invalid conversation key change attempt. Disable fast rerouting as a security measure.");
+			remoteSystem->mAllowFastReroute = false;
+			return true;
+		}
 	}
 
-	// Unreliable data
-	ion::NetPacket* packet = reinterpret_cast<ion::NetPacket*>(&recvFromStruct);
-	packet->mDataPtr = NetPacketHeader(packet);
-	packet->mRemoteId = remoteSystem->mId;
-	packet->mGUID = remoteSystem->guid;
-	remoteSystem->timeLastDatagramArrived = timeRead;
-	if (remoteSystem->mMetrics)
+	if (remoteSystem->mMetrics) // Count raw data even if this is not for our conversation
 	{
-		remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::UserUnreliable, length);
 		remoteSystem->mMetrics->OnReceived(timeRead, ion::PacketType::Raw, ion::NetMtuSize(length, remoteSystem->mAddress.GetIPVersion()));
 	}
-	if (RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, timeRead, packet))
+	if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
 	{
+		// Data was stored -> Update reliable metrics for when reading data back
+		remoteSystem->timeLastDatagramArrived = timeRead;
 		return false;
 	}
 	return true;
@@ -525,7 +495,6 @@ ion::NetSocketReceiveData* Receive(NetReception& reception, NetControl& control,
 {
 	while (reception.mNumBufferedBytes + data->SocketBytesRead() >= ion::NetMaxBufferedReceiveBytes)
 	{
-		// #TODO: Request remote to slow down.
 		ION_ABNORMAL_ONCE(1.0, "Socket receive buffer full");
 		ion::Thread::Sleep(ion::NetUpdateInterval * 2);
 	}
@@ -576,6 +545,7 @@ void Reset(NetReception& reception, NetControl& control)
 		reception.mNumBufferedBytes -= elem->SocketBytesRead();
 		ion::NetControlLayer::DeallocateReceiveBuffer(control, elem);
 	}
+	reception.mDataBufferedCallback = []() {};
 }
 
 void AddToBanList(NetReception& reception, NetControl& control, const char* IP, ion::TimeMS milliseconds)

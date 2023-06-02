@@ -29,6 +29,8 @@ namespace ion::NetExchangeLayer
 
 namespace
 {
+
+// Checks has any channel waiting to relay data - Used for checking disconnects, no need to cache
 bool IsOutgoingDataWaiting(const NetTransport& transport)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
@@ -39,7 +41,7 @@ bool IsOutgoingDataWaiting(const NetTransport& transport)
 		 * https://github-com.translate.goog/skywind3000/kcp/wiki/Flow-Control-for-Users?_x_tr_sl=zh-CN&_x_tr_tl=en&_x_tr_hl=fi
 		 * when ikcp_waitsnd returns a value above a certain limit, you should disconnect the remotes as they don't have the ability to
 		 * receive them. .*/
-		if (iter->WaitSend() > 0) // #TODO: Cache value
+		if (iter->WaitSend() > 0)
 		{
 			return true;
 		}
@@ -47,12 +49,13 @@ bool IsOutgoingDataWaiting(const NetTransport& transport)
 	return false;
 }
 
+// Checks has any channel waiting to receive data - Used for checking disconnects, no need to cache
 bool AreAcksWaiting(const NetTransport& transport)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
 	for (auto iter = transport.mOrderedChannels.begin(); iter != transport.mOrderedChannels.end(); ++iter)
 	{
-		if (iter->WaitRcv() > 0)  // #TODO: Cache value
+		if (iter->WaitRcv() > 0)
 		{
 			return true;
 		}
@@ -183,7 +186,7 @@ void UpdateRemote(NetControl& control, NetExchange& exchange, ion::TimeMS curren
 	ION_PROFILER_SCOPE(Network, "Remote System");
 	NetRemoteSystem& remoteSystem = exchange.mRemoteSystemList[systemIndex];
 	ION_ASSERT(remoteSystem.mAddress != NetUnassignedSocketAddress, "Invalid system");
-	NetTransportLayer::Update(remoteSystem.mTransport, control, remoteSystem, currentTime);
+	currentTime = NetTransportLayer::Update(remoteSystem.mTransport, control, remoteSystem, currentTime);
 
 	if (remoteSystem.mMetrics)
 	{
@@ -213,6 +216,7 @@ void Update(NetExchange& exchange, NetControl& control, ion::TimeMS now, ion::Jo
 							[&](ion::NetRemoteIndex systemIndex)
 							{ UpdateRemote(control, exchange, now, systemIndex, operations.GetMain()); });
 	}
+	now = SteadyClock::GetTimeMS();
 
 	bool sortActiveSystems = false;
 	operations.ForEachContainer(
@@ -581,7 +585,9 @@ NetRemoteIndex GetRemoteSystemFromGUID(const NetExchange& exchange, const NetGUI
 ion::NetRemoteId GetAddressedRemoteId(const NetExchange& exchange, const NetAddressOrRemoteRef& ref, bool calledFromNetworkThread)
 {
 	if (ref.mAddress == NetUnassignedSocketAddress)
+	{
 		return NetRemoteId();
+	}
 
 	if (ref.mRemoteId.IsValid() && ref.mRemoteId.RemoteIndex() <= exchange.mMaximumNumberOfPeers &&
 		exchange.mRemoteSystemList[ref.mRemoteId.RemoteIndex()].mAddress == ref.mAddress &&
@@ -665,8 +671,8 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchang
 			remoteSystem->mConversationId = rsp.mConversationId;
 			if (exchange.mGuid == NetGuidAuthority)
 			{
-				remoteSystem->mAllowFastReroute = rsp.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection &&
-												  exchange.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection;
+				remoteSystem->mAllowFastReroute = rsp.mDataTransferSecurity == NetDataTransferSecurity::Secure &&
+												  exchange.mDataTransferSecurity == NetDataTransferSecurity::Secure;
 				exchange.mAuthorityConversations.StoreKey(rsp.mConversationId, static_cast<ion::NetRemoteIndex>(assignedIndex));
 			}
 			remoteSystem->guid = rsp.guid;
@@ -1230,21 +1236,22 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 		}
 	}
 
-	constexpr const size_t MaxSafeUnrealiablePayloadSize =	// Can send for all targets for sure
-	  NetUdpPayloadSize(NetIpMinimumReassemblyBufferSize - ion::NetConnectedProtocolOverHead - ion::NetSecure::AuthenticationTagLength);
+	constexpr size_t MaxSafeUnrealiablePayloadSize =  // Can send for all targets for sure
+	  NetConnectedProtocolSafePayloadSize(true, false);
 	if (command->mReliability != NetPacketReliability::Reliable && command->mNumberOfBytesToSend > MaxSafeUnrealiablePayloadSize)
 	{
 		// If single target, compare remote MTU.
+		constexpr uint32_t UnrealiableOverhead =
+		  NetConnectedProtocolHeaderSize + NetSegmentHeaderUnrealiableSize + NetSegmentHeaderDataLengthSize;
+
 		if (isExcluding || outRemoteIndices.Size() != 1 ||
-			command->mNumberOfBytesToSend >
-			  exchange.mRemoteSystemList[outRemoteIndices.Front()].PayloadSize() - ion::NetConnectedProtocolOverHead)
+			command->mNumberOfBytesToSend > exchange.mRemoteSystemList[outRemoteIndices.Front()].PayloadSize() - UnrealiableOverhead)
 		{
-			ION_NET_LOG_VERBOSE(
-			  "Packet reliability changed to 'Reliable'. Too large packet to be unreliable;Size="
-			  << (command->mNumberOfBytesToSend) << ";Max="
-			  << ((isExcluding || outRemoteIndices.Size() != 1)
-					? MaxSafeUnrealiablePayloadSize
-					: exchange.mRemoteSystemList[outRemoteIndices.Front()].PayloadSize() - ion::NetConnectedProtocolOverHead));
+			ION_NET_LOG_VERBOSE("Packet reliability changed to 'Reliable'. Too large packet to be unreliable;Size="
+								<< (command->mNumberOfBytesToSend) << ";Max="
+								<< ((isExcluding || outRemoteIndices.Size() != 1)
+									  ? MaxSafeUnrealiablePayloadSize
+									  : exchange.mRemoteSystemList[outRemoteIndices.Front()].PayloadSize() - UnrealiableOverhead));
 			command->mReliability = NetPacketReliability::Reliable;
 		}
 	}
@@ -1269,8 +1276,7 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 		ION_ASSERT(NetModeIsOpen(exchange.mRemoteSystemList[remoteIndex].mMode), "Remote not reachable");
 		ION_ASSERT(remoteSystem.mMode != NetMode::Disconnected, "Invalid state to send reliable data");
 		ION_NET_LOG_VERBOSE_MSG("Msg: Sending id=" << Hex<uint8_t>(command.Get()->mData));
-		NetTransportLayer::Send(remoteSystem.mTransport, control, now, remoteSystem, *command.Get(),
-								(remoteSystem.mConversationId << 8) | uint32_t(command->mChannel));
+		NetTransportLayer::Send(remoteSystem.mTransport, control, now, remoteSystem, *command.Get());
 		if (remoteSystem.mMetrics)
 		{
 			remoteSystem.mMetrics->OnSent(

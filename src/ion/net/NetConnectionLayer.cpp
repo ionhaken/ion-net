@@ -56,7 +56,7 @@ bool ValidateConnectionParameters(ion::TimeMS timeRead, ion::TimeMS sentTime, io
 	}
 	if (rtt > int32_t(defaultTimeout))
 	{
-		ION_NET_LOG_ABNORMAL("Connection parameters timed out");
+		ION_NET_LOG_ABNORMAL("Connection parameters timed out;rtt=" << rtt);
 		return false;
 	}
 	return ValidateConnectionParameters(mtu);
@@ -451,7 +451,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  ocr2writer.Process(mtu);
 					  ocr2writer.Process(exchange.mGuid);
 #if ION_NET_FEATURE_SECURITY
-					  if (dataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+					  if (dataTransferSecurity == NetDataTransferSecurity::Secure)
 					  {
 						  ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Remote is expecting security. Sending public key.");
 						  ocr2writer.WriteArrayKeepCapacity((u8*)netSocket->mCryptoKeys.mPublicKey.data,
@@ -503,7 +503,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 		NetSecure::SharedKey sharedKey;
 		decltype(NetRemoteSystem::mNonceOffset) nonceOffset;
 
-		if (rsp.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+		if (rsp.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 		{
 			isValid &= bs.ReadArray(publicKey.data, NetSecure::PublicKeyLength);
 			if (isValid && ion::NetSecure::ComputeSharedCryptoKeys(sharedKey, netSocket->mCryptoKeys, publicKey) == 0)
@@ -886,7 +886,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 				}
 
 #if ION_NET_FEATURE_SECURITY == 1
-				if (exchange.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+				if (exchange.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 				{
 					ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Server is using encryption");
 					if (result.outcome != ion::NetExchangeLayer::ConnectionResponse::RepeatAnswer)
@@ -948,7 +948,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 				replyWriter.Process(result.rssFromSA->mConversationId);
 				replyWriter.Process(result.rssFromSA->guid);
 #if ION_NET_FEATURE_SECURITY == 1
-				if (exchange.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+				if (exchange.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 				{
 					ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Sending server public key.");
 					replyWriter.WriteArray((u8*)netSocket->mCryptoKeys.mPublicKey.data, sizeof(netSocket->mCryptoKeys.mPublicKey.data));
@@ -1077,7 +1077,7 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 	{
 		NetBindParameters bbp;
 		bbp.port = parameters.mNetSocketDescriptors[i].port;
-		bbp.hostAddress = (char*)parameters.mNetSocketDescriptors[i].hostAddress;
+		memcpy(bbp.hostAddress, (char*)parameters.mNetSocketDescriptors[i].hostAddress, 32);
 		bbp.addressFamily = parameters.mNetSocketDescriptors[i].socketFamily;
 		bbp.type = parameters.mNetSocketDescriptors[i].socketType;
 		bbp.protocol = parameters.mNetSocketDescriptors[i].protocol;
@@ -1086,18 +1086,19 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 		bbp.setIPHdrIncl = false;
 		bbp.doNotFragment = false;
 
-		bindResult = ion::SocketLayer::BindSocket(*connections.mSocketList[i], bbp);
-#if ION_PLATFORM_MICROSOFT
-		if (bindResult == NetBindResult::FailedToBind)
+		bool isBlockingBind = true;
+
+		if (isBlockingBind)
 		{
-			// Sometimes Windows will fail if the socket is recreated too quickly
-			ion::Thread::SleepMs(100);
 			bindResult = ion::SocketLayer::BindSocket(*connections.mSocketList[i], bbp);
+			if (bindResult != NetBindResult::Success)
+			{
+				break;
+			}
 		}
-#endif
-		if (bindResult != NetBindResult::Success)
+		else
 		{
-			break;
+			connections.mSocketList[i]->mBindParameters = bbp;
 		}
 		connections.mSocketList[i]->userConnectionSocketIndex = i;
 		ION_NET_ASSERT(bindResult == NetBindResult::Success);

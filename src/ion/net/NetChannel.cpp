@@ -8,6 +8,8 @@
 
 #include <ion/arena/ArenaAllocator.h>
 #include <ion/memory/Memory.h>
+#include <ion/util/Math.h>
+#include <ion/util/SafeRangeCast.h>
 
 
 #include <stdarg.h>
@@ -18,40 +20,57 @@
 namespace ion
 {
 
-	
 #define ION_NET_CHANNEL_LOG(__msg, ...)	ION_NET_LOG_VERBOSE_CHANNEL(__msg, __VA_ARGS__)
-	
 
-// Changes to original KCP code:
-// 1) Reduce KCP buffer size to max MTU size
-// https://github.com/skywind3000/kcp/issues/264
-// 3) Optimize ikcp_check to consider fast resend for update intervals
-// 4) API for how many packets is waiting to be received
-// 5) Custom malloc/alloc
-// 6) No logging
-// 7) ikcp_recv assumes buffer length equals ikcp_peeksize()
+const uint32_t IKCP_CMD_PUSH = 0;  // cmd: push data
+const uint32_t IKCP_CMD_ACK = 1;	  // cmd: ack
+const uint32_t IKCP_CMD_WASK = 2;  // cmd: window probe (ask)
+const uint32_t IKCP_CMD_WINS = 3;  // cmd: window size (tell)
+const uint32_t IKCP_CMD_IMMEDIATE = 4;  // cmd: push immediate data - expect immediate ack
+const uint32_t IKCP_CMD_UNRELIABLE_NO_ACK = 5;  // cmd: push unrealiable data without ack
+const uint32_t IKCP_CMD_RESERVED = 6;
 
-//---------------------------------------------------------------------
-// BYTE ORDER & ALIGNMENT
-//---------------------------------------------------------------------
-#ifndef IWORDS_BIG_ENDIAN
-	#ifdef _BIG_ENDIAN_
-		#if _BIG_ENDIAN_
-			#define IWORDS_BIG_ENDIAN 1
-		#endif
-	#endif
-	#ifndef IWORDS_BIG_ENDIAN
-		#if defined(__hppa__) || defined(__m68k__) || defined(mc68000) || defined(_M_M68K) ||                          \
-		  (defined(__MIPS__) && defined(__MIPSEB__)) || defined(__ppc__) || defined(__POWERPC__) || defined(_M_PPC) || \
-		  defined(__sparc__) || defined(__powerpc__) || defined(__mc68000__) || defined(__s390x__) || defined(__s390__)
-			#define IWORDS_BIG_ENDIAN 1
-		#endif
-	#endif
-	#ifndef IWORDS_BIG_ENDIAN
-		#define IWORDS_BIG_ENDIAN 0
-	#endif
-#endif
+void EncodeReliableSegment(ByteWriterUnsafe& writer, const NetUpstreamSegmentHeader& ION_RESTRICT seg)
+{
+	writer.Write(SafeRangeCast<uint8_t>(seg.cmd | ((seg.conv & 0xFF) << NetChannelIndexBit)));
+	writer.Write(SafeRangeCast<uint8_t>(seg.frg));
+	writer.Write(SafeRangeCast<uint16_t>(seg.wnd));
+	writer.Write(seg.sn);
+	writer.Write(seg.una);
 
+	// timestamp
+	// Note: We measure RTT of connection via RTT Tracker. Segment timestamps are used to measure RTT of channel, but also
+	// for different purpose, congestion control.
+	writer.Write(seg.ts);
+}
+
+void EncodeUnreliableSegment(ByteWriterUnsafe& writer, const NetUpstreamSegmentHeader& ION_RESTRICT seg)
+{
+	writer.Write(SafeRangeCast<uint8_t>(IKCP_CMD_UNRELIABLE_NO_ACK | ((seg.conv & 0xFF) << NetChannelIndexBit)));
+	writer.Write(SafeRangeCast<uint16_t>(seg.wnd));
+	writer.Write(seg.una);
+}
+
+constexpr uint16_t EncodeWindowSize(uint32_t wnd)
+{
+	static_assert(((uint64_t(1) << 15) - 1) * ((uint64_t(1) << 15) - 1) > MaxRcvWindowSize);
+	if (wnd < (1 << 15))
+	{
+		return uint16_t(wnd);
+	}
+	wnd = uint16_t(std::sqrt(wnd));	
+	return uint16_t(wnd) | uint16_t(1 << 15);
+}
+
+constexpr uint32_t DecodeWindowSize(uint16_t wnd)
+{
+	if (wnd < (1 << 15))
+	{
+		return uint16_t(wnd);
+	}
+	wnd = wnd & ((1 << 15) - 1);
+	return uint32_t(wnd) * uint32_t(wnd);
+}
 
 //=====================================================================
 // KCP BASIC
@@ -60,13 +79,6 @@ const uint32_t IKCP_RTO_NDL = 30;	// no delay min rto
 const uint32_t IKCP_RTO_MIN = 100;	// normal min rto
 const uint32_t IKCP_RTO_DEF = 200;
 const uint32_t IKCP_RTO_MAX = 60000;
-
-const uint32_t IKCP_CMD_PUSH = 81;		 // cmd: push data
-const uint32_t IKCP_CMD_ACK = 82;		 // cmd: ack
-const uint32_t IKCP_CMD_WASK = 83;		 // cmd: window probe (ask)
-const uint32_t IKCP_CMD_WINS = 84;		 // cmd: window size (tell)
-const uint32_t IKCP_CMD_IMMEDIATE = 85;	 // cmd: push immediate data - expect immediate ack
-const uint32_t IKCP_CMD_UNRELIABLE_NO_ACK = 86;	 // cmd: push unrealiable data without ack
 
 const uint32_t IKCP_ASK_SEND = 1;  // need to send IKCP_CMD_WASK
 const uint32_t IKCP_ASK_TELL = 2;  // need to send IKCP_CMD_WINS
@@ -81,53 +93,9 @@ const uint32_t IKCP_PROBE_INIT = 7000;	   // 7 secs to probe window size
 const uint32_t IKCP_PROBE_LIMIT = 120000;  // up to 120 secs to probe window
 const uint32_t IKCP_FASTACK_LIMIT = 5;	   // max times to trigger fastack
 
-//---------------------------------------------------------------------
-// encode / decode
-//---------------------------------------------------------------------
-
-static ION_FORCE_INLINE uint32_t _ibound_(uint32_t lower, uint32_t middle, uint32_t upper) { return Min(Max(lower, middle), upper); }
-
-//static ION_FORCE_INLINE long _itimediff(uint32_t later, uint32_t earlier) { return ((int32_t)(later - earlier)); }
-/* decode 8 bits unsigned int */
-static ION_FORCE_INLINE char* ikcp_decode8u(char* p, unsigned char* c)
+NetChannel::NetChannel(uint8_t conv, ion::TimeMS currentTime, int payloadSizeWithoutAuthenticantionTag)
 {
-	*c = *(unsigned char*)p++;
-	return p;
-}
-/* decode 16 bits unsigned int (lsb) */
-static ION_FORCE_INLINE char* ikcp_decode16u(char* p, unsigned short* w)
-{
-#if IWORDS_BIG_ENDIAN
-	*w = *(unsigned char*)(p + 1);
-	*w = *(unsigned char*)(p + 0) + (*w << 8);
-#else
-	memcpy(w, p, 2);
-#endif
-	p += 2;
-	return p;
-}
-/* decode 32 bits unsigned int (lsb) */
-static ION_FORCE_INLINE char* ikcp_decode32u(char* p, uint32_t* l)
-{
-#if IWORDS_BIG_ENDIAN
-	*l = *(const unsigned char*)(p + 3);
-	*l = *(const unsigned char*)(p + 2) + (*l << 8);
-	*l = *(const unsigned char*)(p + 1) + (*l << 8);
-	*l = *(const unsigned char*)(p + 0) + (*l << 8);
-#else
-	memcpy(l, p, 4);
-#endif
-	p += 4;
-	return p;
-}
-
-
-//---------------------------------------------------------------------
-// create a new kcpcb
-//---------------------------------------------------------------------
-NetChannel::NetChannel(uint32_t conv, ion::TimeMS currentTime, int payloadSizeWithoutAuthenticantionTag)
-{
-	mState.conv = conv;
+	mState.mChannel = conv;
 	mState.snd_una = 0;
 	mState.snd_nxt = 0;
 	mState.rcv_nxt = 0;
@@ -142,7 +110,7 @@ NetChannel::NetChannel(uint32_t conv, ion::TimeMS currentTime, int payloadSizeWi
 	mState.incr = 0;
 	mState.probe = 0;
 	mState.mtu = payloadSizeWithoutAuthenticantionTag;
-	mState.mss = mState.mtu - NetConnectedProtocolOverHead; // #TODO: Support optimized MSS (separate CMD for segments without length)
+	mState.mss = mState.mtu - NetConnectedProtocolOverHead; // For acked data only, unreliable unordered is always in 1 segment
 
 #if ION_NET_KCP_STREAMING
 	mState.stream = 0;
@@ -232,15 +200,13 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 		{
 			bool isRecover = IsReceiveRecovering();
 			packet = reinterpret_cast<NetPacket*>(seg->data - seg->mOffset);
-			ION_ASSERT(packet->mAddress == remote.mAddress, "Invalid address"); // Set by socket layer
-			packet->mGUID = remote.guid;
-			packet->mRemoteId = remote.mId.load();
+			ION_ASSERT(packet->mAddress.IsValid(), "Invalid address");	// Set by socket layer
 			packet->mLength = seg->len;
-			packet->mInternalPacketType = NetInternalPacketType::DownstreamSegment;
+			ION_ASSERT(packet->mFlags == NetPacketFlags::DownstreamSegment, "Unexpected type");
 			packet->mDataPtr = seg->data;
 			mRcvQueue.PopFront();
 			ReceivePost(isRecover);
-			ION_NET_CHANNEL_LOG("Channel in: Packet " << seg->len << " bytes;GUID=" << packet->mGUID);
+			ION_NET_CHANNEL_LOG("Channel in: Packet " << seg->len << " bytes (segment conversion);GUID=" << packet->mGUID);
 		}
 		else
 		{
@@ -251,8 +217,6 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 				auto ret = Receive(control, remote, NetPacketHeader(packet), size);
 				ION_ASSERT(ret == int(size), "Invalid reception");
 				packet->mAddress = remote.mAddress;
-				packet->mGUID = remote.guid;
-				packet->mRemoteId = remote.mId.load();
 				packet->mLength = size;
 				ION_NET_CHANNEL_LOG("Channel in: Packet " << size << " bytes;GUID=" << packet->mGUID);
 			}
@@ -446,32 +410,34 @@ int NetChannel::Send(NetRemoteSystem& remote, NetCommand& command, uint64_t data
 #endif
 
 	uint32_t count;
-	if (len <= (int)mState.mss)
+	if (command.mReliability != NetPacketReliability::Unreliable)
 	{
-		count = 1;
-	}
-	else
-	{
-		count = SafeRangeCast<uint32_t>((len + mState.mss - 1) / mState.mss);
-	}
-
-	if (count > (int)MaxNumberOfFragments)
-	{
-		return -2; /* max number of fragments */
-	}
-
-	if (count == 0)
-	{
-		count = 1;
-	}
-
-	// fragment
-	for (uint32_t i = 0; i < count; i++)
-	{
-		uint32_t size = SafeRangeCast<uint32_t>(len > (int)mState.mss ? (int)mState.mss : len);
-		ION_ASSERT(size > 0, "Invalid segment");
-		if (command.mReliability != NetPacketReliability::Unreliable)
+		if (len <= (int)mState.mss)
 		{
+			count = 1;
+		}
+		else
+		{
+			count = SafeRangeCast<uint32_t>((len + mState.mss - 1) / mState.mss);
+		}
+
+		if (count > (int)MaxNumberOfFragments)
+		{
+			return -2; /* max number of fragments */
+		}
+
+		if (count == 0)
+		{
+			count = 1;
+		}
+
+		// fragment
+		for (uint32_t i = 0; i < count; i++)
+		{
+			uint32_t size = SafeRangeCast<uint32_t>(len > (int)mState.mss ? (int)mState.mss : len);
+
+			ION_ASSERT(size > 0, "Invalid segment");
+
 			// Reliable and unreliable ordered use send window
 			seg = remote.Allocate<NetUpstreamSegment>(sizeof(NetUpstreamSegment));
 			if (seg == NULL)
@@ -488,16 +454,19 @@ int NetChannel::Send(NetRemoteSystem& remote, NetCommand& command, uint64_t data
 			seg->mHeader.frg = count - i - 1;
 #endif
 			mSndQueue.PushBack(seg);
+
+			mState.bufferedPriorities[int(command.mPriority)]++;
+			command.mRefCount++;
+			dataPos += size;
+			len -= size;
 		}
-		else
-		{
-			ION_ASSERT(count == 1 && len == size, "Invalid unrealiable segment");
-			mUnrealiableSndQueue.PushBack(&command);
-		}
+	}
+	else
+	{
+		ION_ASSERT(len <= mState.mtu - NetConnectedProtocolMinOverHead, "Invalid unrealiable segment");
+		mUnrealiableSndQueue.PushBack(&command);
 		mState.bufferedPriorities[int(command.mPriority)]++;
 		command.mRefCount++;
-		dataPos += size;
-		len -= size;
 	}
 	return 0;
 }
@@ -525,7 +494,7 @@ static void ikcp_update_ack(NetChannel* kcp, uint32_t rtt)
 		}
 	}
 	rto = kcp->mState.rx_srtt + Max(kcp->mState.interval, 4 * kcp->mState.rx_rttval);
-	kcp->mState.rx_rto = _ibound_(kcp->mState.rx_minrto, rto, IKCP_RTO_MAX);
+	kcp->mState.rx_rto = Clamp(rto, kcp->mState.rx_minrto, int32_t(IKCP_RTO_MAX));
 }
 
 static void ikcp_shrink_buf(NetChannel* kcp)
@@ -676,73 +645,92 @@ int NetChannel::FindRcvIndex(uint32_t sn)
 	return index + 1;
 }
 
-bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::NetSocketReceiveData& packet, ion::TimeMS currentTime,
-					   size_t size, uint32_t& outAckedBytes, Deque<NetPacket*, NetAllocator<NetPacket*>>& recvQ)
+bool NetChannel::Input(NetChannelReadContext& context, ion::NetSocketReceiveData& packet, 
+					   uint32_t& outAckedBytes, Deque<NetPacket*, NetAllocator<NetPacket*>>& recvQ)
 {
-	ION_NET_CHANNEL_LOG("Channel in: receive;size=" << size << " bytes;GUID=" << remote.guid);
+	ION_NET_CHANNEL_LOG("Channel " << context.mChannel << " in: receive;size=" << context.mReader.Available() + 1 << " bytes;GUID=" << context.mRemote.guid);
 
-	bool packetMoved = false;
 	uint32_t prev_una = mState.snd_una;
 	uint32_t maxack = 0, latest_ts = 0;
 	int flag = 0;
 
-	char* data = (char*)packet.mPayload;
-	ION_ASSERT((uintptr_t(data) % alignof(NetPacket) == 0), "Invalid allocation");
-
-	do
+	for(;;)
 	{
-		ION_ASSERT(size >= (int)NetConnectedProtocolMinOverHead, "Invalid data");
-		uint32_t sn, una, conv;
-		uint16_t wnd, len = 0;
-		uint8_t cmd, frg;
-
-		data = ikcp_decode32u(data, &conv);
-		if (conv != mState.conv)
-		{
-			ION_NET_LOG_ABNORMAL("Invalid conversation at " << size_t((byte*)data - packet.mPayload));
-			break;
-		}
-
-		data = ikcp_decode32u(data, &sn);
+		ION_NET_CHANNEL_LOG("Channel " << context.mChannel << " in: segment;cmd=" << context.mCmd << ";avail=" << context.mReader.Available());
+		ION_ASSERT(context.mReader.Available() > (int)NetSegmentHeaderUnrealiableSize + NetSegmentHeaderDataLengthSize - 1, "Invalid data");
+		uint32_t sn;
+		uint16_t len = 0;
+		uint8_t frg;
 		TimeMS ts;
-		data = ikcp_decode32u(data, &ts);
-		data = ikcp_decode8u(data, &frg);
-		data = ikcp_decode8u(data, &cmd);
-		data = ikcp_decode16u(data, &wnd);
-		data = ikcp_decode32u(data, &una);
 
-		if (cmd == IKCP_CMD_PUSH || cmd == IKCP_CMD_IMMEDIATE || cmd == IKCP_CMD_UNRELIABLE_NO_ACK)
+		if (context.mReader.Available() < NetSegmentHeaderSize + NetSegmentHeaderDataLengthSize - 1)
 		{
-			data = ikcp_decode16u(data, &len);
-			size -= NetConnectedProtocolOverHead;
-		}
-		else
-		{			
-			size -= NetConnectedProtocolMinOverHead;
+			if (context.mCmd != IKCP_CMD_UNRELIABLE_NO_ACK)
+			{
+				if (context.mCmd == IKCP_CMD_PUSH || context.mCmd == IKCP_CMD_IMMEDIATE)
+				{
+					ION_NET_LOG_ABNORMAL("Invalid data segment length;cmd=" << context.mCmd << ";avail=" << context.mReader.Available());
+					context.mReader.SkipBytes(context.mReader.Available());
+					break;
+				}
+				else if (context.mReader.Available() < NetSegmentHeaderSize - 1)
+				{
+					ION_NET_LOG_ABNORMAL("Invalid command segment length;cmd=" << context.mCmd << ";avail=" << context.mReader.Available());
+					context.mReader.SkipBytes(context.mReader.Available());
+					break;
+				}
+			}
 		}
 
-		if ((long)size < (long)len)
+		uint32_t una;
 		{
-			ION_NET_LOG_ABNORMAL("Invalid segment length");
-			break;
-		}
+			uint16_t wnd;
+			if (context.mCmd != IKCP_CMD_UNRELIABLE_NO_ACK)
+			{
+				context.mReader.ReadAssumeAvailable(frg);
+				context.mReader.ReadAssumeAvailable(wnd);
+				context.mReader.ReadAssumeAvailable(sn);
+				context.mReader.ReadAssumeAvailable(una);
+				context.mReader.ReadAssumeAvailable(ts);
 
-		if (cmd != IKCP_CMD_UNRELIABLE_NO_ACK)
-		{
-			mState.rmt_wnd = wnd;
-			outAckedBytes += ParseUna(remote, una, control);
-			ikcp_shrink_buf(this);
-		}
+				if (context.mCmd == IKCP_CMD_PUSH || context.mCmd == IKCP_CMD_IMMEDIATE)
+				{
+					context.mReader.ReadAssumeAvailable(len);
+				}
+			}
+			else
+			{
+				context.mReader.ReadAssumeAvailable(wnd);
+				context.mReader.ReadAssumeAvailable(una);
+				context.mReader.ReadAssumeAvailable(len);
+			}
 
-		if (cmd == IKCP_CMD_ACK)
+			if ((long)context.mReader.Available() < (long)len)
+			{
+				ION_NET_LOG_ABNORMAL("Invalid segment length;lenghth=" << len << ";avail=" << context.mReader.Available());
+				context.mReader.SkipBytes(context.mReader.Available());
+				break;
+			}
+
+			mState.rmt_wnd = DecodeWindowSize(wnd);
+			outAckedBytes += ParseUna(context.mRemote, una, context.mControl);
+		}
+		ikcp_shrink_buf(this);
+
+
+		if (context.mCmd == IKCP_CMD_ACK)
 		{
 			// ts is our sent time on IKCP_CMD_ACK
-			auto delta = DeltaTime(currentTime, ts);
-			if (delta >= 0)
+			uint32_t rtt = context.mCurrentTime - ts;
+			if (rtt < NetRttTracker::MaxPingTime)
 			{
-				ikcp_update_ack(this, uint32_t(delta));
+				ikcp_update_ack(this, rtt);
 			}
-			outAckedBytes += ParseAck(remote, sn, control);
+			else
+			{
+				ION_NET_LOG_ABNORMAL("Channel In: Invalid RTT=" << rtt);
+			}
+			outAckedBytes += ParseAck(context.mRemote, sn, context.mControl);
 			ikcp_shrink_buf(this);
 			if (flag == 0)
 			{
@@ -766,41 +754,41 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 #endif
 				}
 			}
-			ION_NET_CHANNEL_LOG("Channel in: ack;conv=" << conv << ";sn=" << sn << ";rtt=" << delta << ";rto=" << mState.rx_rto);
+			ION_NET_CHANNEL_LOG("Channel in: ack;sn=" << sn << ";rtt=" << rtt << ";rto=" << mState.rx_rto);
 		}
-		else if (cmd == IKCP_CMD_PUSH || cmd == IKCP_CMD_IMMEDIATE)
+		else if (context.mCmd == IKCP_CMD_PUSH || context.mCmd == IKCP_CMD_IMMEDIATE)
 		{
-			ION_NET_CHANNEL_LOG("Channel in: data;sn=" << sn << ";ts=" << ts << ";len=" << len);			
+			ION_NET_CHANNEL_LOG("Channel " << context.mChannel << " in: data;sn=" << sn << ";ts=" << ts << ";len=" << len << "/" << context.mReader.Available());
 			if (DeltaTime(sn, mState.rcv_nxt + mState.rcv_wnd) < 0)
 			{
 				// ts is their sent time on IKCP_CMD_PUSH or IKCP_CMD_IMMEDIATE
-				ikcp_ack_push(remote, this, sn, ts);
+				ikcp_ack_push(context.mRemote, this, sn, ts);
 				if (DeltaTime(sn, mState.rcv_nxt) >= 0)
 				{
 					int rcvIndex = FindRcvIndex(sn);
-					if (rcvIndex != -1) // Not duplicate
+					if (rcvIndex != -1)	 // Not duplicate
 					{
 						NetDownstreamSegment* seg;
-						char* segPtr = data - (sizeof(NetDownstreamSegmentHeader));
-						if (!packetMoved && (uintptr_t(segPtr) % alignof(NetDownstreamSegment)) == 0)
+						char* segPtr = (char*)context.mReader.Data() - (sizeof(NetDownstreamSegmentHeader));
+						if (!context.mPacketMoved && (uintptr_t(segPtr) % alignof(NetDownstreamSegment)) == 0)
 						{
-							packetMoved = true;
+							context.mPacketMoved = true;
 							seg = ion::AssumeAligned<NetDownstreamSegment>(reinterpret_cast<NetDownstreamSegment*>(segPtr));
-							seg->mOffset = uint32_t((byte*)data - (byte*)&packet);
+							seg->mOffset = uint32_t((byte*)context.mReader.Data() - (byte*)&packet);
 							ION_ASSERT(seg->mOffset > sizeof(NetDownstreamSegmentHeader),
 									   "Offset cannot differiante locally allocated packet");
 						}
 						else
 						{
-							seg = remote.Allocate<NetDownstreamSegment>(
+							seg = context.mRemote.Allocate<NetDownstreamSegment>(
 							  ByteAlignPosition(sizeof(NetDownstreamSegment) - 1 + len, alignof(NetDownstreamSegment)));
 							seg->mOffset = 0;
-							memcpy(seg->data, (byte*)data, len);
+							memcpy(seg->data, (byte*)context.mReader.Data(), len);
 						}
 
-						seg->conv = conv;
+						seg->conv = context.mChannel;
 						seg->frg = frg;
-						seg->wnd = wnd;
+						seg->wnd = mState.rmt_wnd;
 						seg->ts = ts;
 						seg->sn = sn;
 						seg->una = una;
@@ -809,7 +797,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 						mRcvBuf.Insert(rcvIndex, seg);
 
 						// Received new message.
-						do 
+						do
 						{
 							NetDownstreamSegment* rcvSeg = mRcvBuf.Front();
 							if (rcvSeg->sn == mState.rcv_nxt && mRcvQueue.Size() < mState.rcv_wnd)
@@ -825,51 +813,61 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 						} while (!mRcvBuf.IsEmpty());
 
 						// Force immediate ack
-						if (cmd == IKCP_CMD_IMMEDIATE)
+						if (context.mCmd == IKCP_CMD_IMMEDIATE)
 						{
-							mState.ts_flush = currentTime;
+							mState.ts_flush = context.mCurrentTime;
 						}
 					}
 				}
 			}
 		}
-		else if (cmd == IKCP_CMD_UNRELIABLE_NO_ACK)
+		else if (context.mCmd == IKCP_CMD_UNRELIABLE_NO_ACK)
 		{
 			ION_NET_CHANNEL_LOG("Channel in: Unrealiable packet;Len=" << len);
-			NetPacket* p = NetControlLayer::AllocateUserPacket(control, len);
-			p->mAddress = remote.mAddress;
-			p->mGUID = remote.guid;
-			p->mRemoteId = remote.mId.load();
+			NetPacket* p = NetControlLayer::AllocateUserPacket(context.mControl, len);
+			p->mAddress = context.mRemote.mAddress;
+			p->mGUID = context.mRemote.guid;
+			p->mRemoteId = context.mRemote.mId.load();
 			p->mLength = len;
-			memcpy(p->mDataPtr, (byte*)data, len);
+			p->mFlags = NetPacketFlags::Unreliable;
+			memcpy(p->mDataPtr, (byte*)context.mReader.Data(), len);
 			recvQ.PushBack(p);
 		}
-		else if (cmd == IKCP_CMD_WASK)
+		else if (context.mCmd == IKCP_CMD_WASK)
 		{
 			// ready to send back IKCP_CMD_WINS in ikcp_flush
 			// tell remote my window size
 			mState.probe |= IKCP_ASK_TELL;
 			ION_NET_CHANNEL_LOG("Channel in: probe");
 		}
-		else if (cmd == IKCP_CMD_WINS)
+		else if (context.mCmd == IKCP_CMD_WINS)
 		{
 			// do nothing
-			ION_NET_CHANNEL_LOG("Channel in: window size" << wnd);
+			ION_NET_CHANNEL_LOG("Channel in: window size:" << mState.rmt_wnd);
 		}
 		else
 		{
-			ION_NET_LOG_ABNORMAL("Channel in: invalid cmd:" << cmd);
+			ION_NET_LOG_ABNORMAL("Channel in: invalid cmd:" << context.mCmd);
 			break;
 		}
 
-		data += len;
-		size -= len;
-		
-	} while (size >= NetConnectedProtocolMinOverHead);
+		context.mReader.SkipBytes(len);
 
-	if (size != 0)
-	{
-		ION_NET_LOG_ABNORMAL("Unprocessed data in packet");
+		if (context.mReader.Available() <= NetSegmentHeaderUnrealiableSize + NetSegmentHeaderDataLengthSize)
+		{
+			break;
+		}
+		
+		uint32_t prevChannel = context.mChannel;
+		context.mReader.ReadAssumeAvailable(context.mCmd);
+		context.mChannel = context.mCmd >> NetChannelIndexBit;
+		context.mCmd = context.mCmd & 0x7;
+		
+		if (context.mChannel != prevChannel)
+		{
+			ION_NET_CHANNEL_LOG("Channel in: switching channel " << prevChannel << "->" << context.mChannel);
+			break;
+		}
 	}
 
 	if (flag != 0)
@@ -910,10 +908,7 @@ bool NetChannel::Input(ion::NetControl& control, NetRemoteSystem& remote, ion::N
 			}
 		}
 	}
-	if (!packetMoved)
-	{
-		NetControlLayer::DeallocateReceiveBuffer(control, &packet);
-	}
+
 	return !mRcvQueue.IsEmpty();
 }
 NetChannelWriteContext ::~NetChannelWriteContext()
@@ -926,9 +921,9 @@ NetChannelWriteContext ::~NetChannelWriteContext()
 
 int SendKCPPacket(NetChannelWriteContext& context, int len)
 {
-	context.mRemote.lastReliableSend = context.mCurrentTime;
+	context.mRemote.mTransport.mNextSequence++;
 #if ION_NET_FEATURE_SECURITY
-	if (context.mRemote.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+	if (context.mRemote.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 	{
 		ION_ASSERT(len >= NetUnencryptedProtocolBytes, "Too small packet");
 		ION_ASSERT(len + ion::NetSecure::AuthenticationTagLength <= ion::NetMaxUdpPayloadSize(), "Too large packet");
@@ -952,9 +947,8 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 		context.mSsp->length = len;
 	}
 	ION_NET_CHANNEL_LOG("Channel out: send;size=" << len << " bytes"
-												  << ";channel=" << uint8_t(context.mSsp->data[0])
 												  << ";conv=" << *reinterpret_cast<uint32_t*>(&context.mSsp->data[0])
-												  << ";sn=" << *reinterpret_cast<uint32_t*>(&context.mSsp->data[4]));
+												  << ";packetSeq=" << *reinterpret_cast<uint32_t*>(&context.mSsp->data[4]));
 	if (context.mRemote.mMetrics)
 	{
 		context.mRemote.mMetrics->OnSent(context.mCurrentTime, ion::PacketType::Raw,
@@ -980,31 +974,17 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 	return len;
 }
 
-static void ikcp_encode_seg(ByteWriterUnsafe& writer, const NetUpstreamSegmentHeader& ION_RESTRICT seg)
-{
-	writer.Write(seg.conv);
-	writer.Write(seg.sn);
-	// timestamp
-	// Note: We measure RTT of connection via RTT Tracker. Segment timestamps are used to measure RTT of channel, but also
-	// for different purpose, congestion control.
-	writer.Write(seg.ts);
-	writer.Write((uint8_t)seg.frg);
-	writer.Write((uint8_t)seg.cmd);
-	writer.Write((uint16_t)seg.wnd);
-	writer.Write(seg.una);
-}
-
 void NetChannel::Flush(NetChannelWriteContext& context)
 {
 	uint32_t resent, cwnd;
 	uint32_t rtomin;
 	NetUpstreamSegmentHeader seg;
 
-	seg.conv = mState.conv;
+	seg.conv = mState.mChannel;
 	seg.cmd = IKCP_CMD_ACK;
 
 	// Calculate unused window
-	seg.wnd = (mRcvQueue.Size() < mState.rcv_wnd) ? ion::SafeRangeCast<uint32_t>(mState.rcv_wnd - mRcvQueue.Size()) : 0;
+	seg.wnd = (mRcvQueue.Size() < mState.rcv_wnd) ? EncodeWindowSize(ion::SafeRangeCast<uint32_t>(mState.rcv_wnd - mRcvQueue.Size())) : 0;
 
 	seg.una = mState.rcv_nxt;
 	seg.frg = 0;
@@ -1019,8 +999,8 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 		if (size + need > mState.mtu)
 		{
 			SendKCPPacket(context, size);
+			context.mCurrentTime = SteadyClock::GetTimeMS(); // Keep time up to date as sending is heaviest part of upstreaming.
 			context.mWriter = ByteWriterUnsafe((byte*)context.mSsp->data);
-			return true;
 		}
 		else if (!context.mWriter.IsValid())
 		{
@@ -1028,10 +1008,19 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 			if (context.mSsp)
 			{
 				context.mWriter = ByteWriterUnsafe((byte*)context.mSsp->data);
-				return true;
+			}
+			else
+			{
+				return false;
 			}
 		}
-		return context.mWriter.IsValid();
+		else
+		{
+			return true;
+		}
+		context.mWriter.Write(context.mRemote.mConversationId);
+		context.mWriter.Write(context.mRemote.mTransport.mNextSequence);
+		return true;
 	};
 
 	// flush acknowledges
@@ -1039,11 +1028,11 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	mState.ackcount = 0;
 	for (int i = 0; i < count; i++)
 	{
-		if (FlushBufferIfNeeded(NetConnectedProtocolMinOverHead))
+		if (FlushBufferIfNeeded(NetSegmentHeaderSize))
 		{
 			seg.sn = acklist[i * 2 + 0];
 			seg.ts = acklist[i * 2 + 1];
-			ikcp_encode_seg(context.mWriter, seg);
+			EncodeReliableSegment(context.mWriter, seg);
 			ION_NET_CHANNEL_LOG("Channel out: ack;conv=" << seg.conv << ";sn=" << seg.sn << ";ts=" << seg.ts);
 		}
 	}
@@ -1083,10 +1072,10 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	// flush window probing commands
 	if (mState.probe & IKCP_ASK_SEND)
 	{
-		if (FlushBufferIfNeeded(NetConnectedProtocolMinOverHead))
+		if (FlushBufferIfNeeded(NetSegmentHeaderSize))
 		{
 			seg.cmd = IKCP_CMD_WASK;
-			ikcp_encode_seg(context.mWriter, seg);
+			EncodeReliableSegment(context.mWriter, seg);
 			ION_NET_CHANNEL_LOG("Channel out: ask send;Conv=" << seg.conv);
 		}
 	}
@@ -1094,10 +1083,10 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	// flush window probing commands
 	if (mState.probe & IKCP_ASK_TELL)
 	{
-		if (FlushBufferIfNeeded(NetConnectedProtocolMinOverHead))
+		if (FlushBufferIfNeeded(NetSegmentHeaderSize))
 		{
 			seg.cmd = IKCP_CMD_WINS;
-			ikcp_encode_seg(context.mWriter, seg);
+			EncodeReliableSegment(context.mWriter, seg);
 			ION_NET_CHANNEL_LOG("Channel out: ask tell;Conv=" << seg.conv);
 		}
 	}
@@ -1129,7 +1118,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 		NetUpstreamSegment* newseg = mSndQueue.Front();
 		mSndQueue.PopFront();
 		mSndBuf.PushBack(newseg);
-		newseg->mHeader.conv = mState.conv;
+		newseg->mHeader.conv = mState.mChannel;
 		newseg->mHeader.cmd = NetChannelPriorityConfigs[int(mState.currentPriority)].workInterval == 0 ? IKCP_CMD_IMMEDIATE : IKCP_CMD_PUSH;
 		newseg->mHeader.wnd = seg.wnd;
 		newseg->mHeader.ts = context.mCurrentTime;
@@ -1152,16 +1141,11 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	while (!mUnrealiableSndQueue.IsEmpty())
 	{
 		NetCommand* cmd = mUnrealiableSndQueue.Front();
-		if (FlushBufferIfNeeded(NetConnectedProtocolOverHead + SafeRangeCast<uint32_t>(cmd->mNumberOfBytesToSend)))
+		if (FlushBufferIfNeeded(NetSegmentHeaderUnrealiableSize + NetSegmentHeaderDataLengthSize +
+								SafeRangeCast<uint32_t>(cmd->mNumberOfBytesToSend)))
 		{
-			context.mWriter.Write(mState.conv);
-			// #TODO: Free 9 bytes for unreliable data
-			context.mWriter.Write(uint32_t(0));// sn
-			context.mWriter.Write(uint32_t(0));// ts
-			context.mWriter.Write(uint8_t(0));	// frg
-			context.mWriter.Write((uint8_t)IKCP_CMD_UNRELIABLE_NO_ACK);
-			context.mWriter.Write((uint16_t)seg.wnd);	 
-			context.mWriter.Write((uint32_t)mState.rcv_nxt);	 
+			seg.una = mState.rcv_nxt;
+			EncodeUnreliableSegment(context.mWriter, seg);
 			WriteDataSegment(cmd, 0, cmd->mNumberOfBytesToSend);
 		}
 		mUnrealiableSndQueue.PopFront();
@@ -1226,12 +1210,13 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 			segment->mHeader.wnd = seg.wnd;
 			segment->mHeader.una = mState.rcv_nxt;
 
-			FlushBufferIfNeeded(NetConnectedProtocolOverHead + segment->mHeader.len);
+			FlushBufferIfNeeded(NetSegmentHeaderSize + NetSegmentHeaderDataLengthSize + segment->mHeader.len);
+
+			context.mRemote.lastReliableSend = context.mCurrentTime;
 
 			ION_NET_CHANNEL_LOG("Channel out: data;conv=" << segment->mHeader.conv << ";size=" << segment->mHeader.len);
 
-
-			ikcp_encode_seg(context.mWriter, segment->mHeader);
+			EncodeReliableSegment(context.mWriter, segment->mHeader);
 			if (segment->mCommand)
 			{
 				WriteDataSegment(segment->mCommand, segment->mPos, segment->mHeader.len);
@@ -1254,12 +1239,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 		}
 	}
 
-	// flush remaining segments
-	uint32_t size = SafeRangeCast<uint32_t>(context.mWriter.NumBytesUsed());
-	if (size > 0)
-	{
-		SendKCPPacket(context, size);
-	}
+
 
 	if (context.mRemote.mMetrics)
 	{
@@ -1269,8 +1249,6 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 											   ion::NetMtuSize(resentData, context.mRemote.mAddress.GetIPVersion()));
 		}
 	}
-
-
 
 	// update ssthresh
 	if (change)
@@ -1304,6 +1282,16 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	}
 }
 
+void NetChannel::FlushRemaining(NetChannelWriteContext& context)
+{
+	// flush remaining segments
+	uint32_t size = SafeRangeCast<uint32_t>(context.mWriter.NumBytesUsed());
+	if (size > NetConnectedProtocolHeaderSize)
+	{
+		SendKCPPacket(context, size);
+	}
+}
+
 void NetChannel::Update(NetChannelWriteContext& context)
 {
 	ion::TimeDeltaMS timeLeft = ion::DeltaTime(mState.ts_flush, context.mCurrentTime);
@@ -1320,7 +1308,7 @@ void NetChannel::Update(NetChannelWriteContext& context)
 
 void NetChannel::ReconfigureChannelPriority(NetPacketPriority packetPriority)
 {
-	ION_NET_CHANNEL_LOG("Channel in: new packet priority:" << packetPriority);
+	ION_NET_CHANNEL_LOG("Channel: new packet priority:" << packetPriority);
 	mState.currentPriority = packetPriority;
 	int nodelay = ion::NetChannelPriorityConfigs[int(packetPriority)].nodelay;
 	int interval = ion::NetChannelPriorityConfigs[int(packetPriority)].workInterval;
@@ -1372,7 +1360,7 @@ void NetChannel::RcvWndSize(uint32_t rcvwnd)
 }
 
 
-NetChannel::NetChannel(NetChannel&& other)
+NetChannel::NetChannel(NetChannel&& other) noexcept
   :
 	mSndQueue(std::move(other.mSndQueue)),
 	mSndBuf(std::move(other.mSndBuf)),

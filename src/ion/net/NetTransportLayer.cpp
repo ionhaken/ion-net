@@ -95,9 +95,6 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 
 			if (packet->Data()[0] != NetMessageId::ChannelReconfiguration)	// #TODO: Do this in higher level loop
 			{
-				packet->mGUID = remote.guid;
-				packet->mRemoteId = remote.mId;
-				packet->mSource = remote.netSocket;
 				return packet;
 			}
 			else
@@ -135,9 +132,6 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 						{
 							buffer->mLength = SafeRangeCast<uint32_t>(totalSize);  // #TODO: Support 64-bit packet size
 							buffer->mAddress = packet->mAddress;
-							buffer->mGUID = remote.guid;
-							buffer->mRemoteId = remote.mId;
-							buffer->mSource = remote.netSocket;
 							ION_ASSERT(channel.mState.mBigDataBuffer.mBuffer == nullptr, "Duplicate buffer");
 							channel.mState.mBigDataBuffer.mBuffer = buffer;
 							channel.mState.mBigDataBuffer.mTotalReceived = 0;
@@ -199,14 +193,14 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 }
 
 
-NetChannel* EnsureChannel(NetTransport& transport, uint32_t conversation, NetRemoteSystem& remote, ion::TimeMS now)
+NetChannel* EnsureChannel(NetTransport& transport, uint32_t channel, NetRemoteSystem& remote, ion::TimeMS now)
 {
-	uint8_t channelId = static_cast<uint8_t>(conversation & 0xFF);
+	uint8_t channelId = static_cast<uint8_t>(channel);
 	uint8_t channelIdx = transport.mIdToChannel[channelId];
 	if (channelIdx == 0xFF)
 	{
 		channelIdx = uint8_t(transport.mOrderedChannels.Size());
-		transport.mOrderedChannels.Add(std::move(NetChannel(conversation, now, remote.PayloadSize())));
+		transport.mOrderedChannels.Add(std::move(NetChannel(channelId, now, remote.PayloadSize())));
 		auto* channel = &transport.mOrderedChannels.Back();
 
 		ION_ASSERT(channelIdx < NetNumberOfChannels, "Invalid channel index");
@@ -220,7 +214,7 @@ NetChannel* EnsureChannel(NetTransport& transport, uint32_t conversation, NetRem
 }
 
 
-void UpdatePriorityChannelOnInput(NetTransport& transport, NetChannel* stream, uint32_t conversation, ion::TimeMS now)
+void UpdatePriorityChannelOnInput(NetTransport& transport, NetChannel* stream, ion::TimeMS now)
 {
 	if (transport.mChannelTuner.mThreshold == NetTransport::ChannelTuner::MinThreshold)
 	{
@@ -228,12 +222,12 @@ void UpdatePriorityChannelOnInput(NetTransport& transport, NetChannel* stream, u
 	}
 
 	uint32_t newThreshold = ion::SafeRangeCast<uint32_t>(stream->mSndQueue.Size() + stream->mSndBuf.Size());
-	uint8_t newPriorityChannel = uint8_t(conversation & 0xFF);
+	uint8_t newPriorityChannel = stream->mState.mChannel;
 	for (size_t i = 0; i < transport.mOrderedChannels.Size(); ++i)
 	{
 		if (transport.mOrderedChannels[i].mSndBuf.Size() + transport.mOrderedChannels[i].mSndQueue.Size() > newThreshold)
 		{
-			newPriorityChannel = uint8_t(transport.mOrderedChannels[i].mState.conv);
+			newPriorityChannel = transport.mOrderedChannels[i].mState.mChannel;
 			newThreshold =
 			  ion::SafeRangeCast<uint32_t>(transport.mOrderedChannels[i].mSndBuf.Size() + transport.mOrderedChannels[i].mSndQueue.Size());
 		}
@@ -277,7 +271,11 @@ void UpdatePriorityChannelOnSend(NetTransport& transport, NetChannel* stream, ui
 
 }  // namespace
 
-void Init(NetTransport& transport) { memset(transport.mIdToChannel.data(), 0xFF, sizeof(transport.mIdToChannel)); }
+void Init(NetTransport& transport)
+{
+	memset(transport.mIdToChannel.data(), 0xFF, sizeof(transport.mIdToChannel));
+	transport.mDuplicateProtection = NetTransport::DuplicateProtection();
+}
 
 void Deinit([[maybe_unused]] NetTransport& transport) { ION_ASSERT(transport.mRcvQueue.IsEmpty(), "Reassembly queue leaked"); }
 
@@ -313,11 +311,19 @@ bool Input(NetTransport& transport, NetControl& control, NetRemoteSystem& remote
 							  ion::NetSocketReceiveData& recvFromStruct, ion::TimeMS now)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
-	ION_ASSERT((conversation & 0xFF) < NetNumberOfChannels, "Invalid channel");
 	ION_ASSERT(recvFromStruct.SocketBytesRead() >= NetConnectedProtocolMinOverHead, "Invalid data for KCP");
 	size_t length = recvFromStruct.SocketBytesRead();
+
+	if (conversation != remote.mConversationId)
+	{
+		ION_NET_LOG_ABNORMAL("Invalid conversation: " << conversation << ";len=" << length);
+		return false;
+	}
+
+	ION_ASSERT((uintptr_t(recvFromStruct.mPayload) % alignof(NetPacket) == 0), "Invalid allocation");
+
 #if ION_NET_FEATURE_SECURITY
-	if (remote.mDataTransferSecurity == NetDataTransferSecurity::EncryptionAndReplayProtection)
+	if (remote.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 	{
 		if (length < (NetConnectedProtocolMinOverHead + ion::NetSecure::AuthenticationTagLength))
 		{
@@ -338,31 +344,67 @@ bool Input(NetTransport& transport, NetControl& control, NetRemoteSystem& remote
 			ION_NET_LOG_ABNORMAL("Reliable layer decrypt failed");
 			return false;
 		}
-
 		length = length - ion::NetSecure::AuthenticationTagLength;
 	}
 #endif
-	NetChannel* stream = EnsureChannel(transport, conversation, remote, now);
-	if (stream->Input(control, remote, recvFromStruct, now, length, transport.mChannelTuner.mPeriodTotalBytesAcked, transport.mRcvQueue))
+	NetChannelReadContext context{control, remote, now, 0, 0, false, ByteReader(recvFromStruct.mPayload, length)};
+
+	uint32_t packetSeq;
+	context.mReader.SkipBytes(sizeof(conversation));
+	context.mReader.ReadAssumeAvailable(packetSeq);
+
+	ION_NET_LOG_VERBOSE("Packet Received: conv=" << conversation << ";packet seq=" << packetSeq);
+
+	if (!transport.mDuplicateProtection.OnSequenceReceived(packetSeq) && remote.mDataTransferSecurity != NetDataTransferSecurity::Disabled)
 	{
-		while (NetPacket* nextPacket = Receive(transport, *stream, control, remote))
+		ION_NET_LOG_ABNORMAL("Duplicate Protection: Received duplicate sequence;seq=" << packetSeq);
+		return false;
+	}
+
+	context.mReader.ReadAssumeAvailable(context.mCmd);
+	context.mChannel = context.mCmd >> NetChannelIndexBit;
+	context.mCmd = context.mCmd & 0x7;
+
+	do
+	{
+		NetChannel* stream = EnsureChannel(transport, context.mChannel, remote, now);
+		if (stream->Input(context, recvFromStruct, transport.mChannelTuner.mPeriodTotalBytesAcked, transport.mRcvQueue))
 		{
-			transport.mRcvQueue.PushBack(nextPacket);
+			while (NetPacket* nextPacket = Receive(transport, *stream, control, remote))
+			{
+				ION_ASSERT(nextPacket->mAddress.IsValid(), "Address not set"); // Don't compare to remote.mAddress - can change during rerouting
+				nextPacket->mGUID = remote.guid;
+				nextPacket->mRemoteId = remote.mId.load();
+				nextPacket->mSource = remote.netSocket;
+				transport.mRcvQueue.PushBack(nextPacket);
+			}
+			UpdatePriorityChannelOnInput(transport, stream, now);
 		}
-		UpdatePriorityChannelOnInput(transport, stream, conversation, now);
+	} while (context.mReader.Available() > NetSegmentHeaderUnrealiableSize + NetSegmentHeaderDataLengthSize - 1);
+
+#if (ION_ABORT_ON_FAILURE == 1)
+	if (context.mReader.Available() != 0)
+	{
+		ION_NET_LOG_ABNORMAL("Unprocessed data in packet;left=" << context.mReader.Available());
+	}
+#endif
+
+	if (!context.mPacketMoved)
+	{
+		NetControlLayer::DeallocateReceiveBuffer(context.mControl, &recvFromStruct);
 	}
 	return true;
 }
 
-bool Send(NetTransport& transport, NetControl& control, TimeMS currentTime, NetRemoteSystem& remote, NetCommand& command,
-		  uint32_t conversation)
+bool Send(NetTransport& transport, NetControl& control, TimeMS currentTime, NetRemoteSystem& remote, NetCommand& command)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
-	ION_ASSERT((conversation & 0xFF) < NetNumberOfChannels, "Invalid channel:" << (conversation & 0xFF));
+	ION_ASSERT((command.mChannel) < NetNumberOfChannels, "Invalid channel:" << (command.mChannel));
 	ION_ASSERT(command.mNumberOfBytesToSend > 0, "No data to send");
 
-	NetChannel* stream = EnsureChannel(transport, conversation, remote, currentTime);
-	ION_ASSERT(stream->mState.conv == conversation, "Invalid conversation;Expected=" << stream->mState.conv << ";Used=" << conversation);
+	NetChannel* stream = EnsureChannel(transport, command.mChannel, remote, currentTime);
+	ION_ASSERT(stream->mState.mChannel == (command.mChannel),
+			   "Invalid channel;Expected=" << stream->mState.mChannel << ";Used=" << (command.mChannel));
 
 	auto nextFlush = currentTime + ion::NetChannelPriorityConfigs[size_t(command.mPriority)].workInterval;
 	if (ion::DeltaTime(stream->mState.ts_flush, nextFlush) > 0)
@@ -378,7 +420,7 @@ bool Send(NetTransport& transport, NetControl& control, TimeMS currentTime, NetR
 	int result = stream->Send(remote, command, 0, command.mNumberOfBytesToSend);
 	if (result >= 0)
 	{
-		UpdatePriorityChannelOnSend(transport, stream, conversation, currentTime);
+		UpdatePriorityChannelOnSend(transport, stream, command.mChannel, currentTime);
 		return true;
 	}
 
@@ -413,7 +455,7 @@ bool Send(NetTransport& transport, NetControl& control, TimeMS currentTime, NetR
 		result = stream->Send(remote, command, pos, command.mNumberOfBytesToSend - pos);
 		ION_ASSERT(result >= 0, "Send failed");
 	}
-	UpdatePriorityChannelOnSend(transport, stream, conversation, currentTime);
+	UpdatePriorityChannelOnSend(transport, stream, command.mChannel, currentTime);
 	return true;
 }
 
@@ -510,7 +552,7 @@ void UpdateChannelTuner(NetTransport& transport, NetRemoteSystem& remoteSystem, 
 	}
 }
 
-void Update(NetTransport& transport, NetControl& control, NetRemoteSystem& remote, ion::TimeMS now)
+TimeMS Update(NetTransport& transport, NetControl& control, NetRemoteSystem& remote, ion::TimeMS now)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
 	if (transport.mChannelTuner.mThreshold > NetTransport::ChannelTuner::MinThreshold)
@@ -520,6 +562,8 @@ void Update(NetTransport& transport, NetControl& control, NetRemoteSystem& remot
 
 	NetChannelWriteContext context{control, remote, now, nullptr, ByteWriterUnsafe(nullptr)};
 	ion::ForEach(transport.mOrderedChannels, [&context](NetChannel& iter) { iter.Update(context); });
+	NetChannel::FlushRemaining(context);
+	return context.mCurrentTime;
 }
 
 

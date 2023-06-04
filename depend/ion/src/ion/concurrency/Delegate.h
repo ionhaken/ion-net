@@ -206,25 +206,37 @@ public:
 		return true;  // ret;
 	}
 
+	bool Cancel() 
+	{
+		if (mSynchronizer.IsActive())
+		{
+			mSynchronizer.Stop();
+			return true;
+		}
+		return false;
+	}
+
 	void Shutdown()
 	{
 		if (mSynchronizer.IsActive())
 		{
+			mSynchronizer.Stop();
 			WaitForThreads();
 		}
 	}
 
-	~Delegate() { ION_ASSERT(!mSynchronizer.IsActive(), "Synchronizer still active"); }
-
-private:
 	void WaitForThreads()
 	{
-		mSynchronizer.Stop();
 		for (size_t i = 0; i < mThreads.Size(); i++)
 		{
 			mThreads[i].Join();
 		}
 	}
+
+	~Delegate() { ION_ASSERT(!mSynchronizer.IsActive() || mThreads.Size() == 0, "Synchronizer still active"); }
+
+private:
+
 
 	ion::Vector<ion::Runner, ion::CoreAllocator<ion::Runner>> mThreads;
 	ion::MultiWriterBuffer<T, TBufferWidth> mBuffer;

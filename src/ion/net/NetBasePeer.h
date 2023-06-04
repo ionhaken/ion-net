@@ -79,8 +79,13 @@ public:
 		return (NetStartupResult)ion_net_startup((ion_net_peer)mPeer.Get(), (ion_net_startup_parameters)&pars);
 	}
 
+	inline void Stop()
+	{
+		ion_net_stop((ion_net_peer)mPeer.Get());
+	}
+
 	inline void Shutdown(unsigned int blockDuration, unsigned char orderingChannel = 0,
-						 NetPacketPriority disconnectionNotificationPriority = NetPacketPriority::Low)
+						 NetPacketPriority disconnectionNotificationPriority = NetPacketPriority::Immediate)
 	{
 		ion_net_shutdown((ion_net_peer)mPeer.Get(), blockDuration, orderingChannel, (unsigned int)disconnectionNotificationPriority);
 	}

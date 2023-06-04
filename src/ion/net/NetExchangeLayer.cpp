@@ -1,5 +1,6 @@
 #include <ion/net/NetCommand.h>
 #include <ion/net/NetConnectionLayer.h>
+#include <ion/net/NetConnections.h>
 #include <ion/net/NetControl.h>
 #include <ion/net/NetControlLayer.h>
 #include <ion/net/NetExchangeLayer.h>
@@ -293,7 +294,7 @@ void Update(NetExchange& exchange, NetControl& control, ion::TimeMS now, ion::Jo
 	}
 }
 
-ConnectionResult AssignRemote(NetExchange& exchange, NetInterfaceResource& memoryResource, const ion::NetSocketAddress& connectAddress,
+ConnectionResult AssignRemote(NetExchange& exchange, const NetConnections& connections, NetInterfaceResource& memoryResource, const ion::NetSocketAddress& connectAddress,
 							  const ion::NetSocketAddress& bindingAddress, NetSocket* netSocket, ion::NetGUID guid,
 							  NetDataTransferSecurity dataTransferSecurity, uint16_t mtu)
 {
@@ -333,12 +334,10 @@ ConnectionResult AssignRemote(NetExchange& exchange, NetInterfaceResource& memor
 	}
 	else if (GUIDInUse == true || guid == ion::NetGuidUnassigned || guid == exchange.mGuid)
 	{
-		ION_ASSERT(exchange.mIpList[0] != connectAddress, "Connecting to self");
-
 		if (exchange.mGuid != ion::NetGuidAuthority)
 		{
-			ION_NET_LOG_VERBOSE("GUID collision at " << exchange.mIpList[0] << "(" << exchange.mGuid << "): Someone else took the guid "
-													 << guid << ";connectAddres=" << connectAddress);
+			ION_NET_LOG_VERBOSE("GUID collision with GUID: " << exchange.mGuid << "): Someone else took the guid " << guid
+															 << ";connectAddres=" << connectAddress);
 			result.outcome = ConnectionResponse::GUIDReserved;
 			return result;
 		}
@@ -377,7 +376,7 @@ ConnectionResult AssignRemote(NetExchange& exchange, NetInterfaceResource& memor
 
 	bool thisIPConnectedRecently = false;
 	result.rssFromSA =
-	  AssignSystemAddressToRemoteSystemList(exchange, memoryResource, rsp, connectAddress, bindingAddress, &thisIPConnectedRecently);
+	  AssignSystemAddressToRemoteSystemList(exchange, connections, memoryResource, rsp, connectAddress, bindingAddress, &thisIPConnectedRecently);
 	if (thisIPConnectedRecently)
 	{
 		ION_NET_LOG_ABNORMAL("IP recently connected");
@@ -393,12 +392,6 @@ void Init(NetExchange& exchange, const ion::NetStartupParameters& parameters, Ne
 	ION_ASSERT(parameters.mMaxConnections > 0, "Peer must be connectable");
 	ION_ASSERT(parameters.mMaxConnections <= UINT16_MAX, "Too many connections");
 	exchange.mGuid = parameters.mIsMainAuthority ? NetGuidAuthority : GenerateGUID(exchange);
-
-	for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
-	{
-		exchange.mIpList[i] = NetUnassignedSocketAddress;
-	}
-	exchange.mFirstExternalID = NetUnassignedSocketAddress;
 
 	// Don't allow more incoming connections than we have peers.
 	exchange.mMaximumIncomingConnections = ion::SafeRangeCast<uint16_t>(parameters.mMaxIncomingConnections);
@@ -625,7 +618,7 @@ ion::NetRemoteId GetAddressedRemoteId(const NetExchange& exchange, const NetAddr
 	return NetRemoteId();
 }
 
-ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchange, NetInterfaceResource& memoryResource,
+ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchange, const NetConnections& connections, NetInterfaceResource& memoryResource,
 															const RemoteSystemParameters& rsp, const ion::NetSocketAddress& connectAddress,
 															ion::NetSocketAddress bindingAddress, bool* thisIPConnectedRecently)
 {
@@ -635,7 +628,7 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchang
 
 	if (exchange.mLimitConnectionFrequencyFromTheSameIP)
 	{
-		if (IsLoopbackAddress(exchange, connectAddress, false) == false)
+		if (NetConnectionLayer::IsLoopbackAddress(connections, connectAddress, false) == false)
 		{
 			for (unsigned int i = 1; i <= exchange.mMaximumNumberOfPeers; i++)
 			{
@@ -695,32 +688,11 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchang
 			}
 
 			AddToActiveSystemList(exchange, ion::NetRemoteIndex(assignedIndex));
-			if (rsp.incomingNetSocket->mBoundAddress == bindingAddress)
+			if (rsp.incomingNetSocket->mBoundAddress != bindingAddress)
 			{
-				remoteSystem->netSocket = rsp.incomingNetSocket;
+				ION_ABNORMAL("Incoming address does not match with bound address of incoming socket");
 			}
-			else
-			{
-				char str[256];
-				bindingAddress.ToString(str, 256);
-				// See if this is an internal IP address.
-				// If so, force binding on it so we reply on the same IP address as they sent to.
-				unsigned int ipListIndex, foundIndex = (unsigned int)-1;
-
-				for (ipListIndex = 0; ipListIndex < NetMaximumNumberOfInternalIds; ipListIndex++)
-				{
-					if (exchange.mIpList[ipListIndex] == NetUnassignedSocketAddress)
-						break;
-
-					if (bindingAddress.EqualsExcludingPort(exchange.mIpList[ipListIndex]))
-					{
-						foundIndex = ipListIndex;
-						break;
-					}
-				}
-
-				remoteSystem->netSocket = rsp.incomingNetSocket;
-			}
+			remoteSystem->netSocket = rsp.incomingNetSocket;
 
 			remoteSystem->timeSync = ion::NetTimeSync();
 			remoteSystem->connectionTime = time;
@@ -864,62 +836,21 @@ ion::TimeMS GetTimeoutTime(const NetExchange& exchange, const NetSocketAddress& 
 
 void GetInternalID(const NetExchange& exchange, NetSocketAddress& out, const NetSocketAddress& address, const int index)
 {
-	if (address == NetUnassignedSocketAddress)
+	ION_ASSERT(address != NetUnassignedSocketAddress, "Invalid address");
+	ion::NetRemoteId id = GetRemoteIdThreadSafe(exchange, address, true);
+	if (id.IsValid())
 	{
-		out = exchange.mIpList[index];
-		return;
-	}
-	else
-	{
-		ion::NetRemoteId id = GetRemoteIdThreadSafe(exchange, address, true);
-		if (id.IsValid())
-		{
-			NetSocketAddress addres = exchange.mSystemAddressDetails[id.RemoteIndex()].mTheirInternalSystemAddress[index];
+		NetSocketAddress addres = exchange.mSystemAddressDetails[id.RemoteIndex()].mTheirInternalSystemAddress[index];
 
-			// Check address was not altered
-			if (exchange.mRemoteSystemList[id.RemoteIndex()].mAddress == address)
-			{
-				out = address;
-				return;
-			}
+		// Check address was not altered
+		if (exchange.mRemoteSystemList[id.RemoteIndex()].mAddress == address)
+		{
+			out = address;
+			return;
 		}
 	}
+
 	out = NetUnassignedSocketAddress;
-}
-
-void SetInternalID(NetExchange& exchange, const NetSocketAddress& systemAddress, int index)
-{
-	ION_ASSERT(index >= 0 && index < NetMaximumNumberOfInternalIds, "invalid id index");
-	exchange.mIpList[index] = systemAddress;
-}
-
-bool IsLoopbackAddress(const NetExchange& exchange, const NetAddressOrRemoteRef& systemIdentifier, bool matchPort)
-{
-	if (systemIdentifier.mRemoteId.IsValid())
-	{
-		return false;
-	}
-
-	for (int i = 0; i < NetMaximumNumberOfInternalIds && exchange.mIpList[i] != NetUnassignedSocketAddress; i++)
-	{
-		if (matchPort)
-		{
-			if (exchange.mIpList[i] == systemIdentifier.mAddress)
-			{
-				return true;
-			}
-		}
-		else
-		{
-			if (exchange.mIpList[i].EqualsExcludingPort(systemIdentifier.mAddress))
-			{
-				return true;
-			}
-		}
-	}
-
-	return (matchPort == true && systemIdentifier.mAddress == exchange.mFirstExternalID) ||
-		   (matchPort == false && systemIdentifier.mAddress.EqualsExcludingPort(exchange.mFirstExternalID));
 }
 
 void ReferenceRemoteSystem(NetExchange& exchange, const ion::NetSocketAddress& sa, ion::NetRemoteIndex remoteSystemListIndex)
@@ -1071,24 +1002,15 @@ NetRemoteId GetRemoteIdThreadSafe(const NetExchange& exchange, const NetGUID inp
 
 void GetSocketAddressThreadSafe(const NetExchange& exchange, NetGUID guid, NetSocketAddress& out)
 {
-	if (guid == NetGuidUnassigned)
+	ION_ASSERT(guid != NetGuidUnassigned, "Invalid GUID");
+	ION_ASSERT(guid != exchange.mGuid, "Should read internal id");
+	NetRemoteId remoteId = GetRemoteIdThreadSafe(exchange, guid);
+	GetSocketAddressThreadSafe(exchange, remoteId, out);
+
+	// Check address was not altered by other thread
+	if (exchange.mRemoteSystemList[remoteId.RemoteIndex()].guid != guid)
 	{
 		out = NetUnassignedSocketAddress;
-	}
-	else if (guid == exchange.mGuid)
-	{
-		GetInternalID(exchange, out, NetUnassignedSocketAddress);
-	}
-	else
-	{
-		NetRemoteId remoteId = GetRemoteIdThreadSafe(exchange, guid);
-		GetSocketAddressThreadSafe(exchange, remoteId, out);
-
-		// Check address was not altered by other thread
-		if (exchange.mRemoteSystemList[remoteId.RemoteIndex()].guid != guid)
-		{
-			out = NetUnassignedSocketAddress;
-		}
 	}
 }
 
@@ -1114,7 +1036,8 @@ void GetSocketAddressThreadSafe(const NetExchange& exchange, NetRemoteId remoteI
 
 NetGUID GetGUIDThreadSafe(const NetExchange& exchange, NetRemoteId remoteId)
 {
-	ION_ASSERT(remoteId.RemoteIndex() <= exchange.mMaximumNumberOfPeers, "Invalid remote id");
+	ION_ASSERT(remoteId.RemoteIndex() <= exchange.mMaximumNumberOfPeers,
+			   "Invalid remote id;generation=" << remoteId.Generation() << ";index=" << remoteId.RemoteIndex());
 
 	if (exchange.mRemoteSystemList[remoteId.RemoteIndex()].mId.load() == remoteId)
 	{
@@ -1295,8 +1218,8 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 	}
 }
 
-void SendConnectionRequestAccepted(NetExchange& exchange, NetControl& control, ion::NetRemoteSystem* remoteSystem,
-								   ion::Time incomingTimestamp, ion::TimeMS now)
+void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& connections, NetControl& control,
+								   ion::NetRemoteSystem* remoteSystem, ion::Time incomingTimestamp, ion::TimeMS now)
 {
 	NetSendCommand cmd(control, remoteSystem->mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
 	if (cmd.HasBuffer())
@@ -1311,7 +1234,7 @@ void SendConnectionRequestAccepted(NetExchange& exchange, NetControl& control, i
 			writer.Process(remoteSystem->mId.load().RemoteIndex());
 			for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 			{
-				writer.Process(exchange.mIpList[i]);
+				writer.Process(connections.mIpList[i]);
 			}
 			remoteSystem->pingTracker.OnPing(now);
 			writer.Process(now);
@@ -1331,85 +1254,23 @@ void OnConnectedPong(NetExchange& exchange, ion::Time now, ion::Time sentPingTim
 	}
 }
 
-void FillIPList(NetExchange& exchange)
-{
-	if (exchange.mIpList[0] != NetUnassignedSocketAddress)
-		return;
-
-	// Fill out ipList structure
-	ion::SocketLayer::GetInternalAddresses(exchange.mIpList);
-
-	// Sort the addresses from lowest to highest
-	int startingIdx = 0;
-	while (startingIdx < NetMaximumNumberOfInternalIds - 1 && exchange.mIpList[startingIdx] != NetUnassignedSocketAddress)
-	{
-		int lowestIdx = startingIdx;
-		for (int curIdx = startingIdx + 1;
-			 curIdx < NetMaximumNumberOfInternalIds - 1 && exchange.mIpList[curIdx] != NetUnassignedSocketAddress; curIdx++)
-		{
-			if (exchange.mIpList[curIdx] < exchange.mIpList[startingIdx])
-			{
-				lowestIdx = curIdx;
-			}
-		}
-		if (startingIdx != lowestIdx)
-		{
-			NetSocketAddress temp = exchange.mIpList[startingIdx];
-			exchange.mIpList[startingIdx] = exchange.mIpList[lowestIdx];
-			exchange.mIpList[lowestIdx] = temp;
-		}
-		++startingIdx;
-	}
-}
-
-unsigned int GetNumberOfAddresses(const NetExchange& exchange)
-{
-	unsigned int i = 0;
-
-	while (i < exchange.mIpList.Size() && exchange.mIpList[i] != NetUnassignedSocketAddress)
-	{
-		i++;
-	}
-
-	return i;
-}
-
-bool IsIPV6Only(const NetExchange& exchange)
-{
-	auto num = GetNumberOfAddresses(exchange);
-	for (size_t i = 0; i < num; ++i)
-	{
-		if (exchange.mIpList[i].GetIPVersion() != 6)
-		{
-			return false;
-		}
-	}
-	return num != 0;  // True only when IPV6 adresses are available.
-}
-
 void GetExternalID(const NetExchange& exchange, const NetSocketAddress& target, NetSocketAddress& inactiveExternalId)
 {
-	if (target == NetUnassignedSocketAddress)
+	ION_ASSERT(target != NetUnassignedSocketAddress, "Invalid address");
+	// First check for active connection with this systemAddress
+	inactiveExternalId = NetUnassignedSocketAddress;
+	for (unsigned int i = 1; i <= exchange.mMaximumNumberOfPeers; i++)
 	{
-		inactiveExternalId = exchange.mFirstExternalID;
-	}
-	else
-	{
-		// First check for active connection with this systemAddress
-		inactiveExternalId = NetUnassignedSocketAddress;
-		for (unsigned int i = 1; i <= exchange.mMaximumNumberOfPeers; i++)
+		if (exchange.mRemoteSystemList[i].mAddress == target)
 		{
-			if (exchange.mRemoteSystemList[i].mAddress == target)
+			if (exchange.mRemoteSystemList[i].mMode != NetMode::Disconnected)
 			{
-				if (exchange.mRemoteSystemList[i].mMode != NetMode::Disconnected)
-				{
-					inactiveExternalId = exchange.mSystemAddressDetails[i].mExternalSystemAddress;
-					break;
-				}
-				else if (exchange.mSystemAddressDetails[i].mExternalSystemAddress != NetUnassignedSocketAddress)
-				{
-					inactiveExternalId = exchange.mSystemAddressDetails[i].mExternalSystemAddress;
-				}
+				inactiveExternalId = exchange.mSystemAddressDetails[i].mExternalSystemAddress;
+				break;
+			}
+			else if (exchange.mSystemAddressDetails[i].mExternalSystemAddress != NetUnassignedSocketAddress)
+			{
+				inactiveExternalId = exchange.mSystemAddressDetails[i].mExternalSystemAddress;
 			}
 		}
 	}

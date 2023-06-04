@@ -24,22 +24,24 @@ struct NetConnectTarget
 {
 	const char* host;
 	unsigned short remote_port;
-	ion::NetSocketAddress resolved_address;
+	NetSocketAddress resolved_address;
 };
 
 struct NetConnections
 {
-	ion::Mutex mSocketListMutex;
+	Mutex mSocketListMutex;
 	NetVector<NetSocket*> mSocketList;
 
-	ion::NetSocketAddress mSocketListFirstBoundAddress = NetUnassignedSocketAddress;  // Cached for fast access
+	NetSocketAddress mSocketListFirstBoundAddress = NetUnassignedSocketAddress;  // Cached for fast access
 
-	ion::Offline mOffline;
+	Offline mOffline;
 
-	ion::Synchronized<ion::RequestedConnections> mRequestedConnections;
+	Synchronized<RequestedConnections> mRequestedConnections;
 
 #if ION_NET_SIMULATOR
-	ion::NetworkSimulatorSettings mDefaultNetworkSimulatorSettings;
+	NetworkSimulatorSettings mDefaultNetworkSimulatorSettings;
 #endif
+	Array<NetSocketAddress, NetMaximumNumberOfInternalIds> mIpList;
+	NetSocketAddress mFirstExternalID;
 };
 }  // namespace ion

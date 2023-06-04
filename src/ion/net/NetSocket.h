@@ -32,7 +32,7 @@ using NetNativeSocket = CFSocketRef;
 static constexpr const NetNativeSocket = -1;
 #else
 
-#if ION_PLATFORM_MICROSOFT
+	#if ION_PLATFORM_MICROSOFT
 using NetNativeSocket = SOCKET;
 static constexpr NetNativeSocket NetInvalidSocket = INVALID_SOCKET;
 	#else
@@ -67,19 +67,23 @@ class NetSocket
 	ION_CLASS_NON_COPYABLE_NOR_MOVABLE(NetSocket);
 
 public:
-	NetSocket(NetInterfaceResource* resource);
-
-	virtual ~NetSocket() {}
-
-	void StopSendThread()
+	enum class ThreadState : int
 	{
-		mSendThreadEnabled = false;
-		mDelegate.Shutdown();
+		Stopping = -1,
+		Inactive = 0,
+		Active = 1
+	};
+
+	NetSocket(NetInterfaceResource* resource)
+	  : mNativeSocket(NetInvalidSocket), mSendAllocator(resource), mDelegate(0), mReceiveThread([] { ION_ASSERT(false, "Invalid socket"); })
+	{
 	}
 
-	bool mSendThreadEnabled;
-
-	void Send(ion::NetSocketSendParameters* sendParameters);
+	void Send(ion::NetSocketSendParameters* sendParameters)
+	{
+		ION_ASSERT(mSendThreadState != NetSocket::ThreadState::Inactive, "Send thread not enable");
+		mDelegate.Enqueue(std::move(sendParameters));
+	}
 
 	inline ion::NetSocketSendParameters* AllocateSend()
 	{
@@ -89,18 +93,21 @@ public:
 	}
 	void DeallocateSend(ion::NetSocketSendParameters* sp) { ion::Destroy(mSendAllocator, sp); }
 
-	[[nodiscard]] bool StartSendThread(ion::Thread::Priority threadPriority);
-
+	// Common
 	NetNativeSocket mNativeSocket;
-	ion::NetSendAllocator mSendAllocator;
 #if ION_NET_FEATURE_SECURITY
 	ion::NetSecure::CryptoKeys mCryptoKeys;
 	ion::Array<unsigned char, ion::NetSecure::NonceLength - NetUnencryptedProtocolBytes> mNonceOffset;
 #endif
 
+	// Upstream
+	ion::NetSendAllocator mSendAllocator;
 	ion::Delegate<NetSocketSendParameters*, 16> mDelegate;
+	std::atomic<ThreadState> mSendThreadState = NetSocket::ThreadState::Inactive;
+
+	// Downstream
 	ion::Runner mReceiveThread;
-	std::atomic<bool> mIsReceiveThreadActive;
+	std::atomic<ThreadState> mReceiveThreadState = NetSocket::ThreadState::Inactive;
 
 	// Cold data
 	NetSocketAddress mBoundAddress;
@@ -112,10 +119,7 @@ public:
 	ion::NetworkSimulator mNetworkSimulator;
 #endif
 
-private:
-	void SendDataFromThread(ion::NetSocketSendParameters* sendParameters);
 #if ION_NET_FEATURE_STREAMSOCKET
-
 	void StreamSendData(RNS2_SendParameters* sendParameters);
 #endif
 };

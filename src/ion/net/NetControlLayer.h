@@ -15,6 +15,7 @@ namespace NetControlLayer
 void Init(NetInterface& net, const NetStartupParameters& pars);
 bool StartUpdating(NetControl& control, NetReception& reception, ion::Thread::Priority priority);
 void Trigger(NetControl& control);
+void CancelUpdating(NetControl& control);
 void StopUpdating(NetControl& control);
 void Deinit(NetControl& control);
 
@@ -35,10 +36,11 @@ void SendBuffered(NetControl& control, const char* data, size_t numberOfBytesToS
 void PingInternal(NetControl& control, NetExchange& exchange, const NetSocketAddress& target, bool performImmediate,
 				  NetPacketReliability reliability, ion::TimeMS now);
 
-int Send(NetControl& control, const NetExchange& exchange, const char* data, const int length, NetPacketPriority priority,
-		 NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast);
+int Send(NetControl& control, const NetConnections& connections, const NetExchange& exchange, const char* data, const int length,
+		 NetPacketPriority priority, NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier,
+		 bool broadcast);
 
-void SendLoopback(NetControl& control, const NetExchange& exchange, const char* data, const int length);
+void SendLoopback(NetControl& control, const NetConnections& connections, const NetExchange& exchange, const char* data, const int length);
 
 ion::NetSocketReceiveData* AllocateReceiveBuffer(NetControl& control);
 

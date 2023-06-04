@@ -206,7 +206,7 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 			packet->mDataPtr = seg->data;
 			mRcvQueue.PopFront();
 			ReceivePost(isRecover);
-			ION_NET_CHANNEL_LOG("Channel in: Packet " << seg->len << " bytes (segment conversion);GUID=" << packet->mGUID);
+			ION_NET_CHANNEL_LOG("Channel in: Packet " << seg->len << " bytes (segment conversion);GUID=" << remote.guid);
 		}
 		else
 		{
@@ -218,7 +218,7 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 				ION_ASSERT(ret == int(size), "Invalid reception");
 				packet->mAddress = remote.mAddress;
 				packet->mLength = size;
-				ION_NET_CHANNEL_LOG("Channel in: Packet " << size << " bytes;GUID=" << packet->mGUID);
+				ION_NET_CHANNEL_LOG("Channel in: Packet " << size << " bytes;GUID=" << remote.guid);
 			}
 		}
 	}
@@ -957,9 +957,10 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 	context.mSsp->SetAddress(context.mRemote.mAddress);
 
 #if ION_NET_SIMULATOR
-	ION_CHECK_FATAL(context.mRemote.netSocket->mSendThreadEnabled, "Send thread is mandatory when using network simulator");
+	ION_CHECK_FATAL(context.mRemote.netSocket->mSendThreadState != NetSocket::ThreadState::Inactive,
+					"Send thread is mandatory when using network simulator");
 #endif
-	if (context.mRemote.netSocket->mSendThreadEnabled)
+	if (context.mRemote.netSocket->mSendThreadState != NetSocket::ThreadState::Inactive)
 	{
 		if (NetSocketSendParameters* newBuffer = context.mRemote.netSocket->AllocateSend())
 		{
@@ -1135,7 +1136,7 @@ void NetChannel::Flush(NetChannelWriteContext& context)
 	rtomin = (mState.nodelay == 0) ? (mState.rx_rto >> 3) : 0;
 
 	// flush data segments
-	ION_ASSERT(!mSndBuf.IsEmpty() || mSndQueue.IsEmpty(),
+	ION_ASSERT(!mSndBuf.IsEmpty() || mSndQueue.IsEmpty() || mState.rmt_wnd == 0,
 			   "Data not moved to send buffer;snd_nxt=" << mState.snd_nxt << ";snd_una=" << mState.snd_una);
 
 	while (!mUnrealiableSndQueue.IsEmpty())
@@ -1308,7 +1309,7 @@ void NetChannel::Update(NetChannelWriteContext& context)
 
 void NetChannel::ReconfigureChannelPriority(NetPacketPriority packetPriority)
 {
-	ION_NET_CHANNEL_LOG("Channel: new packet priority:" << packetPriority);
+	ION_NET_CHANNEL_LOG("Channel: new packet priority: " << mState.currentPriority << "->" << packetPriority);
 	mState.currentPriority = packetPriority;
 	int nodelay = ion::NetChannelPriorityConfigs[int(packetPriority)].nodelay;
 	int interval = ion::NetChannelPriorityConfigs[int(packetPriority)].workInterval;

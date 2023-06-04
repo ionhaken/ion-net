@@ -107,7 +107,22 @@ extern "C"
 	ion_net_peer ion_net_create_peer(ion_net_memory_resource);
 	void ion_net_destroy_peer(ion_net_peer);
 
+	// Request to start peer. Does non-blocking (asynchronous) start of network threads and binding sockets.
+	// After startup is complete, AsyncStartupOk packet will be created. If it was not possible to bind all sockets
+	// AsyncStartupFailed packet will be created instead of.
 	int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars);
+
+	// Request to stop. Does non-blocking stopping of network threads and unbinding of sockets.
+	// After stop is complete, AsyncStopOk packet will be created.
+	// It's recommended to close remote connections and wait that connections have been closed calling stop.
+	void ion_net_stop(ion_net_peer handle);
+
+	// Shuts down all network activities. First of all it will try to close all remote connections and will block
+	// for [blockDuration] or until all remotes have been disconnected gracefully. After that, if sockets are still bound and ion_net_stop()
+	// was not called to unbind sockets, ion_net_shutdown will block until all sockets are unbound.
+	//
+	// The ion_net_shutdown() is mandatory to call before ion_net_startup() and ion_net_destroy_peer() can be called for a peer has started
+	// with ion_net_startup().
 	void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned char orderingChannel,
 						  unsigned int disconnectionNotificationPriority);
 
@@ -245,7 +260,7 @@ extern "C"
 
 	int ion_net_lowest_ping(ion_net_peer handle, ion_net_remote_ref remote_ref);
 
-	 void ion_net_set_occasional_ping(ion_net_peer handle, uint32_t time);
+	void ion_net_set_occasional_ping(ion_net_peer handle, uint32_t time);
 
 	/*
 	 * Security
@@ -289,9 +304,9 @@ extern "C"
 	void ion_net_send_ttl(ion_net_peer handle, const char* host, unsigned short remotePort, int ttl, unsigned connectionSocketIndex);
 
 	/*
-	*  Statistics
-	*/
-	
+	 *  Statistics
+	 */
+
 	bool ion_net_statistics_for_address(ion_net_peer handle, ion_net_socket_address address, ion_net_statistics stats);
 
 	bool ion_net_statistics_for_remote_id(ion_net_peer handle, ion_net_remote_id_t remote, ion_net_statistics stats);

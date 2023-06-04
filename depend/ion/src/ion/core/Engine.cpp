@@ -147,7 +147,8 @@ void ion::Engine::Restart()
 	}
 	StartInternal();
 }
-void ion::Engine::StartInternal()
+
+void ion::Engine::InstallHandlers()
 {
 #if ION_PLATFORM_MICROSOFT
 	{
@@ -164,7 +165,6 @@ void ion::Engine::StartInternal()
 	}
 
 	signal(SIGABRT, &AbortHandler);
-	// signal(SIGINT, &AbortHandler);
 	signal(SIGBREAK, &BreakHandler);
 #else
 	struct sigaction sa;
@@ -180,7 +180,13 @@ void ion::Engine::StartInternal()
 		ION_LOG_INFO("Cannot install SIGINT handler.");
 	}
 #endif
+}
 
+void ion::Engine::ClearHandlers() { ClearAbortHandler(); }
+
+void ion::Engine::StartInternal()
+{
+	InstallHandlers();
 	ion::TracingInit();
 	ion::TweakablesInit();
 }
@@ -191,7 +197,7 @@ void ion::Engine::Stop()
 	ion::TracingDeinit();
 
 	gIsActive = false;
-	ClearAbortHandler();
+	ClearHandlers();
 }
 
 bool ion::Engine::IsActive() { return gIsActive; }

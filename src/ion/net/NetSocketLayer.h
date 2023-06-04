@@ -29,19 +29,29 @@ namespace ion
 {
 
 struct NetCommand;
-struct NetReception;
+struct NetConnections;
 struct NetControl;
+struct NetReception;
 struct NetStartupParameters;
 
 namespace SocketLayer
 {
+
+void InitSocket(NetSocket& socket);
+
+#if ION_NET_SIMULATOR
+void ConfigureNetworkSimulator(NetSocket& socket, const NetworkSimulatorSettings& simSettings);
+#endif
+
+void DeinitSocket(NetSocket& socket);
+
 int CloseSocket(NetSocket& socket);
 
-void SendTo(NetSocket& socket, ion::NetSocketSendParameters* bsp);
+void SendTo(NetSocket& socket, NetSocketSendParameters* bsp);
 
-NetBindResult BindSocket(NetSocket& socketLayer, ion::NetBindParameters& bindParameters);
+NetBindResult BindSocket(NetSocket& socketLayer, NetBindParameters& bindParameters);
 
-ION_FORCE_INLINE int SendTo(ion::NetNativeSocket nativeSocket, const ion::NetSocketSendParameters& sendParameters)
+ION_FORCE_INLINE int SendTo(NetNativeSocket nativeSocket, const NetSocketSendParameters& sendParameters)
 {
 	return sendto(nativeSocket, sendParameters.data, sendParameters.length, 0, (const sockaddr*)&sendParameters.mAddress,
 #if ION_NET_FEATURE_IPV6 == 1
@@ -54,7 +64,7 @@ ION_FORCE_INLINE int SendTo(ion::NetNativeSocket nativeSocket, const ion::NetSoc
 	);
 }
 
-void SendTo(NetSocket& socketLayer, ion::NetCommand& command, const ion::NetSocketAddress& address);
+void SendTo(NetSocket& socketLayer, NetCommand& command, const NetSocketAddress& address);
 
 inline bool CanDoBlockingSend([[maybe_unused]] NetSocket& socketLayer)
 {
@@ -65,7 +75,7 @@ inline bool CanDoBlockingSend([[maybe_unused]] NetSocket& socketLayer)
 #endif
 }
 
-inline int SendBlocking(NetSocket& socket, const ion::NetSocketSendParameters& sendParameters)
+inline int SendBlocking(NetSocket& socket, const NetSocketSendParameters& sendParameters)
 {
 	ION_NET_SOCKET_LOG("Socket out: sending: size=" << sendParameters.length);
 	int len = 0;
@@ -141,9 +151,9 @@ inline int SendBlocking(NetSocket& socket, const ion::NetSocketSendParameters& s
 	return len;
 }
 
-inline void SendToNetwork(NetSocket& socket, ion::NetSocketSendParameters* bsp)
+inline void SendToNetwork(NetSocket& socket, NetSocketSendParameters* bsp)
 {
-	if (socket.mSendThreadEnabled)
+	if (socket.mSendThreadState != NetSocket::ThreadState::Inactive)
 	{
 		socket.Send(bsp);
 	}
@@ -154,7 +164,7 @@ inline void SendToNetwork(NetSocket& socket, ion::NetSocketSendParameters* bsp)
 	}
 }
 
-inline void SendTo(NetSocket& socket, ion::NetSocketSendParameters* bsp)
+inline void SendTo(NetSocket& socket, NetSocketSendParameters* bsp)
 {
 #if ION_NET_SIMULATOR
 	socket.mNetworkSimulator.Send(bsp, socket);
@@ -165,15 +175,18 @@ inline void SendTo(NetSocket& socket, ion::NetSocketSendParameters* bsp)
 
 void SetNonBlocking(NetSocket& socket, unsigned long nonblocking);
 
-int ConnectSocket(NetSocket& socketLayer, ion::NetSocketAddress& systemAddress);
+int ConnectSocket(NetSocket& socketLayer, NetSocketAddress& systemAddress);
 
 int ListenSocket(NetSocket& socketLayer, unsigned int maxConnections);
 
-void GetInternalAddresses(ion::Array<NetSocketAddress, NetMaximumNumberOfInternalIds>& addresses);
+void GetInternalAddresses(Array<NetSocketAddress, NetMaximumNumberOfInternalIds>& addresses);
 
-void RecvFromBlocking(const NetSocket& socketLayer, ion::NetSocketReceiveData& recvFromStruct);
+void RecvFromBlocking(const NetSocket& socketLayer, NetSocketReceiveData& recvFromStruct);
 
-bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& control, const NetStartupParameters& parameters);
+bool StartThreads(NetSocket& socket, NetConnections& connections, NetReception& reception, NetControl& control,
+				  const NetStartupParameters& parameters);
+
+void CancelThreads(NetSocket& socket);
 
 void StopThreads(NetSocket& socket);
 

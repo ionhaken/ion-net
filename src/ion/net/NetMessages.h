@@ -15,7 +15,9 @@ enum NetMessageId : byte
 
 	Invalid = 0,
 	ConnectionAttemptFailed,
-	SocketStatus,
+	AsyncStartupOk,
+	AsyncStartupFailed,
+	AsyncStopOk,
 	// InvalidSecretKey,
 	LastInternal,
 

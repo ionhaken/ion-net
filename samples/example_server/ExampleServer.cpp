@@ -12,12 +12,15 @@ int main()
 	{
 		ion::UniquePtr<ion::NetGenericPeer> server = ion::MakeUnique<ion::NetGenericPeer>();
 		ion::NetSocketDescriptor sd(60000, 0);
-		auto startupResult = server->Startup(ion::NetStartupParameters::Create(8 /* max connections */, &sd, 1 /* number of socket descriptors */));
+		auto startupResult =
+		  server->Startup(ion::NetStartupParameters::Create(8 /* max connections */, &sd, 1 /* number of socket descriptors */));
 		if (int(startupResult) <= 0)
 		{
 			ION_LOG_INFO("Cannot start server;error=" << startupResult);
 			exit(EXIT_FAILURE);
 		}
+
+		ion::Engine::InstallHandlers();	 // to detect ctrl+break
 
 		// Loop until ctrl+break
 		while (!ion::Engine::IsExitRequested())
@@ -67,10 +70,13 @@ int main()
 					cmd.Dispatch();
 				}
 			}
-			ion::Thread::Sleep(5 * 1000);
+			ion::Thread::Sleep(ion::NetUpdateInterval * 1000);
 		}
+
 		ION_LOG_INFO("Ok.");
 		server->Shutdown(1000);
+
+		ion::Engine::ClearHandlers();
 	}
 	ion::NetDeinit();
 }

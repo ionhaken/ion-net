@@ -1,5 +1,6 @@
 #include <ion/net/NetCommand.h>
 #include <ion/net/NetConfig.h>
+#include <ion/net/NetConnectionLayer.h>
 #include <ion/net/NetControlLayer.h>
 #include <ion/net/NetExchangeLayer.h>
 #include <ion/net/NetGUID.h>
@@ -411,7 +412,7 @@ void PingInternal(NetControl& control, NetExchange& exchange, const NetSocketAdd
 	}
 }
 
-int Send(NetControl& control, const NetExchange& exchange, const char* data, const int length, NetPacketPriority priority,
+int Send(NetControl& control, const NetConnections& connections, const NetExchange& exchange, const char* data, const int length, NetPacketPriority priority,
 		 NetPacketReliability reliability, char orderingChannel, const NetAddressOrRemoteRef& systemIdentifier, bool broadcast)
 {
 	ION_NET_API_CHECK(data && length > 0, -1, "Invalid data");
@@ -429,9 +430,9 @@ int Send(NetControl& control, const NetExchange& exchange, const char* data, con
 		{
 			return 0;
 		}
-		if (ion::NetExchangeLayer::IsLoopbackAddress(exchange, systemIdentifier, true))
+		if (NetConnectionLayer::IsLoopbackAddress(connections, systemIdentifier, true))
 		{
-			SendLoopback(control, exchange, data, length);
+			SendLoopback(control, connections, exchange, data, length);
 			return 1;
 		}
 	}
@@ -440,7 +441,7 @@ int Send(NetControl& control, const NetExchange& exchange, const char* data, con
 	return 1;
 }
 
-void SendLoopback(NetControl& control, const NetExchange& exchange, const char* data, const int length)
+void SendLoopback(NetControl& control, const NetConnections& connections, const NetExchange& exchange, const char* data, const int length)
 {
 	if (data == 0 || length < 0)
 		return;
@@ -451,7 +452,7 @@ void SendLoopback(NetControl& control, const NetExchange& exchange, const char* 
 
 	// NetPacket* packet = AllocPacket(length);
 	memcpy(packet->Data(), data, length);
-	packet->mAddress = ion::NetExchangeLayer::GetLoopbackAddress(exchange);
+	packet->mAddress = ion::NetConnectionLayer::GetLoopbackAddress(connections);
 	packet->mGUID = exchange.mGuid;
 	packet->mRemoteId = NetRemoteId();
 	control.mPacketReturnQueue.Enqueue(std::move(packet));
@@ -511,17 +512,34 @@ void Trigger(NetControl& control)
 	}
 	}
 }
+
+void CancelUpdating(NetControl& control)
+{
+	if (control.mIsActive)
+	{
+		ION_NET_LOG_VERBOSE("Canceling updating threads");
+		if (control.mUpdateMode == NetPeerUpdateMode::Job)
+		{
+			control.mUpdater.mUpdateJob->Cancel();
+		}
+		else if (control.mUpdateMode == NetPeerUpdateMode::Worker)
+		{
+			control.mUpdater.mUpdateWorker->myThreadSynchronizer.Stop();
+		}
+	}
+}
+
 void StopUpdating(NetControl& control)
 {
 	if (control.mIsActive)
 	{
+		ION_NET_LOG_VERBOSE("Stopping updating threads");
 		if (control.mUpdateMode == NetPeerUpdateMode::Job)
 		{
 			control.mUpdater.mUpdateJob->WaitUntilDone();
 		}
 		else if (control.mUpdateMode == NetPeerUpdateMode::Worker)
 		{
-			control.mUpdater.mUpdateWorker->myThreadSynchronizer.Stop();
 			control.mUpdater.mUpdateWorker->mUpdateThread.Join();
 		}
 		control.mIsActive = false;

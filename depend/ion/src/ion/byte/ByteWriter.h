@@ -277,7 +277,7 @@ public:
 	}
 
 private:
-	bool Extend(ByteSizeType newAvailableCount);
+	ION_NO_INLINE bool Extend(ByteSizeType newAvailableCount);
 
 	ByteWriterUnsafe mParent;
 	u8* mEnd;

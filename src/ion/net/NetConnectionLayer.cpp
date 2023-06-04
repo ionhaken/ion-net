@@ -203,7 +203,7 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 						{
 							if (condition1 && !condition2 && rcs.actionToTake == ion::RequestedConnection::CONNECT)
 							{
-								ION_NET_LOG_VERBOSE("Connection failed;attempts=" << rcs.sendConnectionAttemptCount);
+								ION_NET_LOG_VERBOSE("Connection failed;attempts=" << (rcs.sendConnectionAttemptCount + 1));
 								NetPacket* packet = AllocPacket(control, sizeof(char));
 								packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;	// Attempted a connection and couldn't
 								// packet->bitSize = (sizeof(char) * 8);
@@ -392,7 +392,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  {
 						  // Filter logging when potentially connecting to self.
 						  NetSocketAddress internalId;
-						  ion::NetExchangeLayer::GetInternalID(exchange, internalId);
+						  ion::NetConnectionLayer::GetInternalID(connections, internalId, 0);
 						  if (iter->second.systemAddress.GetPort() != internalId.GetPort())
 						  {
 							  ION_NET_LOG_INFO("GUID collision. Cancel connection attempt;GUID=" << remoteGuid << ";RemoteAddress="
@@ -547,7 +547,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  rsp.mIsRemoteInitiated = false;
 						  bool thisIPConnectedRecently = false; /* Don't care if we connected recently or not */
 						  remoteSystem = ion::NetExchangeLayer::AssignSystemAddressToRemoteSystemList(
-							exchange, control.mMemoryResource, rsp, socketAddress, bindingAddress, &thisIPConnectedRecently);
+							exchange, connections, control.mMemoryResource, rsp, socketAddress, bindingAddress, &thisIPConnectedRecently);
 					  }
 					  else if (remoteSystem->mConversationId != rsp.mConversationId)
 					  {
@@ -837,10 +837,10 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			break;
 		}
 
-		ion::NetExchangeLayer::ConnectionResult result =
-		  ion::NetExchangeLayer::AssignRemote(exchange, control.mMemoryResource, socketAddress, bindingAddress, netSocket, guid,
-											  exchange.mDataTransferSecurity,  // #TODO: Security exceptions
-											  mtu);
+		ion::NetExchangeLayer::ConnectionResult result = ion::NetExchangeLayer::AssignRemote(
+		  exchange, connections, control.mMemoryResource, socketAddress, bindingAddress, netSocket, guid,
+		  exchange.mDataTransferSecurity,  // #TODO: Security exceptions
+		  mtu);
 
 		NetRawSendCommand reply(*netSocket);
 		{
@@ -967,31 +967,6 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 	}
 	return false;
 }
-void DerefAllSockets(ion::NetConnections& connections, NetInterfaceResource& resource)
-{
-	ion::AutoLock socketListLock(connections.mSocketListMutex);
-	connections.mSocketListFirstBoundAddress = ion::NetUnassignedSocketAddress;
-	for (unsigned int i = 0; i < connections.mSocketList.Size(); i++)
-	{
-		ion::ArenaPtr<NetSocket, ion::NetInterfaceResource> ptr(connections.mSocketList[i]);
-		ptr->StopSendThread();	// Ensure delegate is down
-		if (ptr->userConnectionSocketIndex != (unsigned int)(-1))
-		{
-			SocketLayer::CloseSocket(*ptr.Get());
-		}
-
-#if ION_NET_FEATURE_SECURITY == 1
-		ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: clear socket public-private keypair");
-		ion::NetSecure::MemZero(ptr->mCryptoKeys);
-		ion::NetSecure::MemZero(ptr->mNonceOffset);
-#endif
-#if ION_NET_SIMULATOR
-		ptr->mNetworkSimulator.Clear();
-#endif
-		ion::DeleteArenaPtr(&resource, ptr);
-	}
-	connections.mSocketList.Clear();
-}
 
 bool StartThreads(ion::NetConnections& connections, NetReception& reception, NetControl& control, const NetStartupParameters& parameters)
 {
@@ -1002,7 +977,7 @@ bool StartThreads(ion::NetConnections& connections, NetReception& reception, Net
 		if (socketList[i]->binding.type == SOCK_DGRAM)
 #endif
 		{
-			success &= SocketLayer::StartThreads(*connections.mSocketList[i], reception, control, parameters);
+			success &= SocketLayer::StartThreads(*connections.mSocketList[i], connections, reception, control, parameters);
 		}
 #if ION_NET_FEATURE_STREAMSOCKET
 		else if (((RNS2_Berkley*)socketList[i])->binding.port != 0)
@@ -1013,6 +988,14 @@ bool StartThreads(ion::NetConnections& connections, NetReception& reception, Net
 #endif
 	}
 	return success;
+}
+
+void CancelThreads(ion::NetConnections& connections)
+{
+	for (unsigned int i = 0; i < connections.mSocketList.Size(); i++)
+	{
+		SocketLayer::CancelThreads(*connections.mSocketList[i]);
+	}
 }
 
 void StopThreads(ion::NetConnections& connections)
@@ -1041,7 +1024,21 @@ void Reset(ion::NetConnections& connections, NetInterfaceResource& memory)
 					   { ClearConnectionRequest(connections, pair.second); });
 		  rc.mRequests.Clear();
 	  });
-	DerefAllSockets(connections, memory);
+
+	ion::AutoLock socketListLock(connections.mSocketListMutex);
+	connections.mSocketListFirstBoundAddress = ion::NetUnassignedSocketAddress;
+	for (unsigned int i = 0; i < connections.mSocketList.Size(); i++)
+	{
+		ion::ArenaPtr<NetSocket, ion::NetInterfaceResource> ptr(connections.mSocketList[i]);
+		SocketLayer::DeinitSocket(*ptr.Get());
+		ion::DeleteArenaPtr(&memory, ptr);
+	}
+	connections.mSocketList.Clear();
+	for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
+	{
+		connections.mIpList[i] = NetUnassignedSocketAddress;
+	}
+	connections.mFirstExternalID = NetUnassignedSocketAddress;
 }
 NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource& memoryResource, const NetStartupParameters& parameters)
 {
@@ -1053,28 +1050,19 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 		for (unsigned int i = 0; i < parameters.mNetSocketDescriptorCount; i++)
 		{
 			NetSocket* socket = ion::MakeArenaPtr<NetSocket>(&memoryResource, &memoryResource).Release();
-			ion::NetSecure::MemZero(socket->mBigDataKey);
-#if ION_NET_FEATURE_SECURITY == 1
-			ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: initialize socket public-private keypair");
-			ion::NetSecure::SetupCryptoKeys(socket->mCryptoKeys);
-			ion::NetSecure::Random(socket->mNonceOffset.Data(), socket->mNonceOffset.ElementCount);
-#endif
+			SocketLayer::InitSocket(*socket);
 #if ION_NET_SIMULATOR
-			socket->mNetworkSimulator.Configure(connections.mDefaultNetworkSimulatorSettings);
+			SocketLayer::ConfigureNetworkSimulator(*socket, connections.mDefaultNetworkSimulatorSettings);
 #endif
-			if (connections.mSocketList.Size() == 0)
-			{
-				connections.mSocketListFirstBoundAddress = socket->mBoundAddress;
-			}
 			connections.mSocketList.Add(socket);
 		}
 	}
 
 	// Bind sockets
-	NetBindResult bindResult = NetBindResult::Success;
-	unsigned int i = 0;
-	for (; i < parameters.mNetSocketDescriptorCount; i++)
+	NetBindResult bindResult = NetBindResult::Success;	
+	for (unsigned int i = 0; i < parameters.mNetSocketDescriptorCount; i++)
 	{
+		ION_NET_LOG_VERBOSE("Binding port " << parameters.mNetSocketDescriptors[i].port);
 		NetBindParameters bbp;
 		bbp.port = parameters.mNetSocketDescriptors[i].port;
 		memcpy(bbp.hostAddress, (char*)parameters.mNetSocketDescriptors[i].hostAddress, 32);
@@ -1086,20 +1074,7 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 		bbp.setIPHdrIncl = false;
 		bbp.doNotFragment = false;
 
-		bool isBlockingBind = true;
-
-		if (isBlockingBind)
-		{
-			bindResult = ion::SocketLayer::BindSocket(*connections.mSocketList[i], bbp);
-			if (bindResult != NetBindResult::Success)
-			{
-				break;
-			}
-		}
-		else
-		{
-			connections.mSocketList[i]->mBindParameters = bbp;
-		}
+		connections.mSocketList[i]->mBindParameters = bbp;
 		connections.mSocketList[i]->userConnectionSocketIndex = i;
 		ION_NET_ASSERT(bindResult == NetBindResult::Success);
 	}
@@ -1117,5 +1092,115 @@ void UpdateNetworkSim(ion::NetConnections& connections, ion::TimeMS timeMS)
 }
 #endif
 
+void FillIPList(NetConnections& connections)
+{
+	if (connections.mIpList[0] != NetUnassignedSocketAddress)
+		return;
+
+	// Fill out ipList structure
+	ion::SocketLayer::GetInternalAddresses(connections.mIpList);
+
+	// Sort the addresses from lowest to highest
+	int startingIdx = 0;
+	while (startingIdx < NetMaximumNumberOfInternalIds - 1 && connections.mIpList[startingIdx] != NetUnassignedSocketAddress)
+	{
+		int lowestIdx = startingIdx;
+		for (int curIdx = startingIdx + 1;
+			 curIdx < NetMaximumNumberOfInternalIds - 1 && connections.mIpList[curIdx] != NetUnassignedSocketAddress; curIdx++)
+		{
+			if (connections.mIpList[curIdx] < connections.mIpList[startingIdx])
+			{
+				lowestIdx = curIdx;
+			}
+		}
+		if (startingIdx != lowestIdx)
+		{
+			NetSocketAddress temp = connections.mIpList[startingIdx];
+			connections.mIpList[startingIdx] = connections.mIpList[lowestIdx];
+			connections.mIpList[lowestIdx] = temp;
+		}
+		++startingIdx;
+	}
+}
+
+unsigned int GetNumberOfAddresses(const NetConnections& connections)
+{
+	unsigned int i = 0;
+
+	while (i < connections.mIpList.Size() && connections.mIpList[i] != NetUnassignedSocketAddress)
+	{
+		i++;
+	}
+
+	return i;
+}
+
+bool IsIPV6Only(const NetConnections& connections)
+{
+	auto num = GetNumberOfAddresses(connections);
+	for (size_t i = 0; i < num; ++i)
+	{
+		if (connections.mIpList[i].GetIPVersion() != 6)
+		{
+			return false;
+		}
+	}
+	return num != 0;  // True only when IPV6 adresses are available.
+}
+
+void GetInternalID(const NetConnections& connections, NetSocketAddress& out, const int index)
+{
+	out = connections.mIpList[index];
+}
+
+void SetInternalID(NetConnections& connections, const NetSocketAddress& address, int index)
+{
+	ION_ASSERT(index >= 0 && index < NetMaximumNumberOfInternalIds, "invalid id index");
+	connections.mIpList[index] = address;
+}
+
+void GetExternalID(const NetConnections& connections, NetSocketAddress& out) { out = connections.mFirstExternalID; }
+
+void SetExternalID(NetConnections& connections, const NetSocketAddress& address)
+{
+	if (connections.mFirstExternalID == NetUnassignedSocketAddress)
+	{
+		connections.mFirstExternalID = address;
+	}
+}
+
+bool IsLoopbackAddress(const NetConnections& connections, const NetAddressOrRemoteRef& systemIdentifier, bool matchPort)
+{
+	if (systemIdentifier.mRemoteId.IsValid())
+	{
+		return false;
+	}
+
+	for (int i = 0; i < NetMaximumNumberOfInternalIds && connections.mIpList[i] != NetUnassignedSocketAddress; i++)
+	{
+		if (matchPort)
+		{
+			if (connections.mIpList[i] == systemIdentifier.mAddress)
+			{
+				return true;
+			}
+		}
+		else
+		{
+			if (connections.mIpList[i].EqualsExcludingPort(systemIdentifier.mAddress))
+			{
+				return true;
+			}
+		}
+	}
+
+	return (matchPort == true && systemIdentifier.mAddress == connections.mFirstExternalID) ||
+		   (matchPort == false && systemIdentifier.mAddress.EqualsExcludingPort(connections.mFirstExternalID));
+}
+
+const NetSocketAddress& GetLoopbackAddress(const NetConnections& connections)
+{
+	return connections.mIpList[0];
+}
 }  // namespace NetConnectionLayer
 }  // namespace ion

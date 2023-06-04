@@ -31,7 +31,7 @@ struct NetExchange
 
 	struct SystemAddressDetails
 	{
-		NetSocketAddress mExternalSystemAddress;
+		NetSocketAddress mExternalSystemAddress; // our address seen by them
 		NetSocketAddress mTheirInternalSystemAddress[NetMaximumNumberOfInternalIds];
 	};
 	NetInterfacePtr<SystemAddressDetails> mSystemAddressDetails;
@@ -41,9 +41,6 @@ struct NetExchange
 	// #TODO: Revisit how user thread gets remote system for e.g. checking pings
 	NetInterfacePtr<NetRemoteIndex> mActiveSystems;	 // #TODO: Need double buffering for user access
 	unsigned int mActiveSystemListSize = 0;			 // #TODO: Create user thread list of active systems
-
-	Array<NetSocketAddress, NetMaximumNumberOfInternalIds> mIpList;
-	NetSocketAddress mFirstExternalID;
 
 	GlobalClock* mGlobalClock = nullptr;
 	TimeMS mDefaultTimeoutTime = NetDefaultTimeout;

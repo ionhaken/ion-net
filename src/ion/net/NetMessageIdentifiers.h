@@ -6,21 +6,21 @@
 // Connection failed messages categorized how to fix them
 //
 
-// Canceled: Fix connection
+// Canceled: Cannot reach target. Connection issue?
 #define MESSAGE_CONNECTION_ATTEMPT_CANCEL_CONNECTION case NetMessageId::ConnectionAttemptFailed:
 
-// Canceled: Fix client
+// Canceled: Reached target, but got rejected. We are not providing correct parameters?
 #define MESSAGE_CONNECTION_ATTEMPT_CANCEL_CLIENT \
-	case NetMessageId::InvalidPassword:                    \
+	case NetMessageId::InvalidPassword:          \
 	case NetMessageId::IncompatibleProtocolVersion:
 
-// Canceled: Fix server
-#define MESSAGE_CONNECTION_ATTEMPT_CANCEL_SERVER \
-	case NetMessageId::NoFreeIncomingConnections:        \
-	case NetMessageId::ConnectionBanned:                   \
-	case NetMessageId::AlreadyConnected:                   \
-	case NetMessageId::GuidReserved:                       \
-	case NetMessageId::CannotProcessRequest:              \
+// Canceled: Reached target, but remote cannot process us. Wait until remote resolves the issue?
+#define MESSAGE_CONNECTION_ATTEMPT_CANCEL_SERVER  \
+	case NetMessageId::NoFreeIncomingConnections: \
+	case NetMessageId::ConnectionBanned:          \
+	case NetMessageId::AlreadyConnected:          \
+	case NetMessageId::GuidReserved:              \
+	case NetMessageId::CannotProcessRequest:      \
 	case NetMessageId::IpRecentlyConnected:
 
 #define MESSAGE_CONNECTION_ATTEMPT_CANCEL        \

@@ -38,9 +38,9 @@ struct ConnectionResult
 	ConnectionResponse outcome = ConnectionResponse::Ok;
 };
 
-ConnectionResult AssignRemote(NetExchange& exchange, NetInterfaceResource& memoryResource, const ion::NetSocketAddress& connectAddress,
-							  const ion::NetSocketAddress& bindingAddress, NetSocket* netSocket, ion::NetGUID guid,
-							  NetDataTransferSecurity dataTransferSecurity, uint16_t mtu);
+ConnectionResult AssignRemote(NetExchange& exchange, const NetConnections& connections, NetInterfaceResource& memoryResource,
+							  const ion::NetSocketAddress& connectAddress, const ion::NetSocketAddress& bindingAddress,
+							  NetSocket* netSocket, ion::NetGUID guid, NetDataTransferSecurity dataTransferSecurity, uint16_t mtu);
 
 enum class Op : uint8_t
 {
@@ -62,8 +62,8 @@ struct Operations
 
 void Update(NetExchange& exchange, NetControl& control, ion::TimeMS now, ion::JobScheduler* js);
 
-void SendConnectionRequestAccepted(NetExchange& exchange, NetControl& control, ion::NetRemoteSystem* remoteSystem,
-								   ion::Time incomingTimestamp, ion::TimeMS now);
+void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& connections, NetControl& control,
+								   ion::NetRemoteSystem* remoteSystem, ion::Time incomingTimestamp, ion::TimeMS now);
 
 inline ion::NetRemoteIndex RemoteIndex(const NetExchange& exchange, const ion::NetSocketAddress& sa)
 {
@@ -159,8 +159,9 @@ struct RemoteSystemParameters
 	bool mIsRemoteInitiated = true;
 };
 
-ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchange, NetInterfaceResource& memoryResource,
-															const RemoteSystemParameters& rsp, const ion::NetSocketAddress& connectAddress,
+ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchange, const NetConnections& connections,
+															NetInterfaceResource& memoryResource, const RemoteSystemParameters& rsp,
+															const ion::NetSocketAddress& connectAddress,
 															ion::NetSocketAddress bindingAddress, bool* thisIPConnectedRecently);
 
 inline void DereferenceRemoteSystem(NetExchange& exchange, const ion::NetSocketAddress& sa)
@@ -199,10 +200,6 @@ inline ion::NetRemoteSystem* GetRemoteSystemFromAuthorityConversation(NetExchang
 	}
 	return nullptr;
 }
-
-bool IsLoopbackAddress(const NetExchange& exchange, const NetAddressOrRemoteRef& systemIdentifier, bool matchPort);
-
-inline const NetSocketAddress& GetLoopbackAddress(const NetExchange& exchange) { return exchange.mIpList[0]; }
 
 void SetConnected(NetExchange& exchange, NetRemoteSystem& remoteSystem, const NetSocketAddress& address);
 void SetMode(NetExchange& exchange, NetRemoteSystem& remoteSystem, NetMode mode = NetMode::Disconnected);
@@ -301,12 +298,6 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 
 void OnConnectedPong(NetExchange& exchange, ion::Time now, ion::Time sentPingTime, ion::Time remoteTime,
 					 ion::NetRemoteSystem* remoteSystem);
-
-void FillIPList(NetExchange& exchange);
-
-unsigned GetNumberOfAddresses(const NetExchange& exchange);
-
-bool IsIPV6Only(const NetExchange& exchange);
 
 void GetInternalID(const NetExchange& exchange, NetSocketAddress& out, const NetSocketAddress& systemAddress = NetUnassignedSocketAddress,
 				   const int index = 0);

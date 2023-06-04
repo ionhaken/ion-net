@@ -1,7 +1,8 @@
 #include <ion/net/NetBasePeer.h>
+#include <ion/net/NetConnectionLayer.h>
 #include <ion/net/NetControlLayer.h>
-#include <ion/net/NetMemory.h>
 #include <ion/net/NetExchangeLayer.h>
+#include <ion/net/NetMemory.h>
 #include <ion/net/NetStartupParameters.h>
 
 #include <ion/concurrency/Runner.h>
@@ -91,7 +92,7 @@ void NetBasePeer::SendBufferedList(const char** data, const int* lengths, const 
 	ptr->mChannel = orderingChannel;
 	ptr->mPriority = priority;
 	ptr->mReliability = reliability;
-	if (broadcast == false && ion::NetExchangeLayer::IsLoopbackAddress(mPeer->mExchange, systemIdentifier, true))
+	if (broadcast == false && ion::NetConnectionLayer::IsLoopbackAddress(mPeer->mConnections, systemIdentifier, true))
 	{
 		SendLoopback(dataAggregate, totalLength);
 		DeleteArenaPtr(&mPeer->mControl.mMemoryResource, ptr);
@@ -114,8 +115,7 @@ NetConnectionAttemptResult NetBasePeer::Connect(const char* host, unsigned short
 				   timeBetweenSendConnectionAttemptsMS, timeoutTime);
 }
 
-bool NetBasePeer::Ping(const char* host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections,
-					   unsigned connectionSocketIndex)
+bool NetBasePeer::Ping(const char* host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex)
 {
 	ion::NetConnectTarget target{host, remotePort};
 	return ion_net_ping((ion_net_peer)mPeer.Get(), (ion_net_connect_target)&target, onlyReplyOnAcceptingConnections, connectionSocketIndex);

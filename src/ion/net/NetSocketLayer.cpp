@@ -1,4 +1,6 @@
 #include <ion/net/NetCommand.h>
+#include <ion/net/NetConnectionLayer.h>
+#include <ion/net/NetConnections.h>
 #include <ion/net/NetControl.h>
 #include <ion/net/NetControlLayer.h>
 #include <ion/net/NetMessages.h>
@@ -230,7 +232,6 @@ void GetSystemAddress(ion::NetNativeSocket& nativeSocket, ion::NetSocketAddress&
 #endif
 }
 
-
 ion::NetBindResult BindSocketInternal(NetSocket& socketLayer, ion::NetBindParameters& bindParameters)
 {
 	ion::NetBindResult result = ion::NetBindResult::FailedToBind;
@@ -324,7 +325,6 @@ ion::NetBindResult BindSocketInternal(NetSocket& socketLayer, ion::NetBindParame
 	  });
 	return result;
 }
-
 
 }  // namespace
 
@@ -598,42 +598,70 @@ void ListeningThread(NetSocket& socket)
 }
 #endif
 
-void SendSocketStatus(NetControl& control, int status)
+void SendSocketStatus(NetControl& control, NetMessageId id)
 {
 	if (NetPacket* packet = ion::NetControlLayer::AllocateUserPacket(control, sizeof(NetMessageId) + sizeof(int)))
 	{
 		packet->mLength = sizeof(NetMessageId) + sizeof(int);
+		packet->mSource = nullptr;
+		packet->mRemoteId = NetRemoteId();
+		packet->mGUID = NetGuidUnassigned;
 		{
 			ByteWriterUnsafe writer(packet->Data());
-			writer.Write(NetMessageId::SocketStatus);
-			writer.Write(status);
-		}		
+			writer.Write(id);
+		}
 		control.mPacketReturnQueue.Enqueue(std::move((NetPacket*)packet));
 	}
 }
 
-bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& control, const NetStartupParameters& parameters)
+void SendDataFromThread(NetSocket* socket, ion::NetSocketSendParameters* bsp)
+{
+	ION_PROFILER_SCOPE(Network, "Socket Send");
+	SocketLayer::SendBlocking(*socket, *bsp);
+	socket->DeallocateSend(bsp);
+}
+
+bool StartThreads(NetSocket& socket, NetConnections& connections, NetReception& reception, NetControl& control,
+				  const NetStartupParameters& parameters)
 {
 	socket.mReceiveThread.SetEntryPoint(
-	  [&socket, &control, &reception]()
+	  [&socket, &control, &reception, &connections]()
 	  {
+		  ION_NET_LOG_VERBOSE("Receive thread started");
 		  ion::NetSocketReceiveData* recvFromStruct = ion::NetControlLayer::AllocateReceiveBuffer(control);
 		  if (!recvFromStruct)
 		  {
-			  SendSocketStatus(control, -1);
+			  socket.userConnectionSocketIndex = -1;
+			  SendSocketStatus(control, NetMessageId::AsyncStartupFailed);
 			  return;
 		  }
-#if 0
+
+		  ION_NET_LOG_VERBOSE("Binding port " << socket.mBindParameters.port);
 		  auto bindResult = ion::SocketLayer::BindSocket(socket, socket.mBindParameters);
 		  if (bindResult != NetBindResult::Success)
 		  {
-			  socket.userConnectionSocketIndex = -1
+			  socket.userConnectionSocketIndex = -1;
+			  SendSocketStatus(control, NetMessageId::AsyncStartupFailed);
+			  return;
 		  }
-#endif
-	
-		  SendSocketStatus(control, 1);
 
-		  while (socket.mIsReceiveThreadActive)
+		  if (socket.userConnectionSocketIndex == 0)
+		  {
+			  for (unsigned i = 0; i < NetMaximumNumberOfInternalIds; i++)
+			  {
+				  if (connections.mIpList[i] == NetUnassignedSocketAddress)
+				  {
+					  break;
+				  }
+				  unsigned short port = socket.mBoundAddress.GetPort();
+				  connections.mIpList[i].SetPortHostOrder(port);
+			  }
+			  connections.mSocketListFirstBoundAddress = socket.mBoundAddress;
+		  }
+
+		  SendSocketStatus(control, NetMessageId::AsyncStartupOk);
+
+		  while (socket.mReceiveThreadState == NetSocket::ThreadState::Active)
 		  {
 			  recvFromStruct->Socket() = &socket;
 			  ion::SocketLayer::RecvFromBlocking(socket, *recvFromStruct);
@@ -650,20 +678,30 @@ bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& contro
 			  }
 		  }
 		  ion::NetControlLayer::DeallocateReceiveBuffer(control, recvFromStruct);
-		  SendSocketStatus(control, 0);
+
+		  SocketLayer::CloseSocket(socket);
+		  socket.userConnectionSocketIndex = -1;
+
+		  SendSocketStatus(control, NetMessageId::AsyncStopOk);
+		  ION_NET_LOG_VERBOSE("Receive thread exiting");
 	  });
-	socket.mIsReceiveThreadActive = true;
+	ION_ASSERT(socket.mReceiveThreadState == NetSocket::ThreadState::Inactive, "Already started");
+	socket.mReceiveThreadState = NetSocket::ThreadState::Active;
 	if (!socket.mReceiveThread.Start(32 * 1024, parameters.mReceiveThreadPriority))
 	{
-		socket.mIsReceiveThreadActive = false;
+		ION_NET_LOG_VERBOSE("Receive thread start called");
+		socket.mReceiveThreadState = NetSocket::ThreadState::Inactive;
 		return false;
 	}
 #if !ION_NET_SIMULATOR
 	if (parameters.mEnableSendThread)
 #endif
 	{
-		if (!socket.StartSendThread(parameters.mSendThreadPriority))
+		socket.mSendThreadState = NetSocket::ThreadState::Active;
+		if (!socket.mDelegate.Execute(parameters.mSendThreadPriority, std::bind(&SendDataFromThread, &socket, std::placeholders::_1)))
 		{
+			ION_NET_LOG_VERBOSE("Send thread start called");
+			socket.mSendThreadState = NetSocket::ThreadState::Inactive;
 			StopThreads(socket);
 			return false;
 		}
@@ -671,15 +709,18 @@ bool StartThreads(NetSocket& socket, NetReception& reception, NetControl& contro
 	return true;
 }
 
-void StopThreads(NetSocket& socket)
+void CancelThreads(NetSocket& socket)
 {
-	if (socket.mSendThreadEnabled)
+	if (socket.mSendThreadState == NetSocket::ThreadState::Active)
 	{
-		socket.StopSendThread();
+		if (socket.mDelegate.Cancel())
+		{
+			socket.mSendThreadState = NetSocket::ThreadState::Stopping;
+		}
 	}
-	if (socket.mIsReceiveThreadActive)
+	if (socket.mReceiveThreadState == NetSocket::ThreadState::Active)
 	{
-		socket.mIsReceiveThreadActive = false;
+		socket.mReceiveThreadState = NetSocket::ThreadState::Stopping;
 		ION_ALIGN(alignof(ion::NetSocketSendParameters)) uint32_t zero[ion::NetSocketSendParametersHeaderSize + sizeof(uint32_t)] = {};
 
 		ion::NetSocketSendParameters* bsp = reinterpret_cast<ion::NetSocketSendParameters*>(&zero);
@@ -688,10 +729,27 @@ void StopThreads(NetSocket& socket)
 		bsp->SetAddress(socket.mBoundAddress);
 		int res = SendBlocking(socket, *bsp);
 		ION_ASSERT(res > 0, "Unblocking send failed");
-		ION_ASSERT(!socket.mIsReceiveThreadActive, "Socket thread still active");
+		ION_ASSERT(socket.mReceiveThreadState == NetSocket::ThreadState::Stopping, "Socket thread still active");
+	}
+}
+
+void StopThreads(NetSocket& socket)
+{
+	if (socket.mSendThreadState == NetSocket::ThreadState::Stopping)
+	{
+		ION_NET_LOG_VERBOSE("Stopping send thread");
+		socket.mSendThreadState = NetSocket::ThreadState::Inactive;
+		socket.mDelegate.WaitForThreads();	
+	}
+	
+	if (socket.mReceiveThreadState == NetSocket::ThreadState::Stopping)
+	{
+		ION_NET_LOG_VERBOSE("Stopping receive thread");
+		socket.mReceiveThreadState = NetSocket::ThreadState::Inactive;
 		socket.mReceiveThread.Join();
 	}
 }
+
 void SendTo(NetSocket& socketLayer, ion::NetCommand& command, const ion::NetSocketAddress& address)
 {
 	ION_ASSERT(command.mNumberOfBytesToSend <= ion::NetMaxUdpPayloadSize(), "Invalid payload");
@@ -700,6 +758,35 @@ void SendTo(NetSocket& socketLayer, ion::NetCommand& command, const ion::NetSock
 	memcpy(bsp->data, (char*)&command.mData, bsp->length);
 	bsp->SetAddress(address);
 	SendTo(socketLayer, bsp);  // Deallocate struct here
+}
+
+void InitSocket(NetSocket& socket)
+{
+	ion::NetSecure::MemZero(socket.mBigDataKey);
+#if ION_NET_FEATURE_SECURITY == 1
+	ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: initialize socket public-private keypair");
+	ion::NetSecure::SetupCryptoKeys(socket.mCryptoKeys);
+	ion::NetSecure::Random(socket.mNonceOffset.Data(), socket.mNonceOffset.ElementCount);
+#endif
+}
+
+#if ION_NET_SIMULATOR
+void ConfigureNetworkSimulator(NetSocket& socket, const ion::NetworkSimulatorSettings& simSettings)
+{
+	socket.mNetworkSimulator.Configure(simSettings);
+}
+#endif
+
+void DeinitSocket(NetSocket& socket)
+{
+#if ION_NET_FEATURE_SECURITY == 1
+	ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: clear socket public-private keypair");
+	ion::NetSecure::MemZero(socket.mCryptoKeys);
+	ion::NetSecure::MemZero(socket.mNonceOffset);
+#endif
+#if ION_NET_SIMULATOR
+	socket.mNetworkSimulator.Clear();
+#endif
 }
 
 }  // namespace SocketLayer

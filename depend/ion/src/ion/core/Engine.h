@@ -34,6 +34,11 @@ public:
 
 	static void RequestExit();
 
+	static void InstallHandlers();
+
+	static void ClearHandlers();
+
+
 private:
 	static void Restart();
 

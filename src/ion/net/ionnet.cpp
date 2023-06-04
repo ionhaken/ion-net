@@ -190,7 +190,7 @@ void ion_net_destroy_peer(ion_net_peer handle)
 void ion_net_send_loopback(ion_net_peer handle, const char* data, const int length)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	return ion::NetControlLayer::SendLoopback(net.mControl, net.mExchange, data, length);
+	return ion::NetControlLayer::SendLoopback(net.mControl, net.mConnections, net.mExchange, data, length);
 }
 
 void ion_net_add_to_ban_list(ion_net_peer handle, const char* IP, uint32_t milliseconds)
@@ -314,12 +314,14 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 		return ION_NET_CODE_ALREADY_STARTED;
 	}
 
+	ION_NET_LOG_VERBOSE("Startup: Run");
+
 	memset(net.mSecurity.mSecretKey.data, 0xAA, ion::NetSecure::SecretKeyLength);
 	ion::NetControlLayer::Init(net, parameters);
 
 	NetExchangeLayer::Init(net.mExchange, parameters, net.mControl.mMemoryResource);
-	NetExchangeLayer::FillIPList(net.mExchange);
-	net.mExchange.mFirstExternalID = NetUnassignedSocketAddress;
+	NetConnectionLayer::FillIPList(net.mConnections);
+	net.mConnections.mFirstExternalID = NetUnassignedSocketAddress;
 
 	ion::NetControlLayer::ClearBufferedCommands(net.mControl);
 	ion::NetReceptionLayer::Reset(net.mReception, net.mControl);
@@ -329,20 +331,11 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 	{
 	case NetBindResult::Success:
 	{
-		for (unsigned i = 0; i < NetMaximumNumberOfInternalIds; i++)
-		{
-			if (net.mExchange.mIpList[i] == NetUnassignedSocketAddress)
-			{
-				break;
-			}
-			unsigned short port = net.mConnections.mSocketList[0]->mBoundAddress.GetPort();
-			net.mExchange.mIpList[i].SetPortHostOrder(port);
-		}
 		if (!NetControlLayer::StartUpdating(net.mControl, net.mReception, parameters.mUpdateThreadPriority))
 		{
 			result = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD;
 		}
-		else if (!NetConnectionLayer::StartThreads(net.mConnections, net.mReception, net.mControl, parameters))
+		if (!NetConnectionLayer::StartThreads(net.mConnections, net.mReception, net.mControl, parameters))
 		{
 			result = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD;
 		}
@@ -356,23 +349,36 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 		break;
 	}
 
+	ION_NET_LOG_VERBOSE("Startup: Result: " << result);
+
 	if (result != ION_NET_CODE_STARTED)
-	{
+	{		
 		ion_net_shutdown(handle, 1, 0, (unsigned int)NetPacketPriority::Low);
 	}
 	return result;
+}
+
+void ion_net_stop(ion_net_peer handle)
+{
+	NetInterface& net = *(NetInterface*)handle;
+	ion::NetControlLayer::CancelUpdating(net.mControl);
+	ion::NetConnectionLayer::CancelThreads(net.mConnections);
 }
 
 void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned char orderingChannel,
 					  unsigned int disconnectionNotificationPriority)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	bool IsUpdateThreadRunning = net.mControl.mUpdateMode != NetPeerUpdateMode::User;
-	const unsigned int systemListSize = net.mExchange.mMaximumNumberOfPeers;
 
-	// This needs to be done first to make sure all disconnects are sent and acked before shutdown can continue
 	ion::TimeMS now = ion::SteadyClock::GetTimeMS();
 
+	ION_NET_LOG_VERBOSE("Shutdown: Disconnect remotes");
+
+	ion_net_set_maximum_incoming_connections(handle, 0);
+
+	// This needs to be done first to make sure all disconnects are sent and acked before shutdown can continue
+	bool IsUpdateThreadRunning = net.mControl.mUpdateMode != NetPeerUpdateMode::User;
+	const unsigned int systemListSize = net.mExchange.mMaximumNumberOfPeers;
 	for (unsigned int i = 1; i <= systemListSize; i++)
 	{
 		// remoteSystemList in user thread
@@ -428,11 +434,15 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 		ION_NET_LOG_VERBOSE("[" << net.mExchange.mGuid << "] Shutdown: Could not disconnect all remotes gracefully in " << blockDuration
 								<< "ms");
 	}
-	
+
+	ION_NET_LOG_VERBOSE("Shutdown: Finalize");
+
+	ion_net_stop(handle);
+
+	// Send thread might leak memory if stopping while there's active data sending, therefore,
+	// update threads must be stopped before socket threads.
 	ion::NetControlLayer::StopUpdating(net.mControl);
 
-	// Send thread might leak memory if stopping while there's active data sending, thus,
-	// update threads must be stopped before socket threads.
 	ion::NetConnectionLayer::StopThreads(net.mConnections);
 
 	ion::NetConnectionLayer::Reset(net.mConnections, net.mControl.mMemoryResource);
@@ -747,13 +757,27 @@ int ion_net_is_banned(ion_net_peer handle, const char* IP)
 void ion_net_external_id(ion_net_peer handle, ion_net_socket_address in, ion_net_socket_address out)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	ion::NetExchangeLayer::GetExternalID(net.mExchange, *(ion::NetSocketAddress*)in, *(ion::NetSocketAddress*)out);
+	if (*(ion::NetSocketAddress*)in == NetUnassignedSocketAddress)
+	{
+		ion::NetConnectionLayer::GetExternalID(net.mConnections, *(ion::NetSocketAddress*)out);
+	}
+	else
+	{
+		ion::NetExchangeLayer::GetExternalID(net.mExchange, *(ion::NetSocketAddress*)in, *(ion::NetSocketAddress*)out);
+	}
 }
 
 void ion_net_internal_id(ion_net_peer handle, ion_net_socket_address in, const int index, ion_net_socket_address out)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	ion::NetExchangeLayer::GetInternalID(net.mExchange, *(ion::NetSocketAddress*)out, *(ion::NetSocketAddress*)in, index);
+	if (*(ion::NetSocketAddress*)in == NetUnassignedSocketAddress)
+	{
+		ion::NetConnectionLayer::GetInternalID(net.mConnections, *(ion::NetSocketAddress*)out, index);
+	}
+	else
+	{
+		ion::NetExchangeLayer::GetInternalID(net.mExchange, *(ion::NetSocketAddress*)out, *(ion::NetSocketAddress*)in, index);
+	}
 }
 
 void ion_net_set_data_transfer_security_level(ion_net_peer handle, uint8_t level)
@@ -872,7 +896,18 @@ ion_net_guid_t ion_net_remote_id_to_guid(ion_net_peer handle, ion_net_remote_id_
 void ion_net_guid_to_address(ion_net_peer handle, ion_net_guid_t input, ion_net_socket_address out)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	NetExchangeLayer::GetSocketAddressThreadSafe(net.mExchange, (NetGUID)input, *(NetSocketAddress*)out);
+	if ((NetGUID)input == NetGuidUnassigned)
+	{
+		*(ion::NetSocketAddress*)out = NetUnassignedSocketAddress;
+	}
+	else if ((NetGUID)input == net.mExchange.mGuid)
+	{
+		ion::NetConnectionLayer::GetInternalID(net.mConnections, *(ion::NetSocketAddress*)out, 0);
+	}
+	else
+	{
+		NetExchangeLayer::GetSocketAddressThreadSafe(net.mExchange, (NetGUID)input, *(NetSocketAddress*)out);
+	}
 }
 
 void ion_net_remote_id_to_address(ion_net_peer handle, ion_net_remote_id_t remote, ion_net_socket_address out)
@@ -905,10 +940,10 @@ void ion_net_local_ip(ion_net_peer handle, unsigned int index, char* strOut)
 	if (!ion_net_is_active(handle))
 	{
 		NetInterface& net = *(NetInterface*)handle;
-		NetExchangeLayer::FillIPList(net.mExchange);
+		NetConnectionLayer::FillIPList(net.mConnections);
 	}
 	NetInterface& net = *(NetInterface*)handle;
-	net.mExchange.mIpList[index].ToString(strOut, 128, false);
+	net.mConnections.mIpList[index].ToString(strOut, 128, false);
 }
 
 bool ion_net_is_local_ip(ion_net_peer handle, const char* ip)
@@ -929,7 +964,7 @@ bool ion_net_is_local_ip(ion_net_peer handle, const char* ip)
 	char str[128];
 	for (i = 0; i < num; i++)
 	{
-		net.mExchange.mIpList[i].ToString(str, 128, false);
+		net.mConnections.mIpList[i].ToString(str, 128, false);
 		if (strcmp(ip, str) == 0)
 			return true;
 	}
@@ -998,10 +1033,10 @@ unsigned ion_net_number_of_addresses(ion_net_peer handle)
 	if (!ion_net_is_active(handle))
 	{
 		NetInterface& net = *(NetInterface*)handle;
-		NetExchangeLayer::FillIPList(net.mExchange);
+		NetConnectionLayer::FillIPList(net.mConnections);
 	}
 	NetInterface& net = *(NetInterface*)handle;
-	return NetExchangeLayer::GetNumberOfAddresses(net.mExchange);
+	return NetConnectionLayer::GetNumberOfAddresses(net.mConnections);
 }
 
 bool ion_net_is_ipv6_only(ion_net_peer handle)
@@ -1013,16 +1048,16 @@ bool ion_net_is_ipv6_only(ion_net_peer handle)
 	if (!ion_net_is_active(handle))
 	{
 		NetInterface& net = *(NetInterface*)handle;
-		NetExchangeLayer::FillIPList(net.mExchange);
+		NetConnectionLayer::FillIPList(net.mConnections);
 	}
 	NetInterface& net = *(NetInterface*)handle;
-	return NetExchangeLayer::IsIPV6Only(net.mExchange);
+	return NetConnectionLayer::IsIPV6Only(net.mConnections);
 }
 
 int ion_net_send(ion_net_peer handle, const char* data, const int length, uint8_t priority, uint8_t reliability, char orderingChannel,
 				 ion_net_remote_ref remote_ref, bool broadcast)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	return ion::NetControlLayer::Send(net.mControl, net.mExchange, data, length, (NetPacketPriority)priority,
+	return ion::NetControlLayer::Send(net.mControl, net.mConnections, net.mExchange, data, length, (NetPacketPriority)priority,
 									  (NetPacketReliability)reliability, orderingChannel, *(NetAddressOrRemoteRef*)remote_ref, broadcast);
 }

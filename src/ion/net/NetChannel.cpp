@@ -960,7 +960,7 @@ int SendKCPPacket(NetChannelWriteContext& context, int len)
 	ION_CHECK_FATAL(context.mRemote.netSocket->mSendThreadState != NetSocket::ThreadState::Inactive,
 					"Send thread is mandatory when using network simulator");
 #endif
-	if (context.mRemote.netSocket->mSendThreadState != NetSocket::ThreadState::Inactive)
+	if (context.mRemote.netSocket->mSendThreadState == NetSocket::ThreadState::Active)
 	{
 		if (NetSocketSendParameters* newBuffer = context.mRemote.netSocket->AllocateSend())
 		{

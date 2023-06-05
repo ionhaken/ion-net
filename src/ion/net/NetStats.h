@@ -21,6 +21,7 @@ public:
 
 	void Add(TimeMS now, uint64_t count)
 	{
+		ION_ASSERT(samples.IsEmpty() || DeltaTime(now, samples.Back().time) >= 0, "Invalid timestamp");
 		mTotal += count;
 		mTotalInPeriod += count;
 		samples.PushBack(Sample{now, count});

@@ -69,9 +69,9 @@ class NetSocket
 public:
 	enum class ThreadState : int
 	{
-		Stopping = -1,
-		Inactive = 0,
-		Active = 1
+		Active = 0,
+		Stopping = 1,
+		Inactive = 2
 	};
 
 	NetSocket(NetInterfaceResource* resource)
@@ -81,7 +81,7 @@ public:
 
 	void Send(ion::NetSocketSendParameters* sendParameters)
 	{
-		ION_ASSERT(mSendThreadState != NetSocket::ThreadState::Inactive, "Send thread not enable");
+		ION_ASSERT(mSendThreadState == NetSocket::ThreadState::Active, "Send thread not enable");
 		mDelegate.Enqueue(std::move(sendParameters));
 	}
 

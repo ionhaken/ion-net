@@ -85,12 +85,16 @@ static int ion_net_send_connection_request(ion_net_peer handle, ion_net_connect_
 {
 	NetInterface& net = *(NetInterface*)handle;
 	NetConnectTarget& target = *(NetConnectTarget*)target_ptr;
-
 	ION_NET_API_CHECK(timeoutTime <= ion::NetFailureConditionTimeout, INVALID_PARAMETER,
 					  "Request connection timeout will be limited to remote failure condition timeout");
 	ION_NET_API_CHECK((passwordDataLength > 0 && passwordDataLength <= 256) || (passwordDataLength == 0 && passwordData == nullptr),
 					  INVALID_PARAMETER, "Invalid password");
 	ION_NET_API_CHECK(target.remote_port != 0, INVALID_PARAMETER, "Invalid port");
+	if (connectionSocketIndex >= net.mConnections.mSocketList.Size() ||
+		net.mConnections.mSocketList[connectionSocketIndex]->mBoundAddress.GetPort() == 0)
+	{
+		return ION_NET_CODE_SOCKET_NOT_READY;
+	}
 	if (!ion_net_resolve_target(target_ptr, (ion_net_socket)net.mConnections.mSocketList[connectionSocketIndex]))
 	{
 		ION_NET_LOG_VERBOSE("Cannot resolve domain name;host="
@@ -327,26 +331,15 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 	ion::NetReceptionLayer::Reset(net.mReception, net.mControl);
 
 	int result = ION_NET_CODE_STARTED;
-	switch (ion::NetConnectionLayer::BindSockets(net.mConnections, net.mControl.mMemoryResource, parameters))
+	ion::NetConnectionLayer::CreateSockets(net.mConnections, net.mControl, parameters);
+	
+	if (!NetControlLayer::StartUpdating(net.mControl, net.mReception, parameters.mUpdateThreadPriority))
 	{
-	case NetBindResult::Success:
-	{
-		if (!NetControlLayer::StartUpdating(net.mControl, net.mReception, parameters.mUpdateThreadPriority))
-		{
-			result = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD;
-		}
-		if (!NetConnectionLayer::StartThreads(net.mConnections, net.mReception, net.mControl, parameters))
-		{
-			result = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD;
-		}
-		break;
+		result = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD;
 	}
-	case NetBindResult::FailedToBind:
-		result = ION_NET_CODE_SOCKET_FAILED_TO_BIND;
-		break;
-	case NetBindResult::FailedToSendTest:
-		result = ION_NET_CODE_SOCKET_FAILED_TEST_SEND;
-		break;
+	if (!NetConnectionLayer::StartThreads(net.mConnections, net.mReception, net.mControl, parameters))
+	{
+		result = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD;
 	}
 
 	ION_NET_LOG_VERBOSE("Startup: Result: " << result);
@@ -362,7 +355,10 @@ void ion_net_stop(ion_net_peer handle)
 {
 	NetInterface& net = *(NetInterface*)handle;
 	ion::NetControlLayer::CancelUpdating(net.mControl);
-	ion::NetConnectionLayer::CancelThreads(net.mConnections);
+	if (net.mControl.mUpdateMode != NetPeerUpdateMode::Worker)	 // Otherwise canceled by worker thread
+	{
+		ion::NetConnectionLayer::CancelThreads(net.mConnections);
+	}
 }
 
 void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned char orderingChannel,
@@ -445,7 +441,7 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 
 	ion::NetConnectionLayer::StopThreads(net.mConnections);
 
-	ion::NetConnectionLayer::Reset(net.mConnections, net.mControl.mMemoryResource);
+	ion::NetConnectionLayer::Reset(net.mConnections, net.mControl);
 
 	ion::NetExchangeLayer::Deinit(net.mExchange, net.mControl, now);
 	ion::NetReceptionLayer::Reset(net.mReception, net.mControl);

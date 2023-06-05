@@ -56,5 +56,15 @@ void ClearCommand(NetControl& control, NetCommand*& command);
 
 void AddPacketToProducer(NetControl& control, ion::NetPacket* p);
 
+void RunnerReady(NetControl& control);
+
+void RunnerExit(NetControl& control);
+
+void RunnerFailed(NetControl& control);
+
+void RunnerRequired(NetControl& control);
+
+void RunnerUnrequired(NetControl& control);
+
 }  // namespace NetControlLayer
 }  // namespace ion

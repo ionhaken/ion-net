@@ -36,8 +36,17 @@ NetPacket* ReceiveFromReassebly(NetTransport& transport)
 	return nullptr;
 }
 
-void ParseConnectionRequestPacket(NetReception& reception, NetControl& control, NetExchange& exchange, const NetConnections& connections,
-								  ion::NetRemoteSystem* remoteSystem, unsigned char* data, int byteSize, ion::TimeMS now)
+struct RemoteReceiveContext
+{
+	NetReception& mReception;
+	NetControl& mControl;
+	NetExchange& mExchange;
+	NetConnections& mConnections;
+	ion::NetRemoteSystem& mRemote;
+	TimeMS mCurrentTime;
+};
+
+void ParseConnectionRequestPacket(RemoteReceiveContext& context, unsigned char* data, int byteSize)
 {
 	ion::ByteReader bs(data, byteSize);
 	bs.SkipBytes(sizeof(NetMessageId));
@@ -48,65 +57,65 @@ void ParseConnectionRequestPacket(NetReception& reception, NetControl& control, 
 	isValid &= bs.Process(incomingTimestamp);
 
 	size_t passwordLength = bs.Available();
-	isValid &= reception.mIncomingPasswordLength == passwordLength;
+	isValid &= context.mReception.mIncomingPasswordLength == passwordLength;
 	if (isValid && passwordLength > 0)
 	{
 		const unsigned char* password = &bs.ReadAssumeAvailable<unsigned char>();
-		isValid &= memcmp(password, reception.mIncomingPassword, reception.mIncomingPasswordLength) == 0;
+		isValid &= memcmp(password, context.mReception.mIncomingPassword, context.mReception.mIncomingPasswordLength) == 0;
 	}
 	if (!isValid)
 	{
-		NetSendCommand cmd(control, remoteSystem->mId, 16);
+		NetSendCommand cmd(context.mControl, context.mRemote.mId, 16);
 		if (cmd.HasBuffer())
 		{
 			{
 				ByteWriter writer(cmd.Writer());
 				writer.Process(NetMessageId::InvalidPassword);
-				writer.Process(exchange.mGuid);
+				writer.Process(context.mExchange.mGuid);
 			}
 			cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
-			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
+			ion::NetExchangeLayer::SendImmediate(context.mExchange, context.mControl, cmd.Release(), context.mCurrentTime);
 		}
-		ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, NetMode::DisconnectAsapSilently);
+		ion::NetExchangeLayer::SetMode(context.mExchange, context.mRemote, NetMode::DisconnectAsapSilently);
 		return;
 	}
 
 	// OK
-	ION_ASSERT(remoteSystem->mMode == ion::NetMode::RequestedConnection || remoteSystem->mMode == ion::NetMode::UnverifiedSender,
+	ION_ASSERT(context.mRemote.mMode == ion::NetMode::RequestedConnection || context.mRemote.mMode == ion::NetMode::UnverifiedSender,
 			   "Invalid connect state");
-	ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, NetMode::HandlingConnectionRequest);
-	NetExchangeLayer::SendConnectionRequestAccepted(exchange, connections, control, remoteSystem, incomingTimestamp, now);
+	ion::NetExchangeLayer::SetMode(context.mExchange, context.mRemote, NetMode::HandlingConnectionRequest);
+	NetExchangeLayer::SendConnectionRequestAccepted(context.mExchange, context.mConnections, context.mControl, context.mRemote,
+													incomingTimestamp, context.mCurrentTime);
 }
 
-bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchange& exchange, NetConnections& connections,
-						 ion::NetRemoteSystem* remoteSystem, ion::TimeMS now, ion::NetPacket* packet)
+bool RemoteSystemReceive(RemoteReceiveContext& context, ion::NetPacket* packet)
 {
 	byte* data = packet->Data();
 	int byteSize = int(packet->Length());
 
 	// For unknown senders we only accept a few specific packets
-	if (remoteSystem->mMode == ion::NetMode::UnverifiedSender)
+	if (context.mRemote.mMode == ion::NetMode::UnverifiedSender)
 	{
 		if (data[0] == NetMessageId::ConnectionRequest)
 		{
 			ION_PROFILER_SCOPE(Network, "Connection Req");
-			ParseConnectionRequestPacket(reception, control, exchange, connections, remoteSystem, data, byteSize, now);
+			ParseConnectionRequestPacket(context, data, byteSize);
 		}
 		else
 		{
 			char str1[64];
-			remoteSystem->mAddress.ToString(str1, 64, false);
-			ION_NET_LOG_ABNORMAL("Temporary " << remoteSystem->timeoutTime << "ms ban " << ion::String(str1)
-											  << " for sending nonsense data;GUID=" << remoteSystem->guid
+			context.mRemote.mAddress.ToString(str1, 64, false);
+			ION_NET_LOG_ABNORMAL("Temporary " << context.mRemote.timeoutTime << "ms ban " << ion::String(str1)
+											  << " for sending nonsense data;GUID=" << context.mRemote.guid
 											  << ";packetId=" << (unsigned char)(data[0]));
 
-			AddToBanList(reception, control, str1, remoteSystem->timeoutTime);
-			NetTransportLayer::Reset(remoteSystem->mTransport, control, *remoteSystem);
+			AddToBanList(context.mReception, context.mControl, str1, context.mRemote.timeoutTime);
+			NetTransportLayer::Reset(context.mRemote.mTransport, context.mControl, context.mRemote);
 
 			// Note: Cannot be immediate as we are still using remote system socket.
-			NetControlLayer::CloseConnectionInternal(control, exchange, connections, remoteSystem->mId.load(), false, false, 0,
-													 NetPacketPriority::Low);
+			NetControlLayer::CloseConnectionInternal(context.mControl, context.mExchange, context.mConnections, context.mRemote.mId.load(),
+													 false, false, 0, NetPacketPriority::Low);
 		}
 		return false;
 	}
@@ -118,16 +127,16 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		// However, if we are connected we still take a connection request in case both systems are trying to connect to each other
 		// at the same time
 
-		if (remoteSystem->mMode == ion::NetMode::RequestedConnection)
+		if (context.mRemote.mMode == ion::NetMode::RequestedConnection)
 		{
-			ParseConnectionRequestPacket(reception, control, exchange, connections, remoteSystem, data, byteSize, now);
+			ParseConnectionRequestPacket(context, data, byteSize);
 		}
 		else
 		{
 			ion::ByteReader bs(static_cast<unsigned char*>(data) + sizeof(NetMessageId), byteSize - 1);
 			NetGUID guid;
 			bool isValid = bs.Process(guid);
-			isValid &= guid == remoteSystem->guid;
+			isValid &= guid == context.mRemote.guid;
 			ion::Time incomingTimestamp;
 			isValid &= bs.Process(incomingTimestamp);
 
@@ -135,12 +144,13 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 			{
 				// Got a connection request message from someone we are already connected to. Just reply normally.
 				// This can happen due to race conditions with the fully connected mesh
-				NetExchangeLayer::SendConnectionRequestAccepted(exchange, connections, control, remoteSystem, incomingTimestamp, now);
+				NetExchangeLayer::SendConnectionRequestAccepted(context.mExchange, context.mConnections, context.mControl, context.mRemote,
+																incomingTimestamp, context.mCurrentTime);
 			}
 			else
 			{
 				// Do not flag this as bad, as GUID can change.
-				ION_NET_LOG_ABNORMAL("[" << exchange.mGuid << "] Ignored invalid connection request from " << remoteSystem->guid
+				ION_NET_LOG_ABNORMAL("[" << context.mExchange.mGuid << "] Ignored invalid connection request from " << context.mRemote.guid
 										 << " when already connected");
 			}
 		}
@@ -154,10 +164,10 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 			return false;
 		}
 
-		if (remoteSystem->mMode != NetMode::HandlingConnectionRequest)
+		if (context.mRemote.mMode != NetMode::HandlingConnectionRequest)
 		{
 			// Ignore, already connected. Not abnormal as happens on cross connection case
-			ION_NET_LOG_VERBOSE("[" << exchange.mGuid << "] Connect request received from " << remoteSystem->guid
+			ION_NET_LOG_VERBOSE("[" << context.mExchange.mGuid << "] Connect request received from " << context.mRemote.guid
 									<< " when already connected");
 			return false;
 		}
@@ -169,8 +179,8 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		bool isValid = inBitStream.Process(externalAddress);
 		for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 		{
-			isValid &=
-			  inBitStream.Process(exchange.mSystemAddressDetails[remoteSystem->mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
+			isValid &= inBitStream.Process(
+			  context.mExchange.mSystemAddressDetails[context.mRemote.mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
 		}
 
 		ion::Time sentPingTime, remoteTime;
@@ -181,11 +191,11 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 			ION_NET_LOG_ABNORMAL("Invalid Message: NewIncomingConnection");
 			return false;
 		}
-		ion::NetExchangeLayer::OnConnectedPong(exchange, now, sentPingTime, remoteTime, remoteSystem);
+		ion::NetExchangeLayer::OnConnectedPong(context.mExchange, context.mCurrentTime, sentPingTime, remoteTime, context.mRemote);
 
-		ion::NetExchangeLayer::SetConnected(exchange, *remoteSystem, externalAddress);
+		ion::NetExchangeLayer::SetConnected(context.mExchange, context.mRemote, externalAddress);
 
-		NetConnectionLayer::SetExternalID(connections, externalAddress);
+		NetConnectionLayer::SetExternalID(context.mConnections, externalAddress);
 
 		// Send this info down to the game
 		break;
@@ -202,7 +212,8 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 			isValid &= inBitStream.Process(sentPingTime);
 			if (isValid)
 			{
-				ion::NetExchangeLayer::OnConnectedPong(exchange, now, sentPingTime, remoteTime, remoteSystem);
+				context.mCurrentTime = ion::SteadyClock::GetTimeMS();
+				ion::NetExchangeLayer::OnConnectedPong(context.mExchange, context.mCurrentTime, sentPingTime, remoteTime, context.mRemote);
 			}
 		}
 		return false;
@@ -216,24 +227,24 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 			ion::Time remoteTime;
 			inBitStream.ReadAssumeAvailable(remoteTime);
 
-			NetSendCommand cmd(control, remoteSystem->mId, sizeof(NetMessageId::ConnectedPong) + sizeof(TimeMS) * 2);
+			NetSendCommand cmd(context.mControl, context.mRemote.mId, sizeof(NetMessageId::ConnectedPong) + sizeof(TimeMS) * 2);
 			if (cmd.HasBuffer())
 			{
-				ion::Time sendPongTime = ion::SteadyClock::GetTimeMS();
+				context.mCurrentTime = ion::SteadyClock::GetTimeMS();
 				{
 					ByteWriter writer(cmd.Writer());
 					writer.Process(NetMessageId::ConnectedPong);
-					writer.Process(sendPongTime);
+					writer.Process(context.mCurrentTime);
 					writer.Process(remoteTime);
 				}
 
 				cmd.Parameters().mReliability = NetPacketReliability::Unreliable;
 				cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 
-				ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), sendPongTime);
+				ion::NetExchangeLayer::SendImmediate(context.mExchange, context.mControl, cmd.Release(), context.mCurrentTime);
 
 				// Update again immediately after this tick so the ping goes out right away
-				ion::NetControlLayer::Trigger(control);
+				ion::NetControlLayer::Trigger(context.mControl);
 			}
 		}
 		return false;
@@ -242,7 +253,7 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 	{
 		// We shouldn't close the connection immediately because we need to ack the DisconnectionNotification
 		NetMode disconnectMode;
-		if (remoteSystem->mMode == NetMode::DisconnectAsap || remoteSystem->mMode == NetMode::DisconnectAsapMutual)
+		if (context.mRemote.mMode == NetMode::DisconnectAsap || context.mRemote.mMode == NetMode::DisconnectAsapMutual)
 		{
 			disconnectMode = NetMode::DisconnectAsapMutual;
 		}
@@ -250,14 +261,14 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		{
 			disconnectMode = NetMode::DisconnectOnNoAck;
 		}
-		ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, disconnectMode);
+		ion::NetExchangeLayer::SetMode(context.mExchange, context.mRemote, disconnectMode);
 		return false;
 	}
 	case NetMessageId::InvalidPassword:
 	{
-		if (remoteSystem->mMode == NetMode::RequestedConnection)
+		if (context.mRemote.mMode == NetMode::RequestedConnection)
 		{
-			ion::NetExchangeLayer::SetMode(exchange, *remoteSystem, NetMode::DisconnectAsapSilently);
+			ion::NetExchangeLayer::SetMode(context.mExchange, context.mRemote, NetMode::DisconnectAsapSilently);
 			break;
 		}
 		else
@@ -276,15 +287,16 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 
 		// Make sure this connection accept is from someone we wanted to connect to
 
-		bool allowConnection = (remoteSystem->mMode == NetMode::HandlingConnectionRequest ||
-								remoteSystem->mMode == NetMode::RequestedConnection || reception.mAllowConnectionResponseIPMigration);
+		bool allowConnection =
+		  (context.mRemote.mMode == NetMode::HandlingConnectionRequest || context.mRemote.mMode == NetMode::RequestedConnection ||
+		   context.mReception.mAllowConnectionResponseIPMigration);
 
 		if (!allowConnection)
 		{
 			return false;
 		}
 
-		bool alreadyConnected = (remoteSystem->mMode == NetMode::HandlingConnectionRequest);
+		bool alreadyConnected = (context.mRemote.mMode == NetMode::HandlingConnectionRequest);
 
 		ion::NetSocketAddress externalID;
 		NetRemoteIndex systemIndex;
@@ -296,8 +308,8 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		isValid &= reader.Process(systemIndex);
 		for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 		{
-			isValid &=
-			  reader.Process(exchange.mSystemAddressDetails[remoteSystem->mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
+			isValid &= reader.Process(
+			  context.mExchange.mSystemAddressDetails[context.mRemote.mId.load().RemoteIndex()].mTheirInternalSystemAddress[i]);
 		}
 
 		ion::Time sentPingTime, remoteTime;
@@ -308,36 +320,37 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 			ION_NET_LOG_ABNORMAL("Invalid connection request accepted");
 			return false;
 		}
-		ion::NetExchangeLayer::OnConnectedPong(exchange, now, sentPingTime, remoteTime, remoteSystem);
+		ion::NetExchangeLayer::OnConnectedPong(context.mExchange, context.mCurrentTime, sentPingTime, remoteTime, context.mRemote);
 
-		ion::NetExchangeLayer::SetConnected(exchange, *remoteSystem, externalID);
+		ion::NetExchangeLayer::SetConnected(context.mExchange, context.mRemote, externalID);
 
-		ion::NetConnectionLayer::SetExternalID(connections, externalID);
+		ion::NetConnectionLayer::SetExternalID(context.mConnections, externalID);
 
 		// Send the connection request complete to the game
-		NetSendCommand cmd(control, remoteSystem->mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
+		NetSendCommand cmd(context.mControl, context.mRemote.mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
 		if (cmd.HasBuffer())
 		{
 			cmd.Parameters().mPriority = NetPacketPriority::Immediate;
 			{
 				ByteWriter writer(cmd.Writer());
 				writer.Process(NetMessageId::NewIncomingConnection);
-				writer.Process(remoteSystem->mAddress);
+				writer.Process(context.mRemote.mAddress);
 				for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 				{
-					writer.Process(connections.mIpList[i]);
+					writer.Process(context.mConnections.mIpList[i]);
 				}
-				writer.Process(now);
+				writer.Process(context.mCurrentTime);
 				writer.Process(remoteTime);
 			}
-			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
+			ion::NetExchangeLayer::SendImmediate(context.mExchange, context.mControl, cmd.Release(), context.mCurrentTime);
 		}
 
 		if (alreadyConnected == false)
 		{
-			ION_NET_LOG_VERBOSE("[" << exchange.mGuid << "] Ping accepting connection " << remoteSystem->guid);
-			remoteSystem->pingTracker.OnPing(now);
-			NetControlLayer::PingInternal(control, exchange, remoteSystem->mAddress, true, NetPacketReliability::Unreliable, now);
+			ION_NET_LOG_VERBOSE("[" << context.mExchange.mGuid << "] Ping accepting connection " << context.mRemote.guid);
+			context.mRemote.pingTracker.OnPing(context.mCurrentTime);
+			NetControlLayer::PingInternal(context.mControl, context.mExchange, context.mRemote.mAddress, true,
+										  NetPacketReliability::Unreliable, context.mCurrentTime);
 		}
 		break;
 	}
@@ -354,38 +367,38 @@ bool RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchan
 		// It seems like giving it to the user is a better option
 		if ((data[0] >= NetMessageId::UserPacket))
 		{
-			if (remoteSystem->mMode != NetMode::Disconnected)
+			if (context.mRemote.mMode != NetMode::Disconnected)
 			{
 				break;
 			}
 		}
 		else
 		{
-			ION_NET_LOG_ABNORMAL("Invalid packet " << data[0] << " from " << remoteSystem->guid << ";id=" << data[0]);
+			ION_NET_LOG_ABNORMAL("Invalid packet " << data[0] << " from " << context.mRemote.guid << ";id=" << data[0]);
 		}
 		return false;
 	}
 	}
 
-	control.mPacketReturnQueue.Enqueue(std::move(packet));
+	context.mControl.mPacketReturnQueue.Enqueue(std::move(packet));
 	return true;
 }
 
-void RemoteSystemReceive(NetReception& reception, NetControl& control, NetExchange& exchange, NetConnections& connections,
-						 ion::NetRemoteSystem* remoteSystem, const TimeMS now)
+void RemoteSystemReceive(RemoteReceiveContext& context)
 {
-	while (ion::NetPacket* packet = ReceiveFromReassebly(remoteSystem->mTransport))
+	while (ion::NetPacket* packet = ReceiveFromReassebly(context.mRemote.mTransport))
 	{
 		ION_NET_LOG_VERBOSE_MSG("Msg: Receiving id=" << Hex<uint8_t>(packet->Data()[0]) << ";Length=" << packet->Length()
 													 << ";GUID=" << packet->mGUID << ";Flags=" << int(packet->mFlags));
-		if (remoteSystem->mMetrics)
+		if (context.mRemote.mMetrics)
 		{
-			remoteSystem->mMetrics->OnReceived(
-			  now, !packet->IsUnreliablePacket() ? ion::PacketType::UserReliable : ion::PacketType::UserUnreliable, packet->Length());
+			context.mRemote.mMetrics->OnReceived(
+			  context.mCurrentTime, !packet->IsUnreliablePacket() ? ion::PacketType::UserReliable : ion::PacketType::UserUnreliable,
+			  packet->Length());
 		}
-		if (!RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, now, packet))
+		if (!RemoteSystemReceive(context, packet))
 		{
-			ion::NetControlLayer::DeallocateUserPacket(control, packet);
+			ion::NetControlLayer::DeallocateUserPacket(context.mControl, packet);
 		}
 	}
 }
@@ -466,7 +479,7 @@ bool ProcessNetworkPacket(NetReception& reception, NetControl& control, NetExcha
 	}
 	if (NetTransportLayer::Input(remoteSystem->mTransport, control, *remoteSystem, conversation, recvFromStruct, timeRead))
 	{
-		// Data was stored -> Update reliable metrics for when reading data back
+		// Data was stored -> Update user data metrics when reading the stored data 
 		remoteSystem->timeLastDatagramArrived = timeRead;
 		return false;
 	}
@@ -509,14 +522,18 @@ void ProcessBufferedPackets(ion::NetReception& reception, NetControl& control, N
 	{
 		js->ParallelFor(exchange.mActiveSystems.Get(), exchange.mActiveSystems.Get() + exchange.mActiveSystemListSize,
 						[&](ion::NetRemoteIndex index)
-						{ RemoteSystemReceive(reception, control, exchange, connections, &exchange.mRemoteSystemList[index], now); });
+						{
+							RemoteReceiveContext context{reception, control, exchange, connections, exchange.mRemoteSystemList[index], now};
+							RemoteSystemReceive(context);
+						});
 	}
 	else
 	{
 		for (unsigned int activeSystemListIndex = 0; activeSystemListIndex < exchange.mActiveSystemListSize; ++activeSystemListIndex)
 		{
-			ion::NetRemoteSystem* remoteSystem = &exchange.mRemoteSystemList[exchange.mActiveSystems[activeSystemListIndex]];
-			RemoteSystemReceive(reception, control, exchange, connections, remoteSystem, now);
+			RemoteReceiveContext context{
+			  reception, control, exchange, connections, exchange.mRemoteSystemList[exchange.mActiveSystems[activeSystemListIndex]], now};
+			RemoteSystemReceive(context);
 		}
 	}
 }
@@ -533,8 +550,7 @@ void Reset(NetReception& reception, NetControl& control)
 }
 
 void AddToBanList(NetReception& reception, NetControl& control, const char* IP, ion::TimeMS milliseconds)
-{
-	unsigned index;
+{	
 	ion::TimeMS time = ion::SteadyClock::GetTimeMS();
 
 	if (IP == 0 || IP[0] == 0)
@@ -546,13 +562,10 @@ void AddToBanList(NetReception& reception, NetControl& control, const char* IP, 
 		return;
 	}
 
-	// If this guy is already in the ban list, do nothing
-	index = 0;
-
 	reception.mBanList.Access(
 	  [&](NetBanListVector& banList)
 	  {
-		  for (; index < banList.Size(); index++)
+		  for (unsigned index = 0; index < banList.Size(); index++)
 		  {
 			  if (strcmp(IP, banList[index]->IP.Data()) == 0)
 			  {

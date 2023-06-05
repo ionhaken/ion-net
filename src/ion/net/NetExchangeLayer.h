@@ -63,7 +63,7 @@ struct Operations
 void Update(NetExchange& exchange, NetControl& control, ion::TimeMS now, ion::JobScheduler* js);
 
 void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& connections, NetControl& control,
-								   ion::NetRemoteSystem* remoteSystem, ion::Time incomingTimestamp, ion::TimeMS now);
+								   ion::NetRemoteSystem& remote, ion::Time incomingTimestamp, ion::TimeMS now);
 
 inline ion::NetRemoteIndex RemoteIndex(const NetExchange& exchange, const ion::NetSocketAddress& sa)
 {
@@ -297,7 +297,7 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 				   SmallVector<NetRemoteIndex, 16, NetAllocator<NetRemoteIndex>>& outRemoteIndices);
 
 void OnConnectedPong(NetExchange& exchange, ion::Time now, ion::Time sentPingTime, ion::Time remoteTime,
-					 ion::NetRemoteSystem* remoteSystem);
+					 ion::NetRemoteSystem& remoteSystem);
 
 void GetInternalID(const NetExchange& exchange, NetSocketAddress& out, const NetSocketAddress& systemAddress = NetUnassignedSocketAddress,
 				   const int index = 0);

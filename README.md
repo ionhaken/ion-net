@@ -36,7 +36,7 @@ Benchmarks have been run using Intel i5-9600k CPU with 32 GB memory and Windows 
 
 1. Testing real conditions. Measured client to server messaging with 20ms RTT latency. Reported results are high mean values including standard deviation.
 
-|Test case                                         |RakNet+|RakNet reference|
+|Test case                                         |Ion Net|RakNet reference|
 |--------------------------------------------------|-------|----------------|
 |400B reliable ordered packet - no packet loss     |28ms   |28ms |
 |400B reliable ordered packet - 1% packet loss 	   |40ms   |85ms |
@@ -47,7 +47,7 @@ Benchmarks have been run using Intel i5-9600k CPU with 32 GB memory and Windows 
 
 2. Testing ideal conditions. Measured client to server messaging with no latencies to detect protocol overhead. Reported results are low mean values. Command line parameter "--benchmark-samples 2000" was used to run tests.
 
-|Test case                                         |RakNet+|RakNet reference|
+|Test case                                         |Ion Net|RakNet reference|
 |--------------------------------------------------|-------|----------------|
 |400B unrealiable packet               	           |0.2ms  |0.3ms |
 |400B reliable ordered packet            	       |0.3ms  |0.3ms |

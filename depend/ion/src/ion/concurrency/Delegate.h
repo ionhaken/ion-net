@@ -233,7 +233,16 @@ public:
 		}
 	}
 
-	~Delegate() { ION_ASSERT(!mSynchronizer.IsActive() || mThreads.Size() == 0, "Synchronizer still active"); }
+	~Delegate()
+	{
+#if (ION_ASSERTS_ENABLED == 1)
+		ION_ASSERT(!mSynchronizer.IsActive() || mThreads.Size() == 0, "Synchronizer still active");
+		ItemList allItems;
+		size_t processedCount = 0;
+		Dequeue(allItems, processedCount);
+		ION_ASSERT(processedCount == 0, "Buffered data left");
+#endif
+	}
 
 private:
 

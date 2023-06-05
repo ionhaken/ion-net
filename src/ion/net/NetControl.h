@@ -53,5 +53,9 @@ struct NetControl
 	std::atomic<bool> mIsActive = false;
 	TimeMS mLastUpdate;
 	uint32_t mResendExtraDelay = 0; // If peer has heavy load use this to avoid resending and make load even worse
+	
+	// Startup/Shutdown
+	std::atomic<int> mNumActiveThreads = 0;
+	int mNumTargetActiveThreads = 0;
 };
 }  // namespace ion

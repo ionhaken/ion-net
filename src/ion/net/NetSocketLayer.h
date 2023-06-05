@@ -153,7 +153,7 @@ inline int SendBlocking(NetSocket& socket, const NetSocketSendParameters& sendPa
 
 inline void SendToNetwork(NetSocket& socket, NetSocketSendParameters* bsp)
 {
-	if (socket.mSendThreadState != NetSocket::ThreadState::Inactive)
+	if (socket.mSendThreadState == NetSocket::ThreadState::Active)
 	{
 		socket.Send(bsp);
 	}

@@ -34,27 +34,27 @@ Features / Submodules
 # Library Design Pillars
 
 * Performance first in production
-- We want to fail as fast as possible during development. When ever our code needs to assume something it has hard checks and program termination if assumptions were not valid. If there is abnormal behaviour code still needs to handle, we'll have error logging for that. However, for final product, we assume code is well tested during development hence for released product all error checks are disabled and there is no defensive coding enabled.
+  - We want to fail as fast as possible during development. When ever our code needs to assume something it has hard checks and program termination if assumptions were not valid. If there is abnormal behaviour code still needs to handle, we'll have error logging for that. However, for final product, we assume code is well tested during development hence for released product all error checks are disabled and there is no defensive coding enabled.
 
 Disclaimer: We use microbenchmarking rigorously and run large scale application tests, but we are obviously fast only for our own use cases. If you want to compare performance you should at least have all optimizations enabled, and define macros _RETAIL and _FINAL.
 
 * Optimize for worst case
-- We want to run well when all CPU cores are saturated. Due to this reason spin locks are not allowed, for example.
+  - We want to run well when all CPU cores are saturated. Due to this reason spin locks are not allowed, for example.
 
 * No need to match STL or other APIs
-- We have custom API that does not match with other libarires - We define functionality and use naming that works best for us. 
+  - We have custom API that does not match with other libarires - We define functionality and use naming that works best for us. 
 
 
 Internal coding guidelines
 --------------------------
 
 * Subset of c++20
-- We use only c++ features that improve readability, but don't hurt performance. We avoid heavy abstractions until it's proven that they are as fast as having no abstractions.
-- We do not use c++ features that would reduce our platform support.
+  - We use only c++ features that improve readability, but don't hurt performance. We avoid heavy abstractions until it's proven that they are as fast as having no abstractions.
+  - We do not use c++ features that would reduce our platform support.
 
 * No exceptions
-- Exception handling is slow, therefore we do not let the code raise exceptions at all. 
-- Exceptions are questionable from readability point of view. Code flow with error codes is pretty clear.
+  - Exception handling is slow, therefore we do not let the code raise exceptions at all. 
+  - Exceptions are questionable from readability point of view. Code flow with error codes is pretty clear.
 
 * No RTTI
 
@@ -63,9 +63,9 @@ Current Limitations
 ---------------------
 
 * Supported platforms
-- Android (32-bit&64-bit)
-- Linux
-- Windows
+  - Android (32-bit&64-bit)
+  - Linux
+  - Windows
 
 
 Getting Started

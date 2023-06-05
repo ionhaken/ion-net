@@ -1219,9 +1219,9 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 }
 
 void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& connections, NetControl& control,
-								   ion::NetRemoteSystem* remoteSystem, ion::Time incomingTimestamp, ion::TimeMS now)
+								   ion::NetRemoteSystem& remote, ion::Time incomingTimestamp, ion::TimeMS now)
 {
-	NetSendCommand cmd(control, remoteSystem->mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
+	NetSendCommand cmd(control, remote.mId, NetMaximumNumberOfInternalIds * sizeof(NetSocketAddress) + 256);
 	if (cmd.HasBuffer())
 	{
 		cmd.Parameters().mPriority = NetPacketPriority::Immediate;
@@ -1229,14 +1229,14 @@ void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& 
 			ByteWriter writer(cmd.Writer());
 
 			writer.Process(NetMessageId::ConnectionRequestAccepted);
-			writer.Process(remoteSystem->mAddress);
-			ION_ASSERT(remoteSystem->mId.load().RemoteIndex() != ion::NetGUID::InvalidNetRemoteIndex, "Invalid system");
-			writer.Process(remoteSystem->mId.load().RemoteIndex());
+			writer.Process(remote.mAddress);
+			ION_ASSERT(remote.mId.load().RemoteIndex() != ion::NetGUID::InvalidNetRemoteIndex, "Invalid system");
+			writer.Process(remote.mId.load().RemoteIndex());
 			for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
 			{
 				writer.Process(connections.mIpList[i]);
 			}
-			remoteSystem->pingTracker.OnPing(now);
+			remote.pingTracker.OnPing(now);
 			writer.Process(now);
 			writer.Process(incomingTimestamp);
 		}
@@ -1244,13 +1244,13 @@ void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& 
 	}
 }
 
-void OnConnectedPong(NetExchange& exchange, ion::Time now, ion::Time sentPingTime, ion::Time remoteTime, ion::NetRemoteSystem* remoteSystem)
+void OnConnectedPong(NetExchange& exchange, ion::Time now, ion::Time sentPingTime, ion::Time remoteTime, ion::NetRemoteSystem& remote)
 {
-	remoteSystem->pingTracker.OnPong(now, sentPingTime, remoteTime);
-	if (remoteSystem->timeSync.IsActive() && remoteSystem->pingTracker.HasSamples())
+	remote.pingTracker.OnPong(now, sentPingTime, remoteTime);
+	if (remote.timeSync.IsActive() && remote.pingTracker.HasSamples())
 	{
-		remoteSystem->timeSync.Update(remoteSystem->pingTracker);
-		exchange.mGlobalClock->OnTimeSync(remoteSystem->timeSync.GetClock(), remoteSystem->timeSync.SyncState());
+		remote.timeSync.Update(remote.pingTracker);
+		exchange.mGlobalClock->OnTimeSync(remote.timeSync.GetClock(), remote.timeSync.SyncState());
 	}
 }
 

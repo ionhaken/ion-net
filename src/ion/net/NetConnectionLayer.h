@@ -19,7 +19,7 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& control, NetExchange& exchange,
 								 ion::NetSocketReceiveData& recvFromStruct, ion::TimeMS timeRead);
 
-NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource& resource, const NetStartupParameters& startupParameters);
+void CreateSockets(ion::NetConnections& connections, NetControl& control, const NetStartupParameters& startupParameters);
 
 bool StartThreads(NetConnections& connections, NetReception& reception, NetControl& control, const NetStartupParameters& parameters);
 
@@ -27,7 +27,7 @@ void CancelThreads(NetConnections& connections);
 
 void StopThreads(NetConnections& connections);
 
-void Reset(ion::NetConnections& connections, NetInterfaceResource& memory);
+void Reset(ion::NetConnections& connections, NetControl& control);
 
 void ClearConnectionRequest(ion::NetConnections& connections, const ion::RequestedConnection& rcs);
 

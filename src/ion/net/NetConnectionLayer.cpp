@@ -1015,7 +1015,7 @@ void ClearConnectionRequest(ion::NetConnections& connections, const ion::Request
 	}
 }
 
-void Reset(ion::NetConnections& connections, NetInterfaceResource& memory)
+void Reset(ion::NetConnections& connections, NetControl& control)
 {
 	connections.mRequestedConnections.Access(
 	  [&](ion::RequestedConnections& rc)
@@ -1031,7 +1031,8 @@ void Reset(ion::NetConnections& connections, NetInterfaceResource& memory)
 	{
 		ion::ArenaPtr<NetSocket, ion::NetInterfaceResource> ptr(connections.mSocketList[i]);
 		SocketLayer::DeinitSocket(*ptr.Get());
-		ion::DeleteArenaPtr(&memory, ptr);
+		ion::DeleteArenaPtr(&control.mMemoryResource, ptr);
+		NetControlLayer::RunnerUnrequired(control);
 	}
 	connections.mSocketList.Clear();
 	for (unsigned int i = 0; i < NetMaximumNumberOfInternalIds; i++)
@@ -1040,7 +1041,7 @@ void Reset(ion::NetConnections& connections, NetInterfaceResource& memory)
 	}
 	connections.mFirstExternalID = NetUnassignedSocketAddress;
 }
-NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource& memoryResource, const NetStartupParameters& parameters)
+void CreateSockets(ion::NetConnections& connections, NetControl& control, const NetStartupParameters& parameters)
 {
 	ION_ASSERT(connections.mSocketList.Size() == 0, "Unbind sockets first");
 
@@ -1049,7 +1050,8 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 		ion::AutoLock socketListLock(connections.mSocketListMutex);
 		for (unsigned int i = 0; i < parameters.mNetSocketDescriptorCount; i++)
 		{
-			NetSocket* socket = ion::MakeArenaPtr<NetSocket>(&memoryResource, &memoryResource).Release();
+			NetControlLayer::RunnerRequired(control);
+			NetSocket* socket = ion::MakeArenaPtr<NetSocket>(&control.mMemoryResource, &control.mMemoryResource).Release();
 			SocketLayer::InitSocket(*socket);
 #if ION_NET_SIMULATOR
 			SocketLayer::ConfigureNetworkSimulator(*socket, connections.mDefaultNetworkSimulatorSettings);
@@ -1058,11 +1060,8 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 		}
 	}
 
-	// Bind sockets
-	NetBindResult bindResult = NetBindResult::Success;	
 	for (unsigned int i = 0; i < parameters.mNetSocketDescriptorCount; i++)
 	{
-		ION_NET_LOG_VERBOSE("Binding port " << parameters.mNetSocketDescriptors[i].port);
 		NetBindParameters bbp;
 		bbp.port = parameters.mNetSocketDescriptors[i].port;
 		memcpy(bbp.hostAddress, (char*)parameters.mNetSocketDescriptors[i].hostAddress, 32);
@@ -1076,10 +1075,7 @@ NetBindResult BindSockets(ion::NetConnections& connections, NetInterfaceResource
 
 		connections.mSocketList[i]->mBindParameters = bbp;
 		connections.mSocketList[i]->userConnectionSocketIndex = i;
-		ION_NET_ASSERT(bindResult == NetBindResult::Success);
 	}
-
-	return bindResult;
 }
 
 #if ION_NET_SIMULATOR

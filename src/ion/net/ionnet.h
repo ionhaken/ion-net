@@ -12,9 +12,10 @@ extern "C"
 	enum ion_net_code
 	{
 		/* API failure */
-		ION_NET_CODE_NOT_ACTIVE = -11,
+		ION_NET_CODE_NOT_ACTIVE = -12,
 
 		/* Connection attempt failure */
+		ION_NET_CODE_SOCKET_NOT_READY = -11,
 		ION_NET_CODE_CANNOT_RESOLVE_DOMAIN_NAME = -10,
 		ION_NET_CODE_NO_FREE_CONNECTIONS = -8,
 		ION_NET_CODE_INVALID_PARAMETER = -7,
@@ -22,8 +23,6 @@ extern "C"
 		/* Startup failure */
 		ION_NET_CODE_INVALID_SOCKET_DESCRIPTORS = -5,
 		ION_NET_CODE_INVALID_MAX_CONNECTIONS = -4,
-		ION_NET_CODE_SOCKET_FAILED_TO_BIND = -3,
-		ION_NET_CODE_SOCKET_FAILED_TEST_SEND = -2,
 		ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD = -1,
 
 		/* Generic Ok/Fail */
@@ -114,7 +113,7 @@ extern "C"
 
 	// Request to stop. Does non-blocking stopping of network threads and unbinding of sockets.
 	// After stop is complete, AsyncStopOk packet will be created.
-	// It's recommended to close remote connections and wait that connections have been closed calling stop.
+	// It's recommended to close remote connections and wait that connections have been closed before calling stop.
 	void ion_net_stop(ion_net_peer handle);
 
 	// Shuts down all network activities. First of all it will try to close all remote connections and will block

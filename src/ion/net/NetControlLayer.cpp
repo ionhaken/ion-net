@@ -61,6 +61,7 @@ public:
 	  : mUpdateThread(
 		  [&netInterface]
 		  {
+			  NetControlLayer::RunnerReady(netInterface.mControl);
 			  while (netInterface.mControl.mUpdater.mUpdateWorker->myThreadSynchronizer.IsActive())
 			  {
 				  if (netInterface.mControl.mIsReceiving)
@@ -71,6 +72,8 @@ public:
 				  ion_net_postupdate((ion_net_peer)&netInterface, (ion_job_scheduler) nullptr);
 				  netInterface.mControl.mUpdater.mUpdateWorker->myThreadSynchronizer.TryWaitFor(ion::NetUpdateInterval * 1000);
 			  }
+			  NetConnectionLayer::CancelThreads(netInterface.mConnections);
+			  NetControlLayer::RunnerExit(netInterface.mControl);
 		  })
 	{
 	}
@@ -100,6 +103,7 @@ void Init(NetInterface& net, const NetStartupParameters& pars)
 		net.mControl.mUpdater.mUpdateWorker =
 		  ion::MakeArenaPtr<detail::NetUpdateWorker, NetInterfaceResource>(&net.mControl.mMemoryResource, net);
 		net.mControl.mUpdateMode = NetPeerUpdateMode::Worker;  // Degrade mode to Worker mode when no scheduler available.
+		RunnerRequired(net.mControl);
 	}
 }
 
@@ -520,7 +524,10 @@ void CancelUpdating(NetControl& control)
 		ION_NET_LOG_VERBOSE("Canceling updating threads");
 		if (control.mUpdateMode == NetPeerUpdateMode::Job)
 		{
-			control.mUpdater.mUpdateJob->Cancel();
+			while(!control.mUpdater.mUpdateJob->Cancel())
+			{
+				Thread::SleepMs(1);
+			}
 		}
 		else if (control.mUpdateMode == NetPeerUpdateMode::Worker)
 		{
@@ -557,6 +564,7 @@ void Deinit(NetControl& control)
 	}
 	else if (control.mUpdateMode == NetPeerUpdateMode::Worker)
 	{
+		RunnerUnrequired(control);
 		if (control.mUpdater.mUpdateWorker)
 		{
 			ion::DeleteArenaPtr<detail::NetUpdateWorker, NetInterfaceResource>(&control.mMemoryResource, control.mUpdater.mUpdateWorker);
@@ -636,6 +644,49 @@ void DeallocateUserPacket(NetControl& control, NetPacket* packet)
 }
 
 void AddPacketToProducer(NetControl& control, ion::NetPacket* p) { control.mPacketReturnQueue.Enqueue(std::move(p)); }
+
+void SendSocketStatus(NetControl& control, NetMessageId id)
+{
+	if (NetPacket* packet = ion::NetControlLayer::AllocateUserPacket(control, sizeof(NetMessageId) + sizeof(int)))
+	{
+		packet->mLength = sizeof(NetMessageId) + sizeof(int);
+		packet->mSource = nullptr;
+		packet->mRemoteId = NetRemoteId();
+		packet->mGUID = NetGuidUnassigned;
+		{
+			ByteWriterUnsafe writer(packet->Data());
+			writer.Write(id);
+		}
+		control.mPacketReturnQueue.Enqueue(std::move((NetPacket*)packet));
+	}
+}
+
+void RunnerRequired(NetControl& control) { control.mNumTargetActiveThreads++; }
+
+void RunnerUnrequired(NetControl& control) { control.mNumTargetActiveThreads--; }
+
+void RunnerReady(NetControl& control)
+{
+	auto start = control.mNumActiveThreads++;
+	if (start + 1 == control.mNumTargetActiveThreads)
+	{
+		SendSocketStatus(control, NetMessageId::AsyncStartupOk);
+	}
+}
+
+void RunnerExit(NetControl& control)
+{
+	auto result = control.mNumActiveThreads--;
+	if (result == 1)
+	{
+		SendSocketStatus(control, NetMessageId::AsyncStopOk);
+	}
+}
+
+void RunnerFailed(NetControl& control)
+{
+	SendSocketStatus(control, NetMessageId::AsyncStartupFailed);
+}
 
 }  // namespace NetControlLayer
 }  // namespace ion

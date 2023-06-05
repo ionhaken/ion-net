@@ -30,8 +30,6 @@ enum class NetStartupResult : int
 {
 	InvalidSocketDescriptors = ION_NET_CODE_INVALID_SOCKET_DESCRIPTORS,
 	InvalidMaxConnections = ION_NET_CODE_INVALID_MAX_CONNECTIONS,
-	SocketFailedToBind = ION_NET_CODE_SOCKET_FAILED_TO_BIND,
-	SocketFailedTestSend = ION_NET_CODE_SOCKET_FAILED_TEST_SEND,
 	FailedToCreateNetworkThread = ION_NET_CODE_FAILED_TO_CREATE_NETWORK_THREAD,
 	Started = ION_NET_CODE_STARTED,
 	AlreadyStarted = ION_NET_CODE_ALREADY_STARTED,

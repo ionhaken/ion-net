@@ -111,42 +111,28 @@ void PrepareForBenchmark(uint32_t NumClients, ion::Vector<ion::UniquePtr<PeerIns
 #else
 		peerList.Back()->ApplyNetworkSimulator(gPacketLoss, gExtraPing, 0);
 		peerList.Back()->Startup(1, &sd, 1);
-
 #endif
 		peerList.Back()->SetMaximumIncomingConnections(1);
-		ion::NetConnectionAttemptResult cres = peerList.Back()->Connect("127.0.0.1", 60000, nullptr, 0);
-		REQUIRE(cres == ion::NetConnectionAttemptResult::Started);
-	}
-
-	for (int k = 0; k < 100; ++k)
-	{
-		for (size_t i = 0; i < NumClients; ++i)
-		{
-			peerList[i]->PreUpdate();
-			peerList[i]->PostUpdate();
-		}
-	}
-	for (size_t i = 0; i < NumClients; ++i)
-	{
-		if (peerList[i]->NumberOfConnections() != 1)
-		{
-			peerList[i]->PreUpdate();
-			peerList[i]->PostUpdate();
-		}
 	}
 
 	while (server->NumberOfConnections() != NumClients)
 	{
-		ion::Thread::Sleep(10 * 1000);
-		//ION_LOG_INFO("Server waiting " << NumClients - server->NumberOfConnections() << " clients");
 		for (size_t i = 0; i < NumClients; ++i)
 		{
 			peerList[i]->PreUpdate();
+			if (auto packet = peerList[i]->Receive())
+			{
+				if (packet->Data()[0] == ion::NetMessageId::AsyncStartupOk)
+				{
+					ion::NetConnectionAttemptResult cres = peerList[i]->Connect("127.0.0.1", 60000, nullptr, 0);
+					REQUIRE(cres == ion::NetConnectionAttemptResult::Started);
+				}
+				peerList[i]->DeallocatePacket(packet);
+			}
 			peerList[i]->PostUpdate();
 		}
+		ion::Thread::Sleep(10 * 1000);
 	}
-
-	ion::Thread::Sleep(16 * 1000);
 }
 
 struct Pars
@@ -390,7 +376,7 @@ TEST_CASE("mass_send", "[ideal]")
 		for (int i = 0; i < 20; ++i)
 		{
 			ion::StopClock c;
-			
+
 			test::RunBenchmark(
 			  {numBytesToSend, MaxClients, 1, 20, ion::NetPacketReliability::Reliable, packetPriority, peerList, server, 1, nullptr, true});
 			auto totalTime = c.GetMillis();
@@ -399,12 +385,13 @@ TEST_CASE("mass_send", "[ideal]")
 			server->GetStatistics(ion::NetUnassignedSocketAddress, stats);
 			size_t totalSize = (numBytesToSend * MaxClients);
 			ION_LOG_INFO("Server sending " << (numBytesToSend / 1024) << "KB to " << MaxClients << " clients in " << totalTime << " ms ("
-												   << ((numBytesToSend * MaxClients) / (1000 * 1000)) << " MB) MB - Calculated "
-												   << (float(totalSize) / (float(totalTime) / 1000.0)) / (1000 * 1000) << " MB/s"
-												   << " Metrics: RawSent:" << stats.RawBytesPerSecondSent() / (1000 * 1000) << " MB/s "
-												   << " RawSent:" << stats.RawBytesSent() / (1000 * 1000) << " MB"
-												   << " RawReceived:" << stats.RawBytesReceived() / (1000 * 1000) << " MB"
-												   << " RawResent:" << stats.RawBytesResent() / (1000 * 1000) << " MB");
+										   << ((numBytesToSend * MaxClients) / (1000 * 1000)) << " MB) MB - Calculated sent/sec: "
+										   << (float(totalSize) / (float(totalTime) / 1000.0)) / (1000 * 1000) << " MB/s"
+										   << " Metrics: Raw Sent/sec:" << stats.RawBytesPerSecondSent() / (1000 * 1000) << " MB/s "
+										   << " Raw Recv/sec:" << stats.RawBytesPerSecondReceived() / (1000 * 1000) << " MB/s "
+										   << " Total Raw Sent:" << stats.RawBytesSent() / (1000 * 1000) << " MB"
+										   << " Total Raw Recv:" << stats.RawBytesReceived() / (1000 * 1000) << " MB"
+										   << " Total Raw Resent:" << stats.RawBytesResent() / (1000 * 1000) << " MB");
 		}
 	}
 	ion::NetDeinit();
@@ -414,7 +401,6 @@ TEST_CASE("mass_send", "[ideal]")
 #if ION_BUILD_DEBUG || ION_NET_SIMULATOR
 TEST_CASE("no_packet_loss", "[actual]")
 {
-	//ion::UniquePtr<ion::JobScheduler> js = ion::MakeUnique<ion::JobScheduler>();
 	ion::NetInit();
 	{
 		test::gExtraPing = 20;

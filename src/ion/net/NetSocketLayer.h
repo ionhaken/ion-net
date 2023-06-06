@@ -71,7 +71,7 @@ inline bool CanDoBlockingSend([[maybe_unused]] NetSocket& socketLayer)
 #if ION_NET_SIMULATOR
 	return false;
 #else
-	return !socketLayer.mSendThreadEnabled;
+	return socketLayer.mSendThreadState != NetSocket::ThreadState::Active;
 #endif
 }
 

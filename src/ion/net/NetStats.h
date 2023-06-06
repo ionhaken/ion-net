@@ -48,6 +48,7 @@ public:
 	{
 		if (samples.IsEmpty()) 
 		{
+			mLastUpdate = now;
 			return;
 		}
 		UpdateInternal(now);
@@ -58,8 +59,11 @@ private:
 
 	void UpdateInternal(TimeMS now)
 	{
+		TimeMS calculatedMaxAge = Min(TimeMS(now - mLastUpdate) * 4, MaxAge);
+		mLastUpdate = now;
+
 		size_t totalRemoved = 0;
-		while (DeltaTime(now, samples.Front().time) > MaxAge)
+		while (DeltaTime(now, samples.Front().time) > calculatedMaxAge)
 		{
 			totalRemoved += samples.Front().value;
 			samples.PopFront();
@@ -71,9 +75,10 @@ private:
 			}
 		}
 		mTotalInPeriod -= totalRemoved;
-		mInterval = TimeSince(samples.Back().time, samples.Front().time);
+		mInterval = TimeSince(now, samples.Front().time);
 	}
 
+	std::atomic<TimeMS> mLastUpdate;
 	std::atomic<uint64_t> mTotal = 0;
 	std::atomic<uint64_t> mTotalInPeriod = 0;
 	std::atomic<TimeMS> mInterval = 0;

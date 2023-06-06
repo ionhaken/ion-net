@@ -362,9 +362,6 @@ bool RemoteSystemReceive(RemoteReceiveContext& context, ion::NetPacket* packet)
 		[[fallthrough]];
 	default:
 	{
-		// What do I do if I get a message from a system, before I am fully connected?
-		// I can either ignore it or give it to the user
-		// It seems like giving it to the user is a better option
 		if ((data[0] >= NetMessageId::UserPacket))
 		{
 			if (context.mRemote.mMode != NetMode::Disconnected)

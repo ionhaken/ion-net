@@ -24,7 +24,9 @@ template <typename T, size_t N>
 struct Vec
 {
 	static_assert(N >= 1, "Invalid Vec size");
-
+	
+	static constexpr size_t ElementCount = N;
+	
 	using type = T;
 
 	constexpr Vec() = default;
@@ -316,8 +318,10 @@ struct Vec
 
 	[[nodiscard]] constexpr const T& x() const { return mData[0]; }
 	[[nodiscard]] constexpr const T& y() const { return mData[1]; }
+	[[nodiscard]] constexpr const T& z() const { return mData[2]; }
 	[[nodiscard]] constexpr T& x() { return mData[0]; }
 	[[nodiscard]] constexpr T& y() { return mData[1]; }
+	[[nodiscard]] constexpr T& z() { return mData[2]; }
 
 	static size_t Size() { return N; }
 

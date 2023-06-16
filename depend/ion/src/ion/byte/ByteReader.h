@@ -112,6 +112,8 @@ public:
 	inline bool Process(T& t);
 
 	void SkipBytes(ByteSizeType s) { mBuffer += s; }
+
+	void Rewind() { mBuffer = mStart; }
 	
 	template <typename Callback>
 	size_t ReadDirectly(Callback&& callback)

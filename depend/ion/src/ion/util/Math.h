@@ -212,7 +212,14 @@ template <typename Float, typename Integer>
 template <typename Vec, typename LengthType = typename Vec::type>
 [[nodiscard]] constexpr LengthType LengthSqr(const Vec& vec)
 {
-	return vec.x() * vec.x() + vec.y() * vec.y();
+	if constexpr (Vec::ElementCount == 2)
+	{
+		return vec.x() * vec.x() + vec.y() * vec.y();
+	}
+	else if constexpr (Vec::ElementCount == 3)
+	{
+		return vec.x() * vec.x() + vec.y() * vec.y() + vec.z() * vec.z();
+	}
 }
 
 template <typename Vec, typename LengthType = typename Vec::type>
@@ -234,7 +241,14 @@ template <typename Vec>
 	typename Vec::type len = ion::Length(vec);
 	if (len > 0)
 	{
-		return Vec(vec.x() / len, vec.y() / len);
+		if constexpr (Vec::ElementCount == 2)
+		{
+			return Vec(vec.x() / len, vec.y() / len);
+		}
+		else 
+		{
+			return Vec(vec.x() / len, vec.y() / len, vec.z() / len);
+		}
 	}
 	else
 	{

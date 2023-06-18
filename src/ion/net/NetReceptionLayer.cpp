@@ -377,7 +377,7 @@ bool RemoteSystemReceive(RemoteReceiveContext& context, ion::NetPacket* packet)
 	}
 	}
 
-	context.mControl.mPacketReturnQueue.Enqueue(std::move(packet));
+	NetControlLayer::PushPacket(context.mControl, packet);
 	return true;
 }
 

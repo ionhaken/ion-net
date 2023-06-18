@@ -11,6 +11,7 @@ namespace ion
 class NetGenericPeer : public NetBasePeer
 {
 	ion::NetInterfaceResource mResource;
+	NetPacketReceivePlugin mReceptionPlugin;
 
 public:
 	NetGenericPeer();
@@ -29,14 +30,9 @@ public:
 
 	~NetGenericPeer();
 
-	inline ion::NetPacket* Receive()
-	{
-		ion::NetPacket* packet = nullptr;
-		mPeer->mControl.mPacketReturnQueue.Dequeue(packet);
-		return packet;
-	}
+	inline ion::NetPacket* Receive() { return mReceptionPlugin.Receive(); }
 
-	inline unsigned int GetReceiveBufferSize() { return static_cast<unsigned int>(mPeer->mControl.mPacketReturnQueue.Size()); }
+	inline unsigned int GetReceiveBufferSize() { return mReceptionPlugin.GetReceiveBufferSize(); }
 
 	class SocketListAccess
 	{

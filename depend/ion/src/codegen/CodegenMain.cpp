@@ -37,17 +37,20 @@ int main(int argc, char* argv[])
 		reader.Load(argv[1]);
 		if (reader.HasLoaded())
 		{
-			ION_LOG_INFO("Writing " << reader.GetNumComponents() << " components to " << argv[2]);
+			ion::String target = argv[2];
+			ION_LOG_INFO("Writing " << reader.GetNumComponents() << " components to " << target);
 
 			ion::StackString<1024> modelHeaderFileName;
-			modelHeaderFileName->Format("%s/ComponentModel.generated.h", argv[2]);
+			
+			modelHeaderFileName->Format("%s/ComponentModel.generated.h", target.CStr());
 
 			CodegenFile modelFile(modelHeaderFileName.CStr());
 			ion::codegen::ModelWriter modelTemplate(modelFile);
+
 			modelTemplate.GenerateHeader();
 
 			ion::StackString<1024> natvisFileName;
-			natvisFileName->Format("%s/ComponentModel.generated.natvis", argv[2]);
+			natvisFileName->Format("%s/ComponentModel.generated.natvis", target.CStr());
 
 			CodegenFile natvisFile(natvisFileName.CStr());
 			ion::codegen::NatvisWriter natvisWriter(natvisFile);

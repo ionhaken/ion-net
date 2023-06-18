@@ -25,6 +25,7 @@ namespace ion
 template <typename T, typename TAllocator = GlobalAllocator<T>>
 class Deque
 {
+	static_assert(std::is_same_v<typename TAllocator::value_type, T>, "Allocator value type must match container value type");
 	using DequeImpl = std::deque<T, TAllocator>;
 public:
 	using Iterator = typename DequeImpl::iterator;

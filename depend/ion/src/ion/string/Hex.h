@@ -39,24 +39,24 @@ struct HexArrayView : public ArrayView<T, uint32_t>
 namespace ion::serialization
 {
 template <>
-void Deserialize(ion::Hex<uint8_t>& dst, const char* src, void*);
+void Deserialize(ion::Hex<uint8_t>& dst, StringReader& reader);
 
 template <>
-void Deserialize(ion::Hex<uint32_t>& dst, const char* src, void*);
+void Deserialize(ion::Hex<uint32_t>& dst, StringReader& reader);
 
 template <>
-void Deserialize(ion::HexArrayView<uint8_t>& dst, const char* src, void*);
+void Deserialize(ion::HexArrayView<uint8_t>& dst, StringReader& reader);
 
 template <>
-ion::UInt Serialize(const ion::Hex<uint8_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*);
+ion::UInt Serialize(const ion::Hex<uint8_t>& src, StringWriter& writer);
 
 template <>
-ion::UInt Serialize(const ion::Hex<uint32_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*);
+ion::UInt Serialize(const ion::Hex<uint32_t>& src, StringWriter& writer);
 
 template <>
-ion::UInt Serialize(const ion::Hex<uint64_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*);
+ion::UInt Serialize(const ion::Hex<uint64_t>& src, StringWriter& writer);
 
 template <>
-ion::UInt Serialize(const ion::HexArrayView<const uint8_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*);
+ion::UInt Serialize(const ion::HexArrayView<const uint8_t>& src, StringWriter& writer);
 
 }  // namespace ion::serialization

@@ -31,9 +31,9 @@ void ConvertUnsignedCharFromStringBuffer(unsigned char& dst, const char* src)
 }
 
 template <>
-void Deserialize(unsigned short& dst, const char* src, void*)
+void Deserialize(unsigned short& dst, StringReader& reader)
 {
-	long unsigned value = strtoul(src, nullptr, 10);
+	long unsigned value = strtoul(reader.Data(), nullptr, 10);
 	dst = ion::SafeRangeCast<unsigned short>(value);
 }
 
@@ -128,9 +128,11 @@ ion::UInt ConvertDoubleToStringBuffer(char* buffer, size_t bufferLen, const doub
 	return ion::UInt(snprintf(buffer, bufferLen, "%f", data));
 }
 
-ion::UInt Serialize(const char* data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+ion::UInt Serialize(const char* data, StringWriter& writer)
 {
-	return ion::UInt(ion::StringCopy(buffer, ion::Min(bufferLen, ion::StringLen(data) + 1), data));
+	auto u = ion::UInt(ion::StringCopy(writer.Data(), ion::Min(writer.Available(), ion::StringLen(data) + 1), data));
+	writer.Skip(u);
+	return u;
 }
 
 

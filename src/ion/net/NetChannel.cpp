@@ -154,7 +154,6 @@ void NetChannel::Reset(NetControl& control, NetRemoteSystem& remote)
 	}
 	while (!mUnrealiableSndQueue.IsEmpty())
 	{
-		NetUpstreamSegment tmp;
 		ClearCommand(mUnrealiableSndQueue.Front(), control);
 		mUnrealiableSndQueue.PopFront();
 	}
@@ -658,10 +657,10 @@ bool NetChannel::Input(NetChannelReadContext& context, ion::NetSocketReceiveData
 	{
 		ION_NET_CHANNEL_LOG("Channel " << context.mChannel << " in: segment;cmd=" << context.mCmd << ";avail=" << context.mReader.Available());
 		ION_ASSERT(context.mReader.Available() > (int)NetSegmentHeaderUnrealiableSize + NetSegmentHeaderDataLengthSize - 1, "Invalid data");
-		uint32_t sn;
+		uint32_t sn = 0;
 		uint16_t len = 0;
-		uint8_t frg;
-		TimeMS ts;
+		uint8_t frg = 0;
+		TimeMS ts = 0;
 
 		if (context.mReader.Available() < NetSegmentHeaderSize + NetSegmentHeaderDataLengthSize - 1)
 		{

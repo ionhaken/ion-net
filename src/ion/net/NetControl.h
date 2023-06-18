@@ -22,10 +22,13 @@ using NetCommandPtr = ArenaPtr<NetCommand, NetInterfaceResource>;
 // #TODO: Replace with lock-free object pool
 using NetReceiveAllocator = ArenaAllocator<NetSocketReceiveData, NetInterfaceResource>;
 
+typedef void (*NetPacketPushFunction)(void*, ion::NetPacket*);
+typedef ion::NetPacket* (*NetPacketPopFunction)(void*);
+
 struct NetControl
 {
 	NetControl(NetInterfaceResource* pool)
-	  : mMemoryResource(*pool), mReceiveAllocator(pool), mPacketReturnQueue(pool), mBufferedCommands(pool)
+	  : mMemoryResource(*pool), mReceiveAllocator(pool), mBufferedCommands(pool)
 	{
 	}
 	~NetControl()
@@ -36,10 +39,10 @@ struct NetControl
 	}
 	NetInterfaceResource& mMemoryResource;
 	NetReceiveAllocator mReceiveAllocator;
-#if (ION_ASSERTS_ENABLED == 1)
-	std::atomic<uint64_t> mUserPacketCount = 0;
-#endif
-	MPSCQueueCounted<NetPacket*, NetInterfaceAllocator<NetPacket*>> mPacketReturnQueue;
+
+	Vector<std::pair<void*, NetPacketPushFunction>> mPacketPushPlugins;
+	Vector<std::pair<void*, NetPacketPopFunction>> mPacketPopPlugins;
+
 	MPSCQueue<NetCommandPtr, NetInterfaceAllocator<NetCommandPtr>> mBufferedCommands;
 	union Updater
 	{
@@ -57,5 +60,13 @@ struct NetControl
 	// Startup/Shutdown
 	std::atomic<int> mNumActiveThreads = 0;
 	int mNumTargetActiveThreads = 0;
+
+#if (ION_ASSERTS_ENABLED == 1)
+	std::atomic<uint64_t> mUserPacketCount = 0;
+#endif
 };
+
+
+
 }  // namespace ion
+

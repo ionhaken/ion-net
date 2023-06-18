@@ -20,57 +20,59 @@
 namespace ion::serialization
 {
 template <>
-inline void Deserialize(Vec2<Fixed32>& dst, const char* src, void*);
+inline void Deserialize(Vec2<Fixed32>& dst, StringReader& reader);
 
 template <>
-inline ion::UInt Serialize(const Vec2<Fixed32>& src, char* buffer, size_t bufferLen, const void*);
+inline ion::UInt Serialize(const Vec2<Fixed32>& src, StringWriter& writer);
 
 template <>
-inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, const char* src, void*);
+inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, StringReader& reader);
 
 template <>
-inline ion::UInt Serialize(const FixedPoint<std::int32_t, 14>& src, char* buffer, size_t bufferLen, const void*);
+inline ion::UInt Serialize(const FixedPoint<std::int32_t, 14>& src, StringWriter& writer);
 
 template <>
-inline bool Serialize(const FixedPoint<std::int32_t, 14>& in, const char* name, ion::JSONStructWriter& out, const void* ctx)
+inline bool Serialize(const FixedPoint<std::int32_t, 14>& in, const char* name, ion::JSONStructWriter& out)
 {
 	char buffer[10];
-	Serialize<Fixed32>(in, buffer, 10, ctx);
+	StringWriter writer(buffer, 10);
+	Serialize<Fixed32>(in, writer);
 	ion::StackString<256> str(buffer);
 	out.AddMember(name, str.CStr());
 	return true;
 }
 
 template <>
-inline bool Deserialize(FixedPoint<std::int32_t, 14>& out, const char* name, ion::JSONStructReader& in, void* ctx)
+inline bool Deserialize(FixedPoint<std::int32_t, 14>& out, const char* name, ion::JSONStructReader& in)
 {
 	auto stringView = in.GetString(name);
-	Deserialize<Fixed32>(out, stringView.CStr(), ctx);
+	StringReader reader(stringView.CStr(), stringView.Length());
+	Deserialize<Fixed32>(out, reader);
 	return true;
 }
 
 template <>
-inline bool Serialize(const Vec2<FixedPoint<std::int32_t, 14>>& in, const char* name, ion::JSONStructWriter& out, const void* ctx)
+inline bool Serialize(const Vec2<FixedPoint<std::int32_t, 14>>& in, const char* name, ion::JSONStructWriter& out)
 {
 	ion::JSONStructWriter pivot(out, name);
-	Serialize(in.x(), "x", pivot, ctx);
-	Serialize(in.y(), "y", pivot, ctx);
+	Serialize(in.x(), "x", pivot);
+	Serialize(in.y(), "y", pivot);
 	return true;
 }
 
 template <>
-inline bool Deserialize(Vec2<FixedPoint<std::int32_t, 14>>& out, const char* name, ion::JSONStructReader& in, void* ctx)
+inline bool Deserialize(Vec2<FixedPoint<std::int32_t, 14>>& out, const char* name, ion::JSONStructReader& in)
 {
 	ion::JSONStructReader pivot(in.Child(name));
-	Deserialize(out.x(), "x", pivot, ctx);
-	Deserialize(out.y(), "y", pivot, ctx);
+	Deserialize(out.x(), "x", pivot);
+	Deserialize(out.y(), "y", pivot);
 	return true;
 }
 
 template <>
-inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, const char* src, void*)
+inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, StringReader& reader)
 {
-	ion::String str(src);
+	ion::String str(reader.Data());
 	ion::SmallVector<ion::String, 2> list;
 	str.Tokenize(list, ".", false);
 	int32_t left;
@@ -94,7 +96,8 @@ inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, const char* src, void
 			}
 		}
 
-		ion::serialization::Deserialize(left, list[0].CStr(), nullptr);
+		StringReader reader0(list[0].CStr(), list[0].Length());
+		ion::serialization::Deserialize(left, reader0);
 		if (left < 0)
 		{
 			ION_ASSERT(isNegative, "Value was consider negative");
@@ -102,7 +105,8 @@ inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, const char* src, void
 		}
 
 		int multiplier = 10;
-		ion::serialization::Deserialize(right, list[1].CStr(), nullptr);
+		StringReader reader1(list[1].CStr(), list[1].Length());
+		ion::serialization::Deserialize(right, reader1);
 
 		while (right > multiplier)
 		{
@@ -134,37 +138,39 @@ inline void Deserialize(FixedPoint<std::int32_t, 14>& dst, const char* src, void
 	}
 	else
 	{
-		ion::serialization::Deserialize(left, src, nullptr);
+		ion::serialization::Deserialize(left, reader);
 		right = 1;
 	}
 	dst = ion::Fraction32(left, right);
 }
 
 template <>
-inline void Deserialize(Vec2<FixedPoint<std::int32_t, 14>>& dst, const char* src, void*)
+inline void Deserialize(Vec2<FixedPoint<std::int32_t, 14>>& dst, StringReader& reader)
 {
-	ion::String str(src);
+	ion::String str(reader.Data());
 	ion::SmallVector<ion::String, 2> list;
 	str.Tokenize(list);
 	if (list.Size() == 2)
 	{
-		ion::serialization::Deserialize(dst.x(), list[0].CStr(), nullptr);
-		ion::serialization::Deserialize(dst.y(), list[1].CStr(), nullptr);
+		StringReader reader0(list[0].CStr(), list[0].Length());
+		StringReader reader1(list[1].CStr(), list[1].Length());
+		ion::serialization::Deserialize(dst.x(), reader0);
+		ion::serialization::Deserialize(dst.y(), reader1);
 	}
 }
 
 template <>
-inline ion::UInt Serialize(const FixedPoint<std::int32_t, 14>& src, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const FixedPoint<std::int32_t, 14>& src, StringWriter& writer)
 {
 	float floatval = src.ConvertTo<float>();
-	return ion::serialization::Serialize(floatval, buffer, bufferLen, nullptr);
+	return ion::serialization::Serialize(floatval, writer);
 }
 
 template <>
-inline ion::UInt Serialize(const Vec2<FixedPoint<std::int32_t, 14>>& data, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const Vec2<FixedPoint<std::int32_t, 14>>& data, StringWriter& writer)
 {
 	ion::Vec2f floatvec{data.x().ConvertTo<float>(), data.y().ConvertTo<float>()};
-	return ion::serialization::Serialize(floatvec, buffer, bufferLen, nullptr);
+	return ion::serialization::Serialize(floatvec, writer);
 }
 
 }  // namespace ion::serialization

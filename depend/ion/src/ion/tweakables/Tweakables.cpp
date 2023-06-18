@@ -244,14 +244,16 @@ template <>
 void ConfigValue<ion::UInt>::Set(const char* value)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(mGuard);
-	serialization::Deserialize(mValue, value, nullptr);
+	StringReader reader(value, StringLen(value));
+	serialization::Deserialize(mValue, reader);
 }
 
 template <>
 void ConfigValue<uint64_t>::Set(const char* value)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(mGuard);
-	serialization::Deserialize(mValue, value, nullptr);
+	StringReader reader(value, StringLen(value));
+	serialization::Deserialize(mValue, reader);
 }
 
 template <>
@@ -259,7 +261,8 @@ void ConfigValue<ion::Int>::Set(const char* value)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(mGuard);
 	ion::Int tmp;
-	serialization::Deserialize(tmp, value, nullptr);
+	StringReader reader(value, StringLen(value));
+	serialization::Deserialize(tmp, reader);
 	mValue = ion::MinMax(mMin, tmp, mMax);
 }
 
@@ -268,7 +271,8 @@ void ConfigValue<float>::Set(const char* value)
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(mGuard);
 	float tmp;
-	serialization::Deserialize(tmp, value, nullptr);
+	StringReader reader(value, StringLen(value));
+	serialization::Deserialize(tmp, reader);
 	mValue = ion::MinMax(mMin, tmp, mMax);
 }
 

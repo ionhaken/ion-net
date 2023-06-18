@@ -73,7 +73,7 @@ void SerializationWriter::Generate(CodegenContext& c)
 	{
 		for (uint16_t index = 0; index < c.mSettings.mComponents.Size(); index++)
 		{
-			WriteLn("bool Serialize(const ion::Vector<%sId>& ids, const %s& store, %s& data, [[maybe_unused]] const void* context)",
+			WriteLn("bool Serialize(const ion::Vector<%sId>& ids, const %s& store, %s& data)",
 					c.mSettings.mComponents[index].mName.CStr(), c.mSettings.mSystemName.CStr(), c.mWriterName.CStr());
 			WriteLn("{");
 			AddIndent();
@@ -82,19 +82,20 @@ void SerializationWriter::Generate(CodegenContext& c)
 			WriteLn("{");
 			AddIndent();
 			WriteLn("%s arrElem(data);", c.mRowWriterName.CStr());
+			WriteLn("arrElem.mContext = data.mContext;");
 			WriteLn("Const%sComponent c(id, store);", c.mSettings.mComponents[index].mName.CStr());
 			priv::IterateFields(c,
 								[&](const ion::String& name, const ion::codegen::Data& data)
 								{
 									if (!data.IsTransient())
 									{
-										WriteLn("isOk &= serialization::Serialize<%s>(c.Get%s(), \"%s\", arrElem, context);",
+										WriteLn("isOk &= serialization::Serialize<%s>(c.Get%s(), \"%s\", arrElem);",
 												data.GetType(0).CStr(),
 												// data.HasNonConstGetter() ? "" : "Get",
 												data.GetName().CStr(), name.CStr());
 									}
 								});
-			WriteLn("serialization::SerializeFinal(id, store, arrElem, context);");
+			WriteLn("serialization::SerializeFinal(id, store, arrElem);");
 			RemoveIndent();
 			WriteLn("});");
 			WriteLn("return isOk;");
@@ -109,7 +110,7 @@ void SerializationWriter::Generate(CodegenContext& c)
 	{
 		for (uint16_t index = 0; index < c.mSettings.mComponents.Size(); index++)
 		{
-			WriteLn("bool Deserialize(ion::Vector<%sId>& ids, %s& store, const %s& data, [[maybe_unused]] void* context)",
+			WriteLn("bool Deserialize(ion::Vector<%sId>& ids, %s& store, const %s& data)",
 					c.mSettings.mComponents[index].mName.CStr(), c.mSettings.mSystemName.CStr(), c.mReaderName.CStr());
 			WriteLn("{");
 			AddIndent();
@@ -125,6 +126,7 @@ void SerializationWriter::Generate(CodegenContext& c)
 			WriteLn("{");
 			AddIndent();
 			WriteLn("%s arrElem(data, index);", c.mRowReaderName.CStr());
+			WriteLn("arrElem.mContext = data.mContext;");
 
 			priv::IterateFields(c,
 								[&](const ion::String& name, const ion::codegen::Data& data)
@@ -132,13 +134,13 @@ void SerializationWriter::Generate(CodegenContext& c)
 									WriteLn("%s a%s%s;", data.GetType(0).CStr(), data.GetName().CStr(), data.IsTransient() ? "{}" : "");
 									if (!data.IsTransient())
 									{
-										WriteLn("isOk &= serialization::Deserialize<%s>(a%s, \"%s\", arrElem, context);",
+										WriteLn("isOk &= serialization::Deserialize<%s>(a%s, \"%s\", arrElem);",
 												data.GetType(0).CStr(), data.GetName().CStr(), name.CStr());
 									}
 								});
 			auto buffer = c.mSettings.GetCreateParams(CreateMethodSignature::Public, CreateMethodType::Construct, true);
 			WriteLn("auto id = store.Create(%s);", buffer.CStr());
-			WriteLn("serialization::DeserializeFinal(id, store, arrElem, context);");
+			WriteLn("serialization::DeserializeFinal(id, store, arrElem);");
 			WriteLn("return id;");
 			RemoveIndent();
 			WriteLn("});");

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ion/Types.h>
-
 #include <ion/byte/ByteSerialization.h>
 
 namespace ion
@@ -87,25 +86,18 @@ enum NetMessageId : byte
 namespace serialization
 {
 
-template <typename Type, typename WriterType>
-void Serialize(const Type& src, WriterType& writer);
-
 template <>
 inline void Serialize(const NetMessageId& id, ion::ByteWriter& writer)
 {
 	return writer.Write(id);
 }
 
-template <typename Type>
-bool Deserialize(Type& dst, ion::ByteReader& reader, void*);
-
 template <>
-inline bool Deserialize(NetMessageId& id, ion::ByteReader& reader, void*)
+inline bool Deserialize(NetMessageId& id, ion::ByteReader& reader)
 {
 	return reader.Read(id);
 }
 
 }  // namespace serialization
-
 
 }  // namespace ion

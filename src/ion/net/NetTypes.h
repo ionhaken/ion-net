@@ -78,7 +78,8 @@ struct ION_EXPORT NetAddressOrRemoteRef
 	{
 		if (mRemoteId.IsValid())
 		{
-			serialization::Serialize(mRemoteId.UInt32(), dest, bufferLen, nullptr);
+			StringWriter writer(dest, bufferLen);
+			serialization::Serialize(mRemoteId.UInt32(), writer);
 		}
 		else
 		{

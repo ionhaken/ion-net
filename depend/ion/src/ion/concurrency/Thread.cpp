@@ -152,6 +152,8 @@ bool isInitialized = false;
 
 bool ion::Thread::IsReady() { return isInitialized; }
 
+bool ion::Thread::IsThreadInitialized() { return IsReady() && mTLS.mId != ~static_cast<UInt>(0); }
+
 namespace ion
 {
 void InitThreadIdPool()
@@ -202,7 +204,7 @@ void ion::Thread::OnEngineRestart()
 void ion::Thread::Init(ion::Thread::QueueIndex index, ion::Thread::Priority priority)
 {
 #if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
-	ION_ASSERT_FMT_IMMEDIATE(!isInitialized || mTLS.mId == ~static_cast<UInt>(0), "Thread already initialized");
+	ION_ASSERT_FMT_IMMEDIATE(!IsThreadInitialized(), "Thread already initialized");
 #endif
 	InitThreadIdPool();
 #if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \

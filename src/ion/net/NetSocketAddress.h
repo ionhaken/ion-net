@@ -93,12 +93,13 @@ inline size_t Hasher<ion::NetSocketAddress>::operator()(const ion::NetSocketAddr
 namespace ion::serialization
 {
 template <>
-ion::UInt Serialize(const NetSocketAddress& data, char* buffer, size_t bufferLen, const void*);
+ion::UInt Serialize(const NetSocketAddress& data, ion::StringWriter& writer);
 
 template <>
 void Serialize(const NetSocketAddress& src, ion::ByteWriter& writer);
 
+
 template <>
-bool Deserialize(NetSocketAddress& dst, ion::ByteReader& reader, void*);
+bool Deserialize(NetSocketAddress& dst, ion::ByteReader& Reader);
 
 }  // namespace ion::serialization

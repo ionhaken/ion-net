@@ -19,6 +19,7 @@
 #include <ion/tracing/Log.h>
 #include <ion/util/SafeRangeCast.h>
 #include <ion/string/StringUtil.h>
+#include <ion/string/StringWriter.h>
 
 namespace ion
 {
@@ -45,10 +46,11 @@ private:
 namespace serialization
 {
 template <>
-inline ion::UInt Serialize(const StringView& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const StringView& data, StringWriter& writer)
 {
-	ION_ASSERT_FMT_IMMEDIATE(bufferLen > data.Length(), "Out of buffer");
-	memcpy(buffer, data.CStr(), data.Length());
+	ION_ASSERT_FMT_IMMEDIATE(writer.Available() > data.Length(), "Out of buffer");
+	memcpy(writer.Data(), data.CStr(), data.Length());
+	writer.Skip(data.Length());
 	return ion::SafeRangeCast<ion::UInt>(data.Length());
 }
 

@@ -72,7 +72,8 @@ public:
 		Sample(const SystemTimePoint& t, uint32_t tag, Event eventType, uint32_t eventId, const Detail& detail)
 		  : mTimePoint(t), id(eventId), cat(ion::SafeRangeCast<Category>(tag)), type(eventType)
 		{
-			serialization::Serialize(detail, mDetailedInfo, 12, nullptr);
+			StringWriter writer(mDetailedInfo, 12);
+			serialization::Serialize(detail, writer);
 		}
 
 		SystemTimePoint mTimePoint;

@@ -40,7 +40,7 @@ void ResetChannelTuner(NetTransport& transport, ion::TimeMS now, uint8_t newPrio
 	transport.mChannelTuner.mState = NetTransport::ChannelTuner::State::ScalingUpFast;
 }
 
-bool ReconfigureUpstreamChannel(NetTransport& transport, NetChannel& channel, float windowSizeMod)
+bool ReconfigureUpstreamChannel(NetChannel& channel, float windowSizeMod)
 {
 	// Now many packets to send until ACK
 	uint32_t snd_wnd = channel.mState.snd_wnd;
@@ -72,7 +72,7 @@ bool ReconfigureUpstreamChannel(NetTransport& transport, NetChannel& channel, fl
 	return false;
 }
 
-void ReconfigureDownstreamChannel(NetTransport& transport, NetChannel& channel)
+void ReconfigureDownstreamChannel(NetChannel& channel)
 {
 	// How many packets to buffer.
 	uint32_t maxMemoryReserved = 128 * 1024 * 1024;
@@ -81,7 +81,7 @@ void ReconfigureDownstreamChannel(NetTransport& transport, NetChannel& channel)
 	channel.RcvWndSize(rcv_wnd);
 }
 
-NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& control, NetRemoteSystem& remote)
+NetPacket* Receive(NetChannel& channel, NetControl& control, NetRemoteSystem& remote)
 {
 	for (;;)
 	{
@@ -136,7 +136,7 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 							channel.mState.mBigDataBuffer.mBuffer = buffer;
 							channel.mState.mBigDataBuffer.mTotalReceived = 0;
 							channel.mState.mIsBigDataActive = true;
-							ReconfigureDownstreamChannel(transport, channel);
+							ReconfigureDownstreamChannel(channel);
 						}
 						else
 						{
@@ -174,7 +174,7 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 					auto* packet = buffer.mBuffer;
 					buffer.mBuffer = nullptr;
 					channel.mState.mIsBigDataActive = false;
-					ReconfigureDownstreamChannel(transport, channel);
+					ReconfigureDownstreamChannel(channel);
 					return packet;
 				}
 			}
@@ -184,7 +184,7 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 				NetControlLayer::DeallocateUserPacket(control, buffer.mBuffer);
 				buffer.mBuffer = nullptr;
 				channel.mState.mIsBigDataActive = false;
-				ReconfigureDownstreamChannel(transport, channel);
+				ReconfigureDownstreamChannel(channel);
 			}
 		}
 	}
@@ -193,21 +193,21 @@ NetPacket* Receive(NetTransport& transport, NetChannel& channel, NetControl& con
 }
 
 
-NetChannel* EnsureChannel(NetTransport& transport, uint32_t channel, NetRemoteSystem& remote, ion::TimeMS now)
+NetChannel* EnsureChannel(NetTransport& transport, uint32_t channelId32, NetRemoteSystem& remote, ion::TimeMS now)
 {
-	uint8_t channelId = static_cast<uint8_t>(channel);
+	uint8_t channelId = static_cast<uint8_t>(channelId32);
 	uint8_t channelIdx = transport.mIdToChannel[channelId];
 	if (channelIdx == 0xFF)
 	{
 		channelIdx = uint8_t(transport.mOrderedChannels.Size());
-		transport.mOrderedChannels.Add(std::move(NetChannel(channelId, now, remote.PayloadSize())));
+		transport.mOrderedChannels.Add(NetChannel(channelId, now, remote.PayloadSize()));
 		auto* channel = &transport.mOrderedChannels.Back();
 
 		ION_ASSERT(channelIdx < NetNumberOfChannels, "Invalid channel index");
 		transport.mIdToChannel[channelId] = channelIdx;
 
-		ReconfigureUpstreamChannel(transport, *channel, 0);
-		ReconfigureDownstreamChannel(transport, *channel);
+		ReconfigureUpstreamChannel(*channel, 0);
+		ReconfigureDownstreamChannel(*channel);
 		return channel;
 	}
 	return &transport.mOrderedChannels[channelIdx];
@@ -370,7 +370,7 @@ bool Input(NetTransport& transport, NetControl& control, NetRemoteSystem& remote
 		NetChannel* stream = EnsureChannel(transport, context.mChannel, remote, now);
 		if (stream->Input(context, recvFromStruct, transport.mChannelTuner.mPeriodTotalBytesAcked, transport.mRcvQueue))
 		{
-			while (NetPacket* nextPacket = Receive(transport, *stream, control, remote))
+			while (NetPacket* nextPacket = Receive(*stream, control, remote))
 			{
 				ION_ASSERT(nextPacket->mAddress.IsValid(), "Address not set"); // Don't compare to remote.mAddress - can change during rerouting
 				nextPacket->mGUID = remote.guid;
@@ -501,7 +501,7 @@ void UpdateChannelTuner(NetTransport& transport, NetRemoteSystem& remoteSystem, 
 			}
 			else
 			{
-				if (ReconfigureUpstreamChannel(transport, channel, 2.0))
+				if (ReconfigureUpstreamChannel(channel, 2.0))
 				{
 					transport.mChannelTuner.mGoodWindowSize = channel.mState.snd_wnd / 2;
 					ION_NET_CHANNEL_TUNER_LOG("ChannelTuner: Fastscaling: cwnd=" << channel.mState.cwnd

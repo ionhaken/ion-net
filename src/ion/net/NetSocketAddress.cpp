@@ -135,7 +135,8 @@ bool SetBinaryAddress(NetSocketAddress& address, const char* str, char portDelin
 			if (str[9])
 			{
 				unsigned short port;
-				ion::serialization::Deserialize(port, str + 9, nullptr);
+				StringReader reader(str + 9, 8);
+				ion::serialization::Deserialize(port, reader);
 				address.SetPortHostOrder(port);
 			}
 			return true;
@@ -189,7 +190,8 @@ bool SetBinaryAddress(NetSocketAddress& address, const char* str, char portDelin
 		if (portPart[0])
 		{
 			unsigned short port;
-			ion::serialization::Deserialize(port, portPart, nullptr);
+			StringReader reader(portPart, 32);
+			ion::serialization::Deserialize(port, reader);
 			address.addr4.sin_port = htons(port);
 		}
 	}
@@ -319,7 +321,8 @@ bool FromString(NetSocketAddress& address, const char* str, char portDelineator 
 	if (portPart[0])
 	{
 		unsigned short port;
-		ion::serialization::Deserialize(port, portPart, nullptr);
+		StringReader reader(portPart, 32);
+		ion::serialization::Deserialize(port, reader);
 		address.addr4.sin_port = htons(port);
 	}
 	else
@@ -455,7 +458,8 @@ void NetSocketAddress::ToString(char* dest, size_t bufferLen, bool writePort, ch
 		ch[0] = portDelineator;
 		ch[1] = 0;
 		StringConcatenate(dest, bufferLen, (const char*)ch);
-		ion::serialization::Serialize(ntohs(addr4.sin_port), dest + ion::StringLen(dest), 8, nullptr);
+		StringWriter writer(dest + ion::StringLen(dest), 8);
+		ion::serialization::Serialize(ntohs(addr4.sin_port), writer);
 	}
 }
 NetSocketAddress& NetSocketAddress::operator=(const NetSocketAddress& other)
@@ -529,11 +533,13 @@ bool NetSocketAddress::IsLoopback() const
 namespace ion::serialization
 {
 template <>
-ion::UInt Serialize(const NetSocketAddress& data, char* buffer, size_t bufferLen, const void*)
+ion::UInt Serialize(const NetSocketAddress& data, ion::StringWriter& writer)
 {
-	ION_ASSERT(bufferLen > INET6_ADDRSTRLEN + 5 + 1, "Out of buffer");
-	data.ToString(buffer, bufferLen);
-	return ion::UInt(ion::StringLen(buffer));
+	ION_ASSERT(writer.Available() > INET6_ADDRSTRLEN + 5 + 1, "Out of buffer");
+	data.ToString(writer.Data(), writer.Available());
+	auto u = ion::UInt(ion::StringLen(writer.Data()));
+	writer.Skip(u);
+	return u;
 }
 template <>
 void Serialize(const NetSocketAddress& src, ion::ByteWriter& writer)
@@ -545,19 +551,19 @@ void Serialize(const NetSocketAddress& src, ion::ByteWriter& writer)
 		writer.Write(src.addr6.sin6_flowinfo);
 		writer.Write(src.addr6.sin6_addr);
 		writer.Write(src.addr6.sin6_scope_id);
-		writer.Write(src.GetPortNetworkOrder());
+		writer.Write(src.addr6.sin6_port);
 	}
 	else
 #endif
 	  if (src.GetIPVersion() == 4)
 	{
 		writer.Write(src.addr4.sin_addr.s_addr);
-		writer.Write(src.GetPortNetworkOrder());
+		writer.Write(src.addr4.sin_port);
 	}
 }
 
 template <>
-bool Deserialize(NetSocketAddress& dst, ion::ByteReader& reader, void*)
+bool Deserialize(NetSocketAddress& dst, ion::ByteReader& reader)
 {
 	bool isValid = true;
 	unsigned char ipVersion = 0;

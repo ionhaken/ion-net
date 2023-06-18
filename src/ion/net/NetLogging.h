@@ -27,15 +27,15 @@
 	}
 
 #if ION_NET_FEATURE_SECURITY && ION_NET_FEATURE_SECURITY_AUDIT
-	#define ION_NET_SECURITY_AUDIT_PRINTF(__msg, ...) ION_LOG_INFO_FMT(__msg, __VA_ARGS__)
+	#define ION_NET_LOG_SECURITY_AUDIT(__msg, ...) ION_NET_LOG_INFO(__msg, __VA_ARGS__)
 #elif ION_BUILD_DEBUG
-	#define ION_NET_SECURITY_AUDIT_PRINTF(__msg, ...) \
+	#define ION_NET_LOG_SECURITY_AUDIT(__msg, ...) \
 		if (ion::NetManager::mLoggingLevel > 3)       \
 		{                                             \
-			ION_LOG_INFO_FMT(__msg, __VA_ARGS__)      \
+			ION_NET_LOG_INFO(__msg, __VA_ARGS__);     \
 		}
 #else
-	#define ION_NET_SECURITY_AUDIT_PRINTF(__msg, ...)
+	#define ION_NET_LOG_SECURITY_AUDIT(__msg, ...)
 #endif
 
 #if ION_BUILD_DEBUG

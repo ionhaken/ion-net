@@ -29,7 +29,8 @@ inline void Handler(Logger& logger, const T& value)
 	if (logger.Available() >= 127)
 	{
 		auto pos = &logger.mWriteBuffer[sizeof(LogMessageHeader) + logger.mNumWritten];
-		logger.mNumWritten += serialization::Serialize(value, pos, 127, nullptr);
+		StringWriter writer(pos, 127);
+		logger.mNumWritten += serialization::Serialize(value, writer);
 	}
 }
 }  // namespace ion::tracing

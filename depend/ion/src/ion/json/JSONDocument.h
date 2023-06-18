@@ -95,6 +95,8 @@ public:
 		}
 	}
 
+	void* mContext = nullptr;
+
 protected:
 	template <typename T>
 	const rapidjson::GenericValue<rapidjson::UTF8<>>* GetList(const T& obj, const char* name) const

@@ -248,7 +248,7 @@ void CloseConnectionInternal(NetControl& control, NetExchange& exchange, const N
 							 const NetAddressOrRemoteRef& systemIdentifier, bool sendDisconnectionNotification, bool performImmediate,
 							 unsigned char orderingChannel, NetPacketPriority disconnectionNotificationPriority)
 {
-	ION_ASSERT(orderingChannel < 32, "invalid channel");
+	ION_ASSERT(orderingChannel < NetNumberOfChannels, "invalid channel");
 
 	NetRemoteId remoteId;
 	if (systemIdentifier.mRemoteId.IsValid())
@@ -379,6 +379,7 @@ void SendBuffered(NetControl& control, const char* data, size_t numberOfBytesToS
 
 void SendBuffered(NetControl& control, NetCommandPtr&& cmd)
 {
+	ION_ASSERT(cmd->mChannel < NetNumberOfChannels, "Invalid channel");
 	bool isImmediate = NetChannelPriorityConfigs[int(cmd->mPriority)].workInterval == 0;
 	control.mBufferedCommands.Enqueue(std::move(cmd));
 	if (isImmediate)
@@ -459,7 +460,7 @@ void SendLoopback(NetControl& control, const NetConnections& connections, const 
 	packet->mAddress = ion::NetConnectionLayer::GetLoopbackAddress(connections);
 	packet->mGUID = exchange.mGuid;
 	packet->mRemoteId = NetRemoteId();
-	control.mPacketReturnQueue.Enqueue(std::move(packet));
+	PushPacket(control, (NetPacket*)packet);
 }
 
 bool StartUpdating(NetControl& control, NetReception& reception, ion::Thread::Priority priority)
@@ -643,8 +644,6 @@ void DeallocateUserPacket(NetControl& control, NetPacket* packet)
 	}
 }
 
-void AddPacketToProducer(NetControl& control, ion::NetPacket* p) { control.mPacketReturnQueue.Enqueue(std::move(p)); }
-
 void SendSocketStatus(NetControl& control, NetMessageId id)
 {
 	if (NetPacket* packet = ion::NetControlLayer::AllocateUserPacket(control, sizeof(NetMessageId) + sizeof(int)))
@@ -657,7 +656,7 @@ void SendSocketStatus(NetControl& control, NetMessageId id)
 			ByteWriterUnsafe writer(packet->Data());
 			writer.Write(id);
 		}
-		control.mPacketReturnQueue.Enqueue(std::move((NetPacket*)packet));
+		PushPacket(control, packet);
 	}
 }
 
@@ -686,6 +685,25 @@ void RunnerExit(NetControl& control)
 void RunnerFailed(NetControl& control)
 {
 	SendSocketStatus(control, NetMessageId::AsyncStartupFailed);
+}
+
+void PushPacket(NetControl& control, NetPacket* packet)
+{
+	for (size_t i = 0; i < control.mPacketPushPlugins.Size(); ++i)
+	{
+		control.mPacketPushPlugins[i].second(control.mPacketPushPlugins[i].first, packet);
+	}
+}
+
+void FlushPackets(NetControl& control)
+{
+	for (size_t i = 0; i < control.mPacketPopPlugins.Size(); ++i)
+	{
+		while (NetPacket* packet = control.mPacketPopPlugins[i].second(control.mPacketPopPlugins[i].first))
+		{
+			DeallocateUserPacket(control, packet);
+		}
+	}
 }
 
 }  // namespace NetControlLayer

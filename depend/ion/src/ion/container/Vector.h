@@ -38,7 +38,7 @@ template <typename TValue, typename TAllocator = GlobalAllocator<TValue>, typena
 		  size_t TinyBufferSize = 0>
 class Vector
 {
-	static_assert(std::is_same_v<TAllocator::value_type, TValue>, "Allocator value type must match container value type");
+	static_assert(std::is_same_v<typename TAllocator::value_type, TValue>, "Allocator value type must match container value type");
 
 	using Native = ion::ArenaVector<TValue, SmallBufferSize, CountType, TinyBufferSize>;
 

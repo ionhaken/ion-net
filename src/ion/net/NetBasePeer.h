@@ -128,7 +128,7 @@ public:
 
 	inline bool Ping(ion::NetConnectTarget& target, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex = 0)
 	{
-		ion_net_ping((ion_net_peer)mPeer.Get(), (ion_net_connect_target)&target, onlyReplyOnAcceptingConnections, connectionSocketIndex);
+		return ion_net_ping((ion_net_peer)mPeer.Get(), (ion_net_connect_target)&target, onlyReplyOnAcceptingConnections, connectionSocketIndex);
 	}
 
 	bool Ping(const char* host, unsigned short remotePort, bool onlyReplyOnAcceptingConnections, unsigned connectionSocketIndex = 0);
@@ -382,8 +382,8 @@ public:
 		return out;
 	}
 
-	inline int Send(const char* data, const int length, NetPacketPriority priority, NetPacketReliability reliability, char orderingChannel,
-					const NetAddressOrRemoteRef& remoteRef = NetRemoteId(), bool broadcast = false)
+	inline int Send(const char* data, const int length, NetPacketPriority priority, NetPacketReliability reliability,
+					uint8_t orderingChannel, const NetAddressOrRemoteRef& remoteRef = NetRemoteId(), bool broadcast = false)
 	{
 		return ion_net_send((ion_net_peer)mPeer.Get(), data, length, (uint8_t)priority, (uint8_t)reliability, orderingChannel,
 							(ion_net_remote_ref)&remoteRef, broadcast);
@@ -419,14 +419,14 @@ public:
 
 	void SetOccasionalPing(TimeMS time) { ion_net_set_occasional_ping((ion_net_peer)mPeer.Get(), time); }
 
-	void SetTimeoutTime(ion::TimeMS timeMS, const NetSocketAddress& target)
+	void SetTimeoutTime(ion::TimeMS timeMS, const NetAddressOrRemoteRef& remoteRef)
 	{
-		ion_net_set_timeout_time((ion_net_peer)mPeer.Get(), timeMS, (ion_net_socket_address)&target);
+		ion_net_set_timeout_time((ion_net_peer)mPeer.Get(), timeMS, (ion_net_remote_ref)&remoteRef);
 	}
 
-	ion::TimeMS GetTimeoutTime(const NetSocketAddress& target)
+	ion::TimeMS GetTimeoutTime(const NetAddressOrRemoteRef& remoteRef)
 	{
-		return ion_net_timeout_time((ion_net_peer)mPeer.Get(), (ion_net_socket_address)&target);		
+		return ion_net_timeout_time((ion_net_peer)mPeer.Get(), (ion_net_remote_ref)&remoteRef);		
 	}
 
 	bool GetStatistics(const NetSocketAddress& address, NetStats& rns)
@@ -444,8 +444,14 @@ public:
 		return NetExchangeLayer::GetStatisticsList(mPeer->mExchange, mPeer->mControl.mMemoryResource, addresses, guids, statistics);
 	}*/
 
+	template <typename T>
+	void RegisterPlugin(T& plugin)
+	{
+		T::Register(&plugin, *mPeer.Get());
+	}
 
-protected:
+
+ protected:
 	void Init(ion::NetInterfaceResource& resource);
 	void Deinit(unsigned int blockingTime = 0);
 

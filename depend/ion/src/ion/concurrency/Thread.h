@@ -130,6 +130,8 @@ inline ion::temporary::BytePool& GetTemporaryPool() { return mTLS.mTemporaryMemo
 
 bool IsReady();
 
+bool IsThreadInitialized();
+
 // TODO: Move to private
 inline void SetCurrentJob([[maybe_unused]] BaseJob* const job)
 {

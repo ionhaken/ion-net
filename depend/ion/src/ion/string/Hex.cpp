@@ -62,29 +62,30 @@ constexpr uint8_t HexToDec(char number) { return gHex2Dec[number]; }
 }  // namespace
 
 template <>
-void Deserialize(ion::Hex<uint8_t>& dst, const char* src, void*)
+void Deserialize(ion::Hex<uint8_t>& dst, StringReader& reader)
 {
-	dst.data = (16 * HexToDec(src[0])) + (HexToDec(src[1]));
+	dst.data = (16 * HexToDec(reader.Data()[0])) + (HexToDec(reader.Data()[1]));
 }
 
 template <>
-void Deserialize(ion::Hex<uint32_t>& dst, const char* src, void*)
+void Deserialize(ion::Hex<uint32_t>& dst, StringReader& reader)
 {
 	dst.data = 0;
 	for (size_t i = 0; i < 8; i++)
 	{
-		dst.data += ion::SafeRangeCast<uint32_t>(size_t(std::pow(16, 7 - i)) * size_t(HexToDec(src[i])));
+		dst.data += ion::SafeRangeCast<uint32_t>(size_t(std::pow(16, 7 - i)) * size_t(HexToDec(reader.Data()[i])));
 	}
 }
 
 template <>
-void Deserialize(ion::HexArrayView<uint8_t>& dst, const char* src, void*)
+void Deserialize(ion::HexArrayView<uint8_t>& dst, StringReader& reader)
 {
+	const char* src = reader.Data();
 	auto iter = dst.Begin();
 	while (iter != dst.End())
 	{
 		char buffer[2];
-		if (*src == 0)
+		if (*reader.Data() == 0)
 		{
 			break;
 		}
@@ -97,46 +98,52 @@ void Deserialize(ion::HexArrayView<uint8_t>& dst, const char* src, void*)
 		buffer[1] = *src;
 		src++;
 		ion::Hex<uint8_t> v(0);
-		ion::serialization::Deserialize(v, buffer, nullptr);
+
+		StringReader bufferReader(buffer, 2);
+		ion::serialization::Deserialize(v, bufferReader);
 		*iter = v.data;
 		iter++;
 	}
 }
 
 template <>
-ion::UInt Serialize(const ion::Hex<uint8_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+ion::UInt Serialize(const ion::Hex<uint8_t>& src, StringWriter& writer)
 {
-	[[maybe_unused]] int len = snprintf(buffer, bufferLen, "%02X", src.data);
-	ION_ASSERT(len <= int(bufferLen), "Out of buffer");
+	[[maybe_unused]] int len = snprintf(writer.Data(), writer.Available(), "%02X", src.data);
+	ION_ASSERT(len <= int(writer.Available()), "Out of buffer");
+	writer.Skip(2);
 	return 2;
 }
 
 template <>
-ion::UInt Serialize(const ion::Hex<uint32_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+ion::UInt Serialize(const ion::Hex<uint32_t>& src, StringWriter& writer)
 {
-	[[maybe_unused]] int len = snprintf(buffer, bufferLen, "%08X", src.data);
-	ION_ASSERT(len <= int(bufferLen), "Out of buffer");
+	[[maybe_unused]] int len = snprintf(writer.Data(), writer.Available(), "%08X", src.data);
+	ION_ASSERT(len <= int(writer.Available()), "Out of buffer");
+	writer.Skip(8);
 	return 8;
 }
 
 template <>
-ion::UInt Serialize(const ion::Hex<uint64_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+ion::UInt Serialize(const ion::Hex<uint64_t>& src, StringWriter& writer)
 {
-	[[maybe_unused]] int len = snprintf(buffer, bufferLen, "%016" PRIx64, src.data);
-	ION_ASSERT(len <= int(bufferLen), "Out of buffer");
+	[[maybe_unused]] int len = snprintf(writer.Data(), writer.Available(), "%016" PRIx64, src.data);
+	ION_ASSERT(len <= int(writer.Available()), "Out of buffer");
+	writer.Skip(16);
 	return 16;
 }
 
 template <>
-ion::UInt Serialize(const ion::HexArrayView<const uint8_t>& src, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+ion::UInt Serialize(const ion::HexArrayView<const uint8_t>& src, StringWriter& writer)
 {
 	ion::UInt bufferPos = 0;
 	for (auto iter = src.Begin(); iter != src.End(); ++iter)
 	{
 		ion::Hex<uint8_t> val(*iter);
-		bufferPos += ion::serialization::Serialize(val, &buffer[bufferPos], bufferLen - bufferPos, nullptr);
+		StringWriter other(&writer.Data()[bufferPos], writer.Available() - bufferPos);
+		bufferPos += ion::serialization::Serialize(val, other);
 	}
-	ION_ASSERT(bufferPos <= bufferLen, "Out of buffer");
+	writer.Skip(bufferPos);
 	return bufferPos;
 }
 

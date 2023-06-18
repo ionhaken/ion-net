@@ -78,27 +78,28 @@ constexpr NetGUID NetGuidAuthority(uint64_t(1));
 namespace serialization
 {
 
+template <typename Type>
+void Serialize(const Type& dst, ion::ByteWriter& writer);
+template <typename Type>
+bool Deserialize(Type& dst, ion::ByteReader& reader);
+
 template <>
-inline ion::UInt Serialize(const NetGUID& guid, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const NetGUID& guid, StringWriter& writer)
 {
-	if (bufferLen > 64)
+	if (writer.Available() > 64)
 	{
-		return guid.ToString(buffer);
+		auto u = guid.ToString(writer.Data());
+		writer.Skip(u);
+		return u;
 	}
 	return 0;
 }
 
 template <>
-inline ion::UInt Serialize(const NetRemoteId& remoteId, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const NetRemoteId& remoteId, StringWriter& writer)
 {
-	return serialization::Serialize(remoteId.RemoteIndex(), buffer, bufferLen, nullptr);
+	return serialization::Serialize(remoteId.RemoteIndex(), writer);
 }
-
-template <typename Type>
-bool Deserialize(Type& dst, ion::ByteReader& reader, void*);
-
-template <typename Type, typename WriterType>
-void Serialize(const Type& dst, WriterType& writer);
 
 template <>
 inline void Serialize(const NetGUID& dst, ion::ByteWriter& writer)
@@ -107,7 +108,7 @@ inline void Serialize(const NetGUID& dst, ion::ByteWriter& writer)
 }
 
 template <>
-inline bool Deserialize(NetGUID& dst, ion::ByteReader& reader, void*)
+inline bool Deserialize(NetGUID& dst, ion::ByteReader& reader)
 {
 	return reader.Read(dst.Raw());
 }

@@ -508,28 +508,32 @@ inline void ConvertVec2FromStringBuffer(double& x, double& y, const char* src);
 }  // namespace detail
 
 template <>
-inline ion::UInt Serialize(const ion::Vec<float, 2>& value, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const ion::Vec<float, 2>& value, StringWriter& writer)
 {
-	return detail::ConvertVec2ToStringBuffer(buffer, bufferLen, value.x(), value.y());
+	auto u = detail::ConvertVec2ToStringBuffer(writer.Data(), writer.Available(), value.x(), value.y());
+	writer.Skip(u);
+	return u;
 }
 
 template <>
-inline ion::UInt Serialize(const ion::Vec<double, 2>& value, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const ion::Vec<double, 2>& value, StringWriter& writer)
 {
-	return detail::ConvertVec2ToStringBuffer(buffer, bufferLen, value.x(), value.y());
+	auto u = detail::ConvertVec2ToStringBuffer(writer.Data(), writer.Available(), value.x(), value.y());
+	writer.Skip(u);
+	return u;
 }
 
 template <>
-inline void Deserialize(ion::Vec<float, 2>& dst, const char* src, void*)
+inline void Deserialize(ion::Vec<float, 2>& dst, StringReader& reader)
 {
 	double x, y;
-	detail::ConvertVec2FromStringBuffer(x, y, src);
+	detail::ConvertVec2FromStringBuffer(x, y, reader.Data());
 	dst = ion::Vec<float, 2>(static_cast<float>(x), static_cast<float>(y));
 }
 template <>
-inline void Deserialize(ion::Vec<double, 2>& dst, const char* src, void*)
+inline void Deserialize(ion::Vec<double, 2>& dst, StringReader& reader)
 {
-	detail::ConvertVec2FromStringBuffer(dst.x(), dst.y(), src);
+	detail::ConvertVec2FromStringBuffer(dst.x(), dst.y(), reader.Data());
 }
 }  // namespace serialization
 
@@ -539,14 +543,16 @@ template <>
 inline void Handler(LogEvent& e, const ion::Vec<float, 2>& value)
 {
 	char buffer[32];
-	serialization::Serialize(value, buffer, 32, nullptr);
+	StringWriter writer(buffer, 32);
+	serialization::Serialize(value, writer);
 	e.Write(buffer);
 }
 template <>
 inline void Handler(LogEvent& e, const ion::Vec<double, 2>& value)
 {
 	char buffer[32];
-	serialization::Serialize(value, buffer, 32, nullptr);
+	StringWriter writer(buffer, 32);
+	serialization::Serialize(value, writer);
 	e.Write(buffer);
 }
 }  // namespace tracing
@@ -569,8 +575,10 @@ inline void ConvertVec2FromStringBuffer(double& x, double& y, const char* src)
 	str.Tokenize(list);
 	if (list.Size() == 2)
 	{
-		Deserialize(x, list[0].CStr(), nullptr);
-		Deserialize(y, list[1].CStr(), nullptr);
+		StringReader reader0(list[0].CStr(), list[0].Length());
+		StringReader reader1(list[1].CStr(), list[1].Length());
+		Deserialize(x, reader0);
+		Deserialize(y, reader1);
 	}
 	else
 	{

@@ -104,7 +104,7 @@ template <class To, class From,
 				  "This implementation additionally requires destination type to be trivially constructible");
 
 	To dst;
-	std::memcpy(&dst, &src, sizeof(To));
+	memcpy(&dst, &src, sizeof(To));
 	return dst;
 #endif
 }

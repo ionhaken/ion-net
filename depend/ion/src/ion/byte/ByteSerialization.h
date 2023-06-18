@@ -48,8 +48,8 @@ LengthType DeserializeLength(ion::ByteReader& reader)
 }
 }  // namespace detail
 
-template <typename Type, typename WriterType>
-inline void Serialize(const Type& value, WriterType& writer)
+template <typename Type>
+inline void Serialize(const Type& value, ion::ByteWriter& writer)
 {
 	if constexpr (ion::IsFixedArray<Type>::value)
 	{
@@ -74,7 +74,7 @@ inline void Serialize(const Type& value, WriterType& writer)
 		}
 		else
 		{
-			ion::ForEach(value, [&](const auto& elem) { Serialize(elem, writer, nullptr); });
+			ion::ForEach(value, [&](const auto& elem) { Serialize(elem, writer); });
 		}
 	}
 	else if constexpr (std::is_enum<Type>::value)
@@ -95,7 +95,7 @@ inline void Serialize(const Type& value, WriterType& writer)
 }
 
 template <typename Type>
-inline bool Deserialize(Type& dst, ion::ByteReader& reader, void* ctx)
+inline bool Deserialize(Type& dst, ion::ByteReader& reader)
 {
 	bool success = true;
 	if constexpr (IsFixedArray<Type>::value)
@@ -137,7 +137,7 @@ inline bool Deserialize(Type& dst, ion::ByteReader& reader, void* ctx)
 			for (size_t i = 0; i < s; ++i)
 			{
 				typename Type::Type v;
-				success &= Deserialize(v, reader, nullptr);
+				success &= Deserialize(v, reader);
 				dst.Add(v);
 			}
 		}
@@ -148,7 +148,7 @@ inline bool Deserialize(Type& dst, ion::ByteReader& reader, void* ctx)
 		static_assert(!std::is_convertible<Type, EnumType>::value, "Scoped enums allowed only");
 		static_assert(!std::is_enum<EnumType>::value, "Invalid enum");
 		EnumType enumValue;
-		success = Deserialize(enumValue, reader, ctx);
+		success = Deserialize(enumValue, reader);
 		dst = static_cast<Type>(enumValue);
 	}
 	else if constexpr (std::is_trivially_copyable_v<Type>)
@@ -170,17 +170,10 @@ inline bool Deserialize(Type& dst, ion::ByteReader& reader, void* ctx)
 }
 
 template <>
-void Serialize(const String& src, ion::ByteWriter& writer);
+void Serialize(const ion::String& data, ByteWriter& writer);
 
 template <>
-bool Deserialize(String& dst, ion::ByteReader& reader, void*);
-
-template <typename Type>
-inline bool Deserialize(Type& dst, ion::ByteReader& reader)
-{
-	return Deserialize(dst, reader, nullptr);
-}
-
+bool Deserialize(ion::String& data, ByteReader& reader);
 
 }  // namespace ion::serialization
 
@@ -189,7 +182,7 @@ namespace ion
 template <typename T>
 inline bool ByteReader::Process(T& t)
 {
-	return ion::serialization::Deserialize(t, *this, nullptr);
+	return ion::serialization::Deserialize(t, *this);
 }
 template <typename T>
 inline bool ByteWriter::Process(const T& t)
@@ -204,13 +197,5 @@ inline bool ByteWriterUnsafe::Process(const T& t)
 	ion::serialization::Serialize(t, *this);
 	return true;
 }
-
-template <typename T>
-inline bool BufferWriterUnsafe::Process(const T& t)
-{
-	ion::serialization::Serialize(t, *this);
-	return true;
-}
-
 
 }  // namespace ion

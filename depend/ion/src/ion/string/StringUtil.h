@@ -15,7 +15,7 @@
  */
 #pragma once
 #include <ion/debug/Error.h>
-#include <cstring>	// strcpy
+#include <string.h>	// strcpy, strnlen_s
 
 namespace ion
 {
@@ -48,7 +48,20 @@ inline size_t StringLen(const char* str)
 inline size_t StringLen(const char* str, size_t maxLen)
 {
 	ION_ASSERT_FMT_IMMEDIATE(str != 0, "Invalid string");
+#if ION_PLATFORM_MICROSOFT
 	return strnlen_s(str, maxLen);
+#else
+	if (str == nullptr)
+	{
+		return 0;
+	}
+	size_t count = 0;
+	while (*str++ && maxLen--)
+	{
+		count++;
+	}
+	return count;
+#endif
 }
 
 size_t ION_CONSTEVAL ConstexprStringLength(const char* str) { return *str ? 1 + ConstexprStringLength(str + 1) : 0; }

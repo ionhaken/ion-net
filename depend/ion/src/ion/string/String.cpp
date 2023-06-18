@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include <ion/core/Core.h>
+#include <ion/byte/ByteWriter.h>
 #include <ion/string/String.h>
 #include <ion/string/StringView.h>
 
@@ -56,5 +57,6 @@ std::wstring ion::String::WideString() const
 	// delete[] buf;
 	return r;
 }
+
 
 #endif

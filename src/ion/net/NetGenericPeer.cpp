@@ -10,7 +10,11 @@
 
 namespace ion
 {
-NetGenericPeer::NetGenericPeer() : NetBasePeer(), mResource(128 * 1024) { Init(mResource); }
+NetGenericPeer::NetGenericPeer() : NetBasePeer(), mResource(128 * 1024), mReceptionPlugin(&mResource)
+{
+	Init(mResource);
+	RegisterPlugin(mReceptionPlugin);
+}
 
 inline NetPtr<ion::NetInterface> NetGenericPeer::Create(ion::NetInterfaceResource& memoryResource)
 {

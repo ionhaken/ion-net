@@ -106,11 +106,19 @@ void ion::JSONDocument::Load(const char* target)
 			break;
 		}
 	}
-	auto left = tmp.substr(0, pos);
-	auto right = tmp.substr(pos, tmp.size());
+	if (pos < tmp.length())
+	{
+		auto left = tmp.substr(0, pos);
+		auto right = tmp.substr(pos, tmp.size());
 
-	ion::Folder folder(left.c_str());
-	Load(folder, right.c_str());
+		ion::Folder folder(left.c_str());
+		Load(folder, right.c_str());
+	}
+	else
+	{
+		ion::Folder folder("");
+		Load(folder, tmp.c_str());
+	}
 }
 
 void ion::JSONDocument::Load(const ion::Folder& folder, const char* target)

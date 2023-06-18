@@ -95,7 +95,7 @@ struct AddressInfo
 			addr6.sin6_port = htons(mBindParameters.port);
 			aip.ai_addr = reinterpret_cast<struct sockaddr*>(&addr6);
 			aip.ai_addrlen = sizeof(addr6);
-			if (mBindParameters.hostAddress && mBindParameters.hostAddress[0])
+			if (mBindParameters.hostAddress[0])
 			{
 				inet_pton(AF_INET6, mBindParameters.hostAddress, &addr6.sin6_addr);
 			}
@@ -114,7 +114,7 @@ struct AddressInfo
 			addr4.sin_port = htons(mBindParameters.port);
 			aip.ai_addr = reinterpret_cast<struct sockaddr*>(&addr4);
 			aip.ai_addrlen = sizeof(addr4);
-			if (mBindParameters.hostAddress && mBindParameters.hostAddress[0])
+			if (mBindParameters.hostAddress[0])
 			{
 				inet_pton(AF_INET, mBindParameters.hostAddress, &addr4.sin_addr);
 			}
@@ -149,7 +149,8 @@ private:
 		}
 
 		char portStr[32];
-		ion::serialization::Serialize(bindParameters.port, portStr, 32, nullptr);
+		StringWriter writer(portStr, 32);
+		ion::serialization::Serialize(bindParameters.port, writer);
 
 		const int code = getaddrinfo(node, portStr, &hints, &mServinfo);
 		if (code != 0)
@@ -615,7 +616,7 @@ bool StartThreads(NetSocket& socket, NetConnections& connections, NetReception& 
 		  ion::NetSocketReceiveData* recvFromStruct = ion::NetControlLayer::AllocateReceiveBuffer(control);
 		  if (!recvFromStruct)
 		  {
-			  socket.userConnectionSocketIndex = -1;
+			  socket.userConnectionSocketIndex = static_cast<unsigned int>(-1);
 			  NetControlLayer::RunnerFailed(control);
 			  return;
 		  }
@@ -625,7 +626,7 @@ bool StartThreads(NetSocket& socket, NetConnections& connections, NetReception& 
 		  if (bindResult != NetBindResult::Success)
 		  {
 			  ION_NET_LOG_VERBOSE("Binding failed:" << bindResult);
-			  socket.userConnectionSocketIndex = -1;
+			  socket.userConnectionSocketIndex = static_cast<unsigned int>(-1);
 			  NetControlLayer::RunnerFailed(control);
 			  return;
 		  }
@@ -666,7 +667,7 @@ bool StartThreads(NetSocket& socket, NetConnections& connections, NetReception& 
 		  ion::NetControlLayer::DeallocateReceiveBuffer(control, recvFromStruct);
 
 		  SocketLayer::CloseSocket(socket);
-		  socket.userConnectionSocketIndex = -1;
+		  socket.userConnectionSocketIndex = static_cast<unsigned int>(-1);
 		  NetControlLayer::RunnerExit(control);
 		  ION_NET_LOG_VERBOSE("Receive thread exiting");
 	  });
@@ -758,7 +759,7 @@ void InitSocket(NetSocket& socket)
 {
 	ion::NetSecure::MemZero(socket.mBigDataKey);
 #if ION_NET_FEATURE_SECURITY == 1
-	ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: initialize socket public-private keypair");
+	ION_NET_LOG_SECURITY_AUDIT("AUDIT: initialize socket public-private keypair");
 	ion::NetSecure::SetupCryptoKeys(socket.mCryptoKeys);
 	ion::NetSecure::Random(socket.mNonceOffset.Data(), socket.mNonceOffset.ElementCount);
 #endif
@@ -774,7 +775,7 @@ void ConfigureNetworkSimulator(NetSocket& socket, const ion::NetworkSimulatorSet
 void DeinitSocket(NetSocket& socket)
 {
 #if ION_NET_FEATURE_SECURITY == 1
-	ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: clear socket public-private keypair");
+	ION_NET_LOG_SECURITY_AUDIT("AUDIT: clear socket public-private keypair");
 	ion::NetSecure::MemZero(socket.mCryptoKeys);
 	ion::NetSecure::MemZero(socket.mNonceOffset);
 #endif

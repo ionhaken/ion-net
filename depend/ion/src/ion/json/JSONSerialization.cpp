@@ -21,6 +21,7 @@ ion::JSONArrayWriter::JSONArrayWriter(JSONStructWriter& aParent, const char* nam
   : JSONElement(aParent.document), mName(name), data(rapidjson::kArrayType), parent(&aParent)
 {
 	data.SetArray();
+	mContext = aParent.mContext;
 }
 
 ion::JSONArrayWriter::JSONArrayWriter(JSONDocument& aDocument, const char* name)
@@ -31,16 +32,19 @@ ion::JSONArrayWriter::JSONArrayWriter(JSONDocument& aDocument, const char* name)
 	parent(nullptr)
 {
 	data.SetArray();
+	mContext = aDocument.mContext;
 }
 
 ion::JSONArrayReader::JSONArrayReader(const JSONStructReader& source, const char* name)
   : JSONElement(source.document), data(source.data.HasMember(name) ? source.data[name] : source.data), parent(&source)
 {
+	mContext = source.mContext;
 }
 
 ion::JSONArrayReader::JSONArrayReader(const JSONDocument& document, const char* name)
   : JSONElement(document), data(document.mDocument.HasMember(name) ? document.mDocument[name] : EmptyValue), parent(&document)
 {
+	mContext = document.mContext;
 }
 ion::JSONArrayReader ::~JSONArrayReader() {}
 
@@ -70,18 +74,21 @@ ion::JSONStructWriter::JSONStructWriter(JSONStructWriter& aParent, const char* n
   : JSONElement(aParent.document), mName(name), parent(&aParent), mParentType(Parent::Struct)
 {
 	data.SetObject();
+	mContext = aParent.mContext;
 }
 
 ion::JSONStructWriter::JSONStructWriter(JSONArrayWriter& aParent, const char* name)
   : JSONElement(aParent.document), mName(name), parent(&aParent), mParentType(Parent::Array)
 {
 	data.SetObject();
+	mContext = aParent.mContext;
 }
 
 ion::JSONStructWriter::JSONStructWriter(JSONDocument& aParent, const char* name)
   : JSONElement(aParent), mName(name), parent(&aParent), mParentType(Parent::Document)
 {
 	data.SetObject();
+	mContext = aParent.mContext;
 }
 
 ion::JSONStructWriter::~JSONStructWriter()
@@ -106,6 +113,7 @@ ion::JSONStructReader::JSONStructReader(const JSONStructReader& aParent, const c
   : JSONElement(aParent.document), data(aParent.data.HasMember(name) ? aParent.data[name] : aParent.data), parent(&aParent)
 {
 	ION_ASSERT(aParent.data.HasMember(name), "Invalid data");
+	mContext = aParent.mContext;
 }
 
 ion::JSONStructReader::JSONStructReader(const JSONArrayReader& aParent, size_t index)
@@ -114,11 +122,13 @@ ion::JSONStructReader::JSONStructReader(const JSONArrayReader& aParent, size_t i
 	parent(&aParent)
 {
 	ION_ASSERT(index < aParent.Size(), "Out of bounds");
+	mContext = aParent.mContext;
 }
 
 ion::JSONStructReader::JSONStructReader(const JSONDocument& aDocument, const char* name)
   : JSONElement(aDocument), data(aDocument.mDocument.HasMember(name) ? aDocument.mDocument[name] : EmptyValue), parent(&aDocument)
 {
+	mContext = aDocument.mContext;
 }
 
 ion::JSONStructReader ion::JSONStructReader::Child(const char* name) const

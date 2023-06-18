@@ -156,9 +156,9 @@ extern "C"
 
 	void ion_net_allow_connection_response_ip_migration(ion_net_peer handle, bool allow);
 
-	void ion_net_set_timeout_time(ion_net_peer handle, uint32_t timeMS, ion_net_socket_address target);
+	void ion_net_set_timeout_time(ion_net_peer handle, uint32_t timeMS, ion_net_remote_ref remote_ref);
 
-	uint32_t ion_net_timeout_time(ion_net_peer handle, ion_net_socket_address target);
+	uint32_t ion_net_timeout_time(ion_net_peer handle, ion_net_remote_ref remote_ref);
 
 	/*
 	 * Connection information
@@ -223,7 +223,7 @@ extern "C"
 	 * Data transfer
 	 */
 
-	int ion_net_send(ion_net_peer handle, const char* data, const int length, uint8_t priority, uint8_t reliability, char orderingChannel,
+	int ion_net_send(ion_net_peer handle, const char* data, const int length, uint8_t priority, uint8_t reliability, uint8_t orderingChannel,
 					 ion_net_remote_ref remote_ref, bool broadcast);
 
 	void ion_net_send_loopback(ion_net_peer handle, const char* data, const int length);

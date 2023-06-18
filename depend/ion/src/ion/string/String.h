@@ -289,16 +289,19 @@ int BasicString<TAllocator>::Format(Args&&... args)
 namespace serialization
 {
 template <>
-inline void Deserialize(ion::String& dst, const char* src, void*)
+inline void Deserialize(ion::String& dst, StringReader& reader)
 {
-	dst = src;
+	dst = reader.Data();
 }
 
 template <>
-inline ion::UInt Serialize(const ion::String& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const ion::String& data, StringWriter& writer)
 {
-	return ion::UInt(ion::StringCopy(buffer, ion::Min(bufferLen, data.Length()+1), data.CStr()));
+	auto u = ion::UInt(ion::StringCopy(writer.Data(), ion::Min(writer.Available(), data.Length()+1), data.CStr()));
+	writer.Skip(u);
+	return u;
 }
+
 
 }  // namespace serialization
 

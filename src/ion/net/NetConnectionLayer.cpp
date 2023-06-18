@@ -208,7 +208,7 @@ void SendOpenConnectionRequests(ion::NetConnections& connections, NetControl& co
 								packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;	// Attempted a connection and couldn't
 								// packet->bitSize = (sizeof(char) * 8);
 								packet->mAddress = rcs.systemAddress;
-								NetControlLayer::AddPacketToProducer(control, packet);
+								NetControlLayer::PushPacket(control, packet);
 							}
 							ION_DBG_TAG(Network, "Connection request canceled due to too many requests");
 							ClearConnectionRequest(connections, rcs);
@@ -275,7 +275,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			packet->mAddress = socketAddress;
 			packet->mRemoteId = ion::NetExchangeLayer::RemoteId(exchange, socketAddress);
 			packet->mGUID = remoteGuid;
-			NetControlLayer::AddPacketToProducer(control, packet);
+			NetControlLayer::PushPacket(control, packet);
 		}
 		return true;
 	}
@@ -304,7 +304,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			}
 
 			packet->mAddress = socketAddress;
-			NetControlLayer::AddPacketToProducer(control, packet);
+			NetControlLayer::PushPacket(control, packet);
 		}
 		return true;
 	}
@@ -339,7 +339,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			}
 
 			packet->mAddress = socketAddress;
-			NetControlLayer::AddPacketToProducer(control, packet);
+			NetControlLayer::PushPacket(control, packet);
 		}
 		return true;
 	}
@@ -368,13 +368,13 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 									if (length < CryptedDataLen || !ion::NetSecure::Decrypt(bsIn.Begin() + 1, bsIn.Begin() + 1,
 					 CryptedDataLen, iter->second.mNonce.Data(), rakPeer.mPeer->mSecretKey))
 									{
-										ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Remote message could not be decrypted.");
+										ION_NET_LOG_SECURITY_AUDIT("AUDIT: Remote message could not be decrypted.");
 										packet = rakPeer.AllocPacket(sizeof(char));
 										packet->data[0] = NetMessageId::InvalidSecretKey;
 										packet->length = sizeof(char);
 										packet->systemAddress = iter->second.systemAddress;
 										packet->guid = NetGuidUnassigned;
-										NetControlLayer::AddPacketToProducer(packet);
+										NetControlLayer::PushPacket(packet);
 
  rakPeer.ClearConnectionRequest(iter->second);
 										rcss.mRequests.Erase(iter);
@@ -407,7 +407,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  packet->Data()[0] = (byte)NetMessageId::ConnectionAttemptFailed;	// Attempted a connection and couldn't
 						  packet->mAddress = iter->second.systemAddress;
 						  packet->mGUID = remoteGuid;
-						  NetControlLayer::AddPacketToProducer(control, packet);
+						  NetControlLayer::PushPacket(control, packet);
 
 						  ClearConnectionRequest(connections, iter->second);
 						  rcss.mRequests.Erase(iter);
@@ -428,12 +428,12 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 				  auto* rcs = &iter->second;
 				  if (exchange.mDataTransferSecurity != dataTransferSecurity)
 				  {
-					  ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Remote is not having same data transfer security. Failing.");
+					  ION_NET_LOG_SECURITY_AUDIT("AUDIT: Remote is not having same data transfer security. Failing.");
 					  packet = AllocPacket(control, sizeof(char));
 					  packet->Data()[0] = (byte)NetMessageId::ConnectionAttemptFailed;	// Attempted a connection and couldn't
 					  packet->mAddress = rcs->systemAddress;
 					  packet->mGUID = remoteGuid;
-					  NetControlLayer::AddPacketToProducer(control, packet);
+					  NetControlLayer::PushPacket(control, packet);
 
 					  ClearConnectionRequest(connections, iter->second);
 					  rcss.mRequests.Erase(iter);
@@ -453,7 +453,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 #if ION_NET_FEATURE_SECURITY
 					  if (dataTransferSecurity == NetDataTransferSecurity::Secure)
 					  {
-						  ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Remote is expecting security. Sending public key.");
+						  ION_NET_LOG_SECURITY_AUDIT("AUDIT: Remote is expecting security. Sending public key.");
 						  ocr2writer.WriteArrayKeepCapacity((u8*)netSocket->mCryptoKeys.mPublicKey.data,
 															sizeof(netSocket->mCryptoKeys.mPublicKey.data));
 						  ocr2writer.WriteArrayKeepCapacity((u8*)netSocket->mNonceOffset.Data(), netSocket->mNonceOffset.ElementCount);
@@ -461,7 +461,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 					  else
 #endif
 					  {
-						  ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Encryption is not used.");
+						  ION_NET_LOG_SECURITY_AUDIT("AUDIT: Encryption is not used.");
 					  }
 				  }
 				  ocr2msg.Dispatch(socketAddress);
@@ -508,12 +508,12 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 			isValid &= bs.ReadArray(publicKey.data, NetSecure::PublicKeyLength);
 			if (isValid && ion::NetSecure::ComputeSharedCryptoKeys(sharedKey, netSocket->mCryptoKeys, publicKey) == 0)
 			{
-				ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Got server response with security parameters");
+				ION_NET_LOG_SECURITY_AUDIT("AUDIT: Got server response with security parameters");
 				isValid &= bs.ReadArray(nonceOffset.Data(), nonceOffset.ElementCount);
 			}
 			else
 			{
-				ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Invalid server public key");
+				ION_NET_LOG_SECURITY_AUDIT("AUDIT: Invalid server public key");
 				isValid = false;
 			}
 		}
@@ -636,7 +636,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						  packet->Data()[0] = NetMessageId::ConnectionAttemptFailed;  // Attempted a connection and couldn't
 						  packet->mAddress = rcs->systemAddress;
 						  packet->mGUID = rsp.guid;
-						  NetControlLayer::AddPacketToProducer(control, packet);
+						  NetControlLayer::PushPacket(control, packet);
 					  }
 					  ClearConnectionRequest(connections, iter->second);
 					  data.mRequests.Erase(iter);
@@ -713,7 +713,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 				packet->Data()[0] = data[0];  // Attempted a connection and couldn't
 				packet->mAddress = socketAddress;
 				packet->mGUID = guid;
-				NetControlLayer::AddPacketToProducer(control, packet);
+				NetControlLayer::PushPacket(control, packet);
 			}
 
 			return true;
@@ -888,7 +888,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 #if ION_NET_FEATURE_SECURITY == 1
 				if (exchange.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 				{
-					ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Server is using encryption");
+					ION_NET_LOG_SECURITY_AUDIT("AUDIT: Server is using encryption");
 					if (result.outcome != ion::NetExchangeLayer::ConnectionResponse::RepeatAnswer)
 					{
 						ION_ASSERT(result.outcome == ion::NetExchangeLayer::ConnectionResponse::Ok, "Unhandled outcome");
@@ -899,7 +899,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						if (!isValid ||
 							ion::NetSecure::ComputeSharedCryptoKeys(result.rssFromSA->mSharedKey, netSocket->mCryptoKeys, publicKey) != 0)
 						{
-							ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Invalid client public key");
+							ION_NET_LOG_SECURITY_AUDIT("AUDIT: Invalid client public key");
 
 							ion::NetExchangeLayer::ResetRemoteSystem(exchange, control, control.mMemoryResource,
 																	 result.rssFromSA->mId.load().RemoteIndex(), timeRead);
@@ -911,13 +911,13 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 						}
 						else
 						{
-							ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Received valid public key from client");
+							ION_NET_LOG_SECURITY_AUDIT("AUDIT: Received valid public key from client");
 						}
 					}
 				}
 				else
 				{
-					ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Server is not using encryption");
+					ION_NET_LOG_SECURITY_AUDIT("AUDIT: Server is not using encryption");
 				}
 #endif
 
@@ -950,7 +950,7 @@ bool ProcessOfflineNetworkPacket(ion::NetConnections& connections, NetControl& c
 #if ION_NET_FEATURE_SECURITY == 1
 				if (exchange.mDataTransferSecurity == NetDataTransferSecurity::Secure)
 				{
-					ION_NET_SECURITY_AUDIT_PRINTF("AUDIT: Sending server public key.");
+					ION_NET_LOG_SECURITY_AUDIT("AUDIT: Sending server public key.");
 					replyWriter.WriteArray((u8*)netSocket->mCryptoKeys.mPublicKey.data, sizeof(netSocket->mCryptoKeys.mPublicKey.data));
 					replyWriter.WriteArray((u8*)netSocket->mNonceOffset.Data(), netSocket->mNonceOffset.ElementCount);
 				}

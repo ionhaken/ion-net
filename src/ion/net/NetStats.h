@@ -63,7 +63,7 @@ private:
 		mLastUpdate = now;
 
 		size_t totalRemoved = 0;
-		while (DeltaTime(now, samples.Front().time) > calculatedMaxAge)
+		while (TimeSince(now, samples.Front().time) > calculatedMaxAge)
 		{
 			totalRemoved += samples.Front().value;
 			samples.PopFront();

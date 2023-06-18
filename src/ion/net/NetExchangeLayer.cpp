@@ -275,7 +275,7 @@ void Update(NetExchange& exchange, NetControl& control, ion::TimeMS now, ion::Jo
 					packet->mAddress = remoteSystem.mAddress;
 					packet->mRemoteId = remoteSystem.mId;
 
-					NetControlLayer::AddPacketToProducer(control, packet);
+					NetControlLayer::PushPacket(control, packet);
 				}
 					// else connection shutting down, don't bother telling the user
 					[[fallthrough]];
@@ -794,9 +794,9 @@ bool GetStatistics(NetExchange& exchange, NetInterfaceResource& memoryResource, 
 	return false;
 }
 
-void SetTimeoutTime(NetExchange& exchange, ion::TimeMS timeMS, const NetSocketAddress& target)
+void SetTimeoutTime(NetExchange& exchange, ion::TimeMS timeMS, const NetAddressOrRemoteRef& target)
 {
-	if (target == NetUnassignedSocketAddress)
+	if (target.IsUndefined())
 	{
 		exchange.mDefaultTimeoutTime = timeMS;
 
@@ -810,7 +810,11 @@ void SetTimeoutTime(NetExchange& exchange, ion::TimeMS timeMS, const NetSocketAd
 	}
 	else
 	{
-		NetRemoteId id = GetRemoteIdThreadSafe(exchange, target, true);
+		NetRemoteId id = target.mRemoteId;
+		if (!id.IsValid())
+		{
+			id = GetRemoteIdThreadSafe(exchange, target.mAddress, true);
+		}
 		if (id.IsValid())
 		{
 			exchange.mRemoteSystemList[id.RemoteIndex()].timeoutTime = timeMS;
@@ -818,17 +822,24 @@ void SetTimeoutTime(NetExchange& exchange, ion::TimeMS timeMS, const NetSocketAd
 	}
 }
 
-ion::TimeMS GetTimeoutTime(const NetExchange& exchange, const NetSocketAddress& target)
+ion::TimeMS GetTimeoutTime(const NetExchange& exchange, const NetAddressOrRemoteRef& target)
 {
-	if (target != NetUnassignedSocketAddress)
+	if (!target.IsUndefined())
 	{
-		ion::NetRemoteId id = GetRemoteIdThreadSafe(exchange, target, true);
-		ion::TimeMS timeoutTime = exchange.mRemoteSystemList[id.RemoteIndex()].timeoutTime;
-
-		// Check address was not altered
-		if (exchange.mRemoteSystemList[id.RemoteIndex()].mAddress == target)
+		ion::NetRemoteId id = target.mRemoteId;
+		if (!id.IsValid())
 		{
-			return timeoutTime;
+			id = GetRemoteIdThreadSafe(exchange, target.mAddress, true);
+		}
+		if (id.IsValid())
+		{
+			ion::TimeMS timeoutTime = exchange.mRemoteSystemList[id.RemoteIndex()].timeoutTime;
+
+			// Check address was not altered
+			if (exchange.mRemoteSystemList[id.RemoteIndex()].mId.load() == id)
+			{
+				return timeoutTime;
+			}
 		}
 	}
 	return exchange.mDefaultTimeoutTime;
@@ -1141,6 +1152,8 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 						 }
 					 });
 		break;
+	default:
+		ION_UNREACHABLE("Not a send command");
 	}
 
 	UInt idx = 1;

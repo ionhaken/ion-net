@@ -19,7 +19,8 @@ uint32_t NetGUID::ToString(char* dest) const
 	}
 	else
 	{
-		return ion::serialization::Serialize(Hex<uint64_t>(mRaw), dest, StringSize, nullptr);
+		StringWriter writer(dest, StringSize);
+		return ion::serialization::Serialize(Hex<uint64_t>(mRaw), writer);
 	}
 }
 
@@ -29,7 +30,8 @@ bool NetGUID::FromString(const char* source)
 	{
 		return false;
 	}
-	ion::serialization::Deserialize(mRaw, source, nullptr);
+	StringReader reader(source, StringLen(source));
+	ion::serialization::Deserialize(mRaw, reader);
 	return true;
 }
 }  // namespace ion

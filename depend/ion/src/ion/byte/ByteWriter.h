@@ -114,7 +114,7 @@ public:
 
 	BufferWriterUnsafe& operator=(BufferWriterUnsafe&& other) noexcept
 	{
-		other.mParent = std::move(other.mParent);
+		mParent = std::move(other.mParent);
 		mSource = other.mSource;
 		return *this;
 	}
@@ -182,7 +182,7 @@ class ByteWriter
 public:
 	ION_CLASS_NON_COPYABLE_NOR_MOVABLE(ByteWriter);
 
-	ByteWriter(ByteBufferBase& ud) : mParent(ud.Begin() + ud.Size()), mSource(ud), mEnd(ud.Begin() + ud.Capacity())
+	ByteWriter(ByteBufferBase& ud) : mParent(ud.Begin() + ud.Size()), mEnd(ud.Begin() + ud.Capacity()), mSource(ud)
 	{
 		ION_ASSERT(mParent.mStart <= mParent.mPos, "Invalid mBuffer");
 		ION_ASSERT(mEnd >= mParent.mPos, "Invalid mBuffer");
@@ -205,10 +205,10 @@ public:
 
 	// Requests writable array block from buffer. Buffer must be aligned correctly
 	template <typename T>
-	[[nodiscard]] inline T& WriteArrayKeepCapacity(size_t len)
+	[[nodiscard]] ION_FORCE_INLINE T& WriteArrayKeepCapacity(size_t len)
 	{
 		ION_ASSERT(mParent.mPos + sizeof(T) * len <= mEnd, "Out of Buffer");
-		return mParent.WriteArray(len);
+		return mParent.WriteArray<T>(len);
 	}
 
 	bool Copy(ByteReader& src);

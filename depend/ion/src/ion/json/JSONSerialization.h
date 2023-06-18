@@ -54,6 +54,8 @@ public:
 		data.PushBack(jsonStr, document.mAllocator);
 	}
 
+	void* mContext = nullptr;
+
 private:
 	const char* mName;
 	rapidjson::Value data;
@@ -76,6 +78,8 @@ public:
 
 	template <typename Callback>
 	void ForEach(Callback&& callback) const;
+
+	void* mContext = nullptr;
 
 private:
 	const rapidjson::Value& data;
@@ -331,6 +335,8 @@ public:
 
 	bool IsValid() const { return parent != nullptr; }
 
+	void* mContext = nullptr;
+
 protected:
 	JSONStructReader(const JSONStructReader& aParent, const char* name);
 	JSONStructReader(const JSONDocument& aDocument);
@@ -402,6 +408,7 @@ public:
 	};
 
 	Parent mParentType;
+	void* mContext = nullptr;
 
 private:
 	void AddString(const char* const name, const char* const buffer, size_t len)
@@ -434,14 +441,14 @@ struct Rect
 namespace serialization
 {
 template <typename T>
-inline bool Serialize(const T& in, const char* name, ion::JSONStructWriter& out, const void* ctx)
+inline bool Serialize(const T& in, const char* name, ion::JSONStructWriter& out)
 {
 	if constexpr (std::is_enum<T>::value)
 	{
 		using EnumType = typename std::underlying_type<T>::type;
 		static_assert(!std::is_enum<EnumType>::value, "Invalid enum");
 		EnumType enumValue = static_cast<EnumType>(in);
-		return Serialize(enumValue, name, out, ctx);
+		return Serialize(enumValue, name, out);
 	}
 	else
 	{
@@ -452,7 +459,7 @@ inline bool Serialize(const T& in, const char* name, ion::JSONStructWriter& out,
 }
 
 template <typename T>
-inline bool Deserialize(T& out, const char* name, ion::JSONStructReader& in, void* ctx)
+inline bool Deserialize(T& out, const char* name, ion::JSONStructReader& in)
 {
 	if constexpr (std::is_enum<T>::value)
 	{
@@ -460,7 +467,7 @@ inline bool Deserialize(T& out, const char* name, ion::JSONStructReader& in, voi
 		static_assert(!std::is_convertible<T, EnumType>::value, "Scoped enums allowed only");
 		static_assert(!std::is_enum<EnumType>::value, "Invalid enum");
 		EnumType enumValue;
-		auto result = Deserialize(enumValue, name, in, ctx);
+		auto result = Deserialize(enumValue, name, in);
 		out = static_cast<T>(enumValue);
 		return result;
 	}
@@ -480,49 +487,49 @@ inline bool Deserialize(T& out, const char* name, ion::JSONStructReader& in, voi
 }
 
 template <>
-inline bool Serialize(const double& in, const char* name, ion::JSONStructWriter& out, const void*)
+inline bool Serialize(const double& in, const char* name, ion::JSONStructWriter& out)
 {
 	out.AddMember(name, in);
 	return true;
 }
 
 template <>
-inline bool Deserialize(double& out, const char* name, ion::JSONStructReader& in, void* /*env*/)
+inline bool Deserialize(double& out, const char* name, ion::JSONStructReader& in)
 {
 	out = in.GetDouble(name);
 	return true;
 }
 
 template <>
-inline bool Serialize(const float& in, const char* name, ion::JSONStructWriter& out, const void*)
+inline bool Serialize(const float& in, const char* name, ion::JSONStructWriter& out)
 {
 	out.AddMember(name, in);
 	return true;
 }
 
 template <>
-inline bool Deserialize(float& out, const char* name, ion::JSONStructReader& in, void* /*env*/)
+inline bool Deserialize(float& out, const char* name, ion::JSONStructReader& in)
 {
 	out = in.GetFloat(name);
 	return true;
 }
 
 template <>
-inline bool Serialize(const ion::String& in, const char* name, ion::JSONStructWriter& out, const void*)
+inline bool Serialize(const ion::String& in, const char* name, ion::JSONStructWriter& out)
 {
 	out.AddMember(name, in);
 	return true;
 }
 
 template <>
-inline bool Deserialize(ion::String& out, const char* name, ion::JSONStructReader& in, void* /*env*/)
+inline bool Deserialize(ion::String& out, const char* name, ion::JSONStructReader& in)
 {
 	out = in.GetString(name);
 	return true;
 }
 
 template <>
-inline bool Serialize(const ion::Vec2f& in, const char* name, ion::JSONStructWriter& out, const void*)
+inline bool Serialize(const ion::Vec2f& in, const char* name, ion::JSONStructWriter& out)
 {
 	ion::JSONStructWriter pivot(out, name);
 	pivot.AddMember("x", in.x());
@@ -531,7 +538,7 @@ inline bool Serialize(const ion::Vec2f& in, const char* name, ion::JSONStructWri
 }
 
 template <>
-inline bool Deserialize(ion::Vec2f& out, const char* name, ion::JSONStructReader& in, void* /*env*/)
+inline bool Deserialize(ion::Vec2f& out, const char* name, ion::JSONStructReader& in)
 {
 	ion::JSONStructReader group(in.Child(name));
 	out = {group.GetFloat("x"), group.GetFloat("y")};
@@ -550,12 +557,12 @@ inline void ReadSize(ion::Vec2<uint16_t>& out, ion::JSONStructReader& in) { out 
 inline void ReadSize(ion::Vec2f& out, ion::JSONStructReader& in) { out = {in.GetFloat("w"), in.GetFloat("h")}; }
 
 template <typename IdType, typename StoreType>
-inline void SerializeFinal(const IdType, const StoreType&, ion::JSONStructWriter&, const void*)
+inline void SerializeFinal(const IdType, const StoreType&, ion::JSONStructWriter&)
 {
 }
 
 template <typename IdType, typename StoreType>
-inline void DeserializeFinal(const IdType, StoreType&, ion::JSONStructReader&, void*)
+inline void DeserializeFinal(const IdType, StoreType&, ion::JSONStructReader&)
 {
 }
 }  // namespace serialization

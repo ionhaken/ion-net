@@ -182,9 +182,9 @@ bool GetStatistics(NetExchange& exchange, NetInterfaceResource& memoryResource, 
 void GetStatisticsList(NetExchange& exchange, NetInterfaceResource& memoryResource, NetVector<ion::NetSocketAddress>& addresses,
 					   NetVector<NetGUID>& guids, NetVector<NetStats>& statistics);
 
-void SetTimeoutTime(NetExchange& exchange, ion::TimeMS timeMS, const NetSocketAddress& target);
+void SetTimeoutTime(NetExchange& exchange, ion::TimeMS timeMS, const NetAddressOrRemoteRef& target);
 
-ion::TimeMS GetTimeoutTime(const NetExchange& exchange, const NetSocketAddress& target);
+ion::TimeMS GetTimeoutTime(const NetExchange& exchange, const NetAddressOrRemoteRef& target);
 
 void SetInternalID(NetExchange& exchange, const NetSocketAddress& systemAddress, int index);
 

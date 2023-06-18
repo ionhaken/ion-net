@@ -29,9 +29,9 @@ static bool ion_net_resolve_target(ion_net_connect_target target_ptr, ion_net_so
 #if ION_PLATFORM_ANDROID && !defined(_FINAL)
 	// https://developer.android.com/studio/run/emulator-networking.html
 	// Special alias to your host loopback interface
-	if (isOk && target.mResolvedAddress.IsLoopback())
+	if (isOk && target.resolved_address.IsLoopback())
 	{
-		target.mResolvedAddress = NetSocketAddress("10.0.2.2", target.mResolvedAddress.GetPort());
+		target.resolved_address = NetSocketAddress("10.0.2.2", target.resolved_address.GetPort());
 	}
 #endif
 	return isOk;
@@ -245,16 +245,16 @@ void ion_net_set_occasional_ping(ion_net_peer handle, uint32_t time)
 	ion::NetExchangeLayer::SetOccasionalPing(net.mExchange, time);
 }
 
-void ion_net_set_timeout_time(ion_net_peer handle, uint32_t timeMS, ion_net_socket_address target)
+void ion_net_set_timeout_time(ion_net_peer handle, uint32_t timeMS, ion_net_remote_ref remote_ref)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	ion::NetExchangeLayer::SetTimeoutTime(net.mExchange, timeMS, *(NetSocketAddress*)target);
+	ion::NetExchangeLayer::SetTimeoutTime(net.mExchange, timeMS, *(NetAddressOrRemoteRef*)remote_ref);
 }
 
-uint32_t ion_net_timeout_time(ion_net_peer handle, ion_net_socket_address target)
+uint32_t ion_net_timeout_time(ion_net_peer handle, ion_net_remote_ref remote_ref)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	return ion::NetExchangeLayer::GetTimeoutTime(net.mExchange, *(NetSocketAddress*)target);
+	return ion::NetExchangeLayer::GetTimeoutTime(net.mExchange, *(NetAddressOrRemoteRef*)remote_ref);
 }
 
 bool ion_net_statistics_for_address(ion_net_peer handle, ion_net_socket_address address, ion_net_statistics stats)
@@ -448,9 +448,7 @@ void ion_net_shutdown(ion_net_peer handle, unsigned int blockDuration, unsigned 
 
 	ion::NetControlLayer::Deinit(net.mControl);
 
-	// Free any packets the user didn't deallocate
-	net.mControl.mPacketReturnQueue.DequeueAll([&](NetPacket* packet)
-											   { ion::NetControlLayer::DeallocateUserPacket(net.mControl, packet); });
+	ion::NetControlLayer::FlushPackets(net.mControl);
 
 	ion::NetControlLayer::ClearBufferedCommands(net.mControl);
 
@@ -461,7 +459,6 @@ int ion_net_connect_with_socket(ion_net_peer handle, const char* host, unsigned 
 								int passwordDataLength, ion_net_socket socket, ion_net_public_key publicKey,
 								unsigned sendConnectionAttemptCount, unsigned timeBetweenSendConnectionAttemptsMS, uint32_t timeoutTime)
 {
-	NetInterface& net = *(NetInterface*)handle;
 	ION_NET_API_CHECK(host != 0 && socket != 0, ION_NET_CODE_INVALID_PARAMETER, "Invalid parameters");
 	passwordDataLength = passwordData == nullptr ? 0 : Min(passwordDataLength, 255);
 	ion::NetConnectTarget target{host, remotePort};
@@ -583,7 +580,7 @@ int ion_net_get_connection_list(ion_net_peer handle, ion_net_remote_id remote_id
 	unsigned int outIndex = 0;
 	if (remoteIds)
 	{
-		if (net.mExchange.mRemoteSystemList != nullptr)
+		if (net.mExchange.mRemoteSystemList.Get() != nullptr)
 		{
 			// NOTE: activeSystemListSize might be changed by network update, but invalid remote ids will be ignored anyway if used later.
 			*numberOfSystems = ion::Min(*numberOfSystems, net.mExchange.mActiveSystemListSize);
@@ -741,7 +738,7 @@ void ion_net_close_connection(ion_net_peer handle, ion_net_remote_ref remote_ref
 void ion_net_push_packet(ion_net_peer handle, ion_net_packet packet)
 {
 	NetInterface& net = *(NetInterface*)handle;
-	net.mControl.mPacketReturnQueue.Enqueue(std::move((NetPacket*)packet));
+	ion::NetControlLayer::PushPacket(net.mControl, (NetPacket*)packet);
 }
 
 int ion_net_is_banned(ion_net_peer handle, const char* IP)
@@ -1050,7 +1047,7 @@ bool ion_net_is_ipv6_only(ion_net_peer handle)
 	return NetConnectionLayer::IsIPV6Only(net.mConnections);
 }
 
-int ion_net_send(ion_net_peer handle, const char* data, const int length, uint8_t priority, uint8_t reliability, char orderingChannel,
+int ion_net_send(ion_net_peer handle, const char* data, const int length, uint8_t priority, uint8_t reliability, uint8_t orderingChannel,
 				 ion_net_remote_ref remote_ref, bool broadcast)
 {
 	NetInterface& net = *(NetInterface*)handle;

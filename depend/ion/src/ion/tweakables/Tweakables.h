@@ -99,7 +99,11 @@ public:
 
 	virtual void Set(const char* str) final;
 
-	void Get(char* buffer, size_t bufferLen) const override { ion::serialization::Serialize(mValue, buffer, bufferLen, nullptr); }
+	void Get(char* buffer, size_t bufferLen) const override 
+	{ 
+		StringWriter writer(buffer, bufferLen);
+		ion::serialization::Serialize(mValue, writer); 
+	}
 	bool ShouldSave() const final { return mValue != mDefaultValue && ConfigValueBase::IsSerialized(); }
 
 protected:
@@ -172,7 +176,8 @@ inline void Handler(LogEvent& e, const ion::ConfigValue<T>& value)
 {
 	char buffer[64];
 	T raw = value;
-	ion::serialization::Serialize(raw, buffer, 64, nullptr);
+	StringWriter writer(buffer, 64);
+	ion::serialization::Serialize(raw, writer);
 	e.Write(buffer);
 }
 

@@ -28,7 +28,7 @@ void Serialize(const String& src, ion::ByteWriter& writer)
 }
 
 template <>
-bool Deserialize(String& dst, ion::ByteReader& reader, void*)
+bool Deserialize(String& dst, ion::ByteReader& reader)
 {
 	uint32_t length = detail::DeserializeLength<uint32_t, char>(reader);
 	ion::SmallVector<char, 64> buffer;

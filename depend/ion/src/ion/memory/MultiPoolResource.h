@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 #pragma once
-#include <ion/memory/TLSFResource.h>
 #include <ion/memory/SmallMultiPool.h>
+#include <ion/memory/TLSFResource.h>
 
 namespace ion
 {
@@ -23,6 +23,7 @@ namespace ion
 template <size_t NumBytesReserved, MemTag Tag = ion::tag::Unset>
 class MultiPoolResource
 {
+#if ION_CONFIG_MEMORY_RESOURCES == 1
 	ION_ACCESS_GUARD(mGuard);
 	using Resource = TLSFResource<MonotonicBufferResource<NumBytesReserved, Tag>, Tag>;
 
@@ -55,7 +56,7 @@ public:
 		}
 	}
 
-	void* Reallocate(void* , size_t )
+	void* Reallocate(void*, size_t)
 	{
 		ION_ASSERT_FMT_IMMEDIATE(false, "Not implemented");
 		return nullptr;
@@ -64,5 +65,6 @@ public:
 private:
 	Resource mResource;
 	SmallMultiPool<TLSFResource<MonotonicBufferResource<NumBytesReserved, Tag>, Tag>> mPool;
+#endif
 };
 }  // namespace ion

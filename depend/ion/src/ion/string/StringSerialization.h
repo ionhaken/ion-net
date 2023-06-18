@@ -16,11 +16,13 @@
 #pragma once
 #include <ion/debug/Error.h>
 
-#include <type_traits>
 #include <inttypes.h>
+#include <type_traits>
 #if ION_EXTERNAL_STRING_CONVERSIONS == 1
 	#include <itoa/to_text_from_integer.h>
 #endif
+
+#include <ion/string/StringWriter.h>
 
 // Type to char buffer serialization/deserialization. Please note that serialization checks buffer size only in debug mode. If you need
 // checked serialization, please use ByteWriter::Process() (See ByteSerialization.h)
@@ -52,7 +54,7 @@ ion::UInt ConvertFloatToStringBuffer(char* buffer, size_t bufferLen, const float
 ion::UInt ConvertDoubleToStringBuffer(char* buffer, size_t bufferLen, const double& data);
 
 template <typename Type>
-inline void Deserialize(Type& dst, const char* src, void* ctx)
+inline void Deserialize(Type& dst, ion::StringReader& reader)
 {
 	if constexpr (std::is_enum<Type>::value)
 	{
@@ -60,7 +62,7 @@ inline void Deserialize(Type& dst, const char* src, void* ctx)
 		static_assert(!std::is_convertible<Type, EnumType>::value, "Scoped enums allowed only");
 		static_assert(!std::is_enum<EnumType>::value, "Invalid enum");
 		EnumType enumValue;
-		Deserialize(enumValue, src, ctx);
+		Deserialize(enumValue, reader);
 		dst = static_cast<Type>(enumValue);
 	}
 	else
@@ -70,79 +72,79 @@ inline void Deserialize(Type& dst, const char* src, void* ctx)
 }
 
 template <>
-inline void Deserialize(char& dst, const char* src, void*)
+inline void Deserialize(char& dst, ion::StringReader& reader)
 {
-	ConvertCharFromStringBuffer(dst, src);
+	ConvertCharFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(unsigned char& dst, const char* src, void*)
+inline void Deserialize(unsigned char& dst, ion::StringReader& reader)
 {
-	ConvertUnsignedCharFromStringBuffer(dst, src);
+	ConvertUnsignedCharFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(int& dst, const char* src, void*)
+inline void Deserialize(int& dst, ion::StringReader& reader)
 {
-	ConvertIntFromStringBuffer(dst, src);
+	ConvertIntFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(unsigned int& dst, const char* src, void*)
+inline void Deserialize(unsigned int& dst, ion::StringReader& reader)
 {
-	ConvertUnsignedIntFromStringBuffer(dst, src);
+	ConvertUnsignedIntFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-void Deserialize(unsigned short& dst, const char* src, void*);
+void Deserialize(unsigned short& dst, ion::StringReader& reader);
 
 template <>
-inline void Deserialize(unsigned long& dst, const char* src, void*)
+inline void Deserialize(unsigned long& dst, ion::StringReader& reader)
 {
-	ConvertUnsignedLongFromStringBuffer(dst, src);
+	ConvertUnsignedLongFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(unsigned long long& dst, const char* src, void*)
+inline void Deserialize(unsigned long long& dst, ion::StringReader& reader)
 {
-	ConvertUnsignedLongLongFromStringBuffer(dst, src);
+	ConvertUnsignedLongLongFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(long long& dst, const char* src, void*)
+inline void Deserialize(long long& dst, ion::StringReader& reader)
 {
-	ConvertLongLongFromStringBuffer(dst, src);
+	ConvertLongLongFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(long& dst, const char* src, void*)
+inline void Deserialize(long& dst, ion::StringReader& reader)
 {
-	ConvertLongFromStringBuffer(dst, src);
+	ConvertLongFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(float& dst, const char* src, void*)
+inline void Deserialize(float& dst, ion::StringReader& reader)
 {
-	ConvertFloatFromStringBuffer(dst, src);
+	ConvertFloatFromStringBuffer(dst, reader.Data());
 }
 
 template <>
-inline void Deserialize(double& dst, const char* src, void*)
+inline void Deserialize(double& dst, ion::StringReader& reader)
 {
-	ConvertDoubleFromStringBuffer(dst, src);
+	ConvertDoubleFromStringBuffer(dst, reader.Data());
 }
 
-ion::UInt Serialize(const char* data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*);
+ion::UInt Serialize(const char* data, ion::StringWriter& writer);
 
 template <typename Type>
-inline ion::UInt Serialize(const Type& data, char* buffer, size_t bufferLen, const void* ctx)
+inline ion::UInt Serialize(const Type& data, ion::StringWriter& writer)
 {
 	if constexpr (std::is_enum<Type>::value)
 	{
 		using EnumType = typename std::underlying_type<Type>::type;
 		static_assert(!std::is_enum<EnumType>::value, "Invalid enum");
 		const EnumType enumValue = static_cast<EnumType>(data);
-		return Serialize(enumValue, buffer, bufferLen, ctx);
+		return Serialize(enumValue, writer);
 	}
 	else
 	{
@@ -150,139 +152,152 @@ inline ion::UInt Serialize(const Type& data, char* buffer, size_t bufferLen, con
 	}
 }
 template <>
-inline ion::UInt Serialize(const bool& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const bool& data, ion::StringWriter& writer)
 {
 	// jeaiii::to_text(buffer, data);
-	return ConvertBoolToStringBuffer(buffer, bufferLen, data);
+	return ConvertBoolToStringBuffer(writer.Data(), writer.Available(), data);
 }
 
 template <>
-inline ion::UInt Serialize(const char& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const char& data, ion::StringWriter& writer)
 {
-	return ConvertCharToStringBuffer(buffer, bufferLen, data);
+	auto u = ConvertCharToStringBuffer(writer.Data(), writer.Available(), data);
+	writer.Skip(u);
+	return u;
 }
 
 template <>
-inline ion::UInt Serialize(const int8_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const int8_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	////ConvertInt8ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const uint8_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const uint8_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertUInt8ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const int16_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const int16_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertInt16ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const uint16_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const uint16_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertUInt16ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const int32_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const int32_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertInt32ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const uint32_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const uint32_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertUInt32ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const int64_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const int64_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertInt64ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const uint64_t& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const uint64_t& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertUInt64ToStringBuffer(buffer, bufferLen, data);
 }
 
 template <>
-inline ion::UInt Serialize(const float& data, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const float& data, ion::StringWriter& writer)
 {
-	return ConvertFloatToStringBuffer(buffer, bufferLen, data);
+	return ConvertFloatToStringBuffer(writer.Data(), writer.Available(), data);
 }
 
 template <>
-inline ion::UInt Serialize(const double& data, char* buffer, size_t bufferLen, const void*)
+inline ion::UInt Serialize(const double& data, ion::StringWriter& writer)
 {
-	return ConvertDoubleToStringBuffer(buffer, bufferLen, data);
+	return ConvertDoubleToStringBuffer(writer.Data(), writer.Available(), data);
 }
 
 // #TODO: Get rid of these ----------
 #if ION_PLATFORM_LINUX
 template <>
-inline ion::UInt Serialize(const long long& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const long long& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertInt64ToStringBuffer(buffer, bufferLen, data);
 }
 #endif
 #if ION_PLATFORM_MICROSOFT || defined(ION_ARCH_ARM_32)
 template <>
-inline ion::UInt Serialize(const long& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const long& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertInt64ToStringBuffer(buffer, bufferLen, data);
 }
 template <>
-inline ion::UInt Serialize(const unsigned long& data, char* buffer, [[maybe_unused]] size_t bufferLen, const void*)
+inline ion::UInt Serialize(const unsigned long& data, ion::StringWriter& writer)
 {
-	char* end = jeaiii::to_text(buffer, data);
-	ION_ASSERT_FMT_IMMEDIATE(ion::UInt(end - buffer) + 1 <= bufferLen, "Buffer overflow");
+	char* end = jeaiii::to_text(writer.Data(), data);
 	*end = 0;
-	return ion::UInt(end - buffer);
+	ion::UInt u = ion::UInt(end - writer.Data());
+	writer.Skip(u);
+	return u;
 	// ConvertUInt64ToStringBuffer(buffer, bufferLen, data);
 }
 #endif

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ion/net/NetBasePeer.h>
+#include <ion/net/NetPlugins.h>
 
 namespace ion
 {

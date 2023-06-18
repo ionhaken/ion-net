@@ -4,6 +4,8 @@
 
 #include <ion/concurrency/Synchronized.h>
 
+#include <ion/string/String.h>
+
 namespace ion
 {
 
@@ -16,6 +18,7 @@ struct NetSecurity
 	ion::NetSecure::SecretKey mSecretKey;
 #endif
 	Synchronized<NetVector<ion::String>> mySecurityExceptions;
-	std::atomic<bool> myHasAnySecurityExceptions = false; // For avoiding mySecurityExceptions mutex since typically there are no exceptions
+	std::atomic<bool> myHasAnySecurityExceptions =
+	  false;  // For avoiding mySecurityExceptions mutex since typically there are no exceptions
 };
 }  // namespace ion

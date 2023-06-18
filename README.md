@@ -15,17 +15,28 @@ if you are implementing fast paced multiplayer games. [3]
 
 Library Goals
 -------------
-- Easy to use and feature parity with RakNet. (WIP: See future work)
+- Easy to use.
 - Robust. Tested and fuzzed. Library peer instances can run 24/7 without need to restart or do any maintenance.
-- Tenacious. Reliability layer is able to handle poor network conditions well
+- Tenacious. Ability to handle poor network conditions or malicious data.
 - Efficient. Fast data serialization/deserialization with no extra copying. Feasible for thousands of simultanous connections.
 
 
 Key features
 ------------------------------------------
-- Automatic congestion control
 - Message ordering on multiple channels 
-- Message coalescence, and splitting and reassembly of packets
+- Message coalescence, splitting and reassembly of packets
+- Congestion control
+- Data encryption
+- MTU discovery
+- Bandwidth stats
+- Time synchronization
+- Modifiable via plugin support
+
+
+Limitations
+------------------------------------------
+- No support for NAT Punch or UPnP since due to current server prices client-server model is feasible for any developer.
+
 
 Benchmarks
 -----------------------------------------
@@ -60,13 +71,6 @@ Benchmarks have been run using Intel i5-9600k CPU with 32 GB memory and Windows 
 - RakNet reference may be limited by its congestion control.
 - Note that most of the measured time these tests spend on waiting for update thread to wake up, the actual processing time is ~10% of measured time. It would be possible to busy loop receiver and sender to relay packets in less than 0.1 milliseconds, but that use case is not in the scope of game networking library - current send delays should be more than adequate for any game.
 
-
-Future work
------------------------------------------
-- Restore plugin support
-- Support NAT punch
-- DLL support
-- Data compression
 
 
 Getting Started

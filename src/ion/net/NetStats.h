@@ -62,7 +62,7 @@ private:
 		TimeMS calculatedMaxAge = Min(TimeMS(now - mLastUpdate) * 4, MaxAge);
 		mLastUpdate = now;
 
-		size_t totalRemoved = 0;
+		uint64_t totalRemoved = 0;
 		while (TimeSince(now, samples.Front().time) > calculatedMaxAge)
 		{
 			totalRemoved += samples.Front().value;

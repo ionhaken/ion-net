@@ -6,7 +6,7 @@
 #include <ion/debug/CatchTestHelper.h>
 #include <ion/debug/Error.h>
 
-#include <ion/string/StringWriter.h>
+#include <ion/string/StringViewWriter.h>
 
 #include<ion/util/Vec.h>
 
@@ -273,7 +273,7 @@ float RunBenchmark(const Pars& pars)
 
 		if (pars.strBuffer)
 		{
-			ion::StringWriter strWriter(*pars.strBuffer);
+			ion::StringViewWriter strWriter(*pars.strBuffer);
 			strWriter.Write(test::PacketSize);
 			strWriter.Write(";");
 			strWriter.Write(pars.packetReliability);

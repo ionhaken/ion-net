@@ -55,7 +55,9 @@ static_assert(offsetof(NetPacket, mRemoteId) == offsetof(NetDownstreamSocketHead
 template <size_t PayloadSize = 1>
 struct NetDownstreamPacket
 {
+	ION_CLASS_NON_COPYABLE_NOR_MOVABLE(NetDownstreamPacket);
 	NetDownstreamPacket() {}
+
 	union Header
 	{
 		Header() {}

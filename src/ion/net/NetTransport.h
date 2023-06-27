@@ -24,20 +24,29 @@ struct NetTransport
 	// connected protocol. See. https://en.wikipedia.org/wiki/Replay_attack
 	struct DuplicateProtection
 	{
-		static constexpr uint32_t NumSequences = 256;
-		Array<uint32_t, NumSequences> mReceivedSequences;
+		static constexpr uint32_t NumSequences = 512;
+		UniquePtr<Array<uint32_t, NumSequences>> mReceivedSequences;
 		uint32_t mLatestSequence = 0;
 
-		DuplicateProtection()
-		{
-			mLatestSequence = 0;
-			memset(mReceivedSequences.Data(), 0x0, sizeof(mReceivedSequences));
-		}
+		DuplicateProtection() {}
 
 		bool OnSequenceReceived(uint32_t sequence)
 		{
-			size_t index = sequence % NumSequences;
 			int32_t deltaToLatestSequence = int32_t(mLatestSequence - sequence);
+			
+			if (mReceivedSequences == nullptr) 
+			{
+				if (deltaToLatestSequence == -1) 
+				{
+					mLatestSequence = sequence;
+					return true;
+				}
+				ION_NET_LOG_VERBOSE("First out of sequence packet detected");
+				mReceivedSequences = MakeUnique<Array<uint32_t, NumSequences>>();
+				ion::ForEach(*mReceivedSequences, [&](auto& item) { item = mLatestSequence; });
+			}
+
+			size_t index = sequence % NumSequences;
 			if (deltaToLatestSequence < 0)
 			{
 				mLatestSequence = sequence;
@@ -48,13 +57,13 @@ struct NetTransport
 			}
 			else
 			{
-				int32_t deltaToCurrentSequence = int32_t(mReceivedSequences[index] - sequence);
+				int32_t deltaToCurrentSequence = int32_t((*mReceivedSequences)[index] - sequence);
 				if (deltaToCurrentSequence > 0)
 				{
 					return false;
 				}
 			}
-			mReceivedSequences[index] = sequence;
+			(*mReceivedSequences)[index] = sequence;
 			return true;
 		}
 	};

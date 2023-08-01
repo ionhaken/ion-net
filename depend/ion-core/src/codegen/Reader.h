@@ -218,11 +218,17 @@ public:
 			{
 				if (types[j] == "const")
 				{
-					getSetType = GetSetType::Constant;
+					if (getSetType == GetSetType::Regular)
+					{
+						getSetType = GetSetType::Constant;
+					}
 				}
 				else if (types[j] == "modifiable")
 				{
-					getSetType = GetSetType::Modifiable;
+					if (getSetType != GetSetType::Unique)
+					{
+						getSetType = GetSetType::Modifiable;
+					}
 				}
 				else if (types[j] == "unique")
 				{

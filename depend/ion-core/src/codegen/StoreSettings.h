@@ -32,7 +32,7 @@ enum class GetSetType : uint8_t
 	Regular,	 // Getter and setter methods generated
 	Constant,	 // No Setter methods generated
 	Modifiable,	 // Setter method is replaced by non-constant getter method.
-	Unique		 // Disallow copies
+	Unique		 // As modifiable, but also disallow copies
 };
 
 static size_t GetSizeBytes(size_t size)

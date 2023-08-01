@@ -452,16 +452,15 @@ LogEvent::~LogEvent()
 	auto eventType = header->mType;
 
 	mWriteBuffer[sizeof(LogMessageHeader) + mNumWritten] = '\n';
-	mNumWritten += 2;  // Reserve for \n & \0
+	mWriteBuffer[sizeof(LogMessageHeader) + mNumWritten+1] = 0;
+	mWriteBuffer[sizeof(LogMessageHeader) + mNumWritten+2] = 0;
+	mNumWritten += 3;  // Reserve for \n & \0
 
 	header->mMsgLength = ion::SafeRangeCast<uint16_t>(mNumWritten);
 
 	// #TODO: gInstanceReady should be flag that tells what to do when tracing is not enabled and there is output
 	if (!TracingIsInitialized() || IsImmediateOutput())
 	{
-		/*LogMessageHeader* nextHeader =
-		  ion::AssumeAligned(reinterpret_cast<LogMessageHeader*>(&mWriteBuffer[sizeof(LogMessageHeader) + mNumWritten]));
-		nextHeader->mMsgLength = 0;*/
 		PrintTraces(reinterpret_cast<char*>(header) /* mWriteBuffer*/
 #if ION_DEBUGGER_OUTPUT == 1
 					,

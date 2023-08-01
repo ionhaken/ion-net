@@ -162,7 +162,9 @@ static int ion_net_send_connection_request(ion_net_peer handle, ion_net_connect_
 			  rcs.sendConnectionAttemptCount = sendConnectionAttemptCount;
 			  rcs.timeBetweenSendConnectionAttemptsMS = timeBetweenSendConnectionAttemptsMS;
 			  rcs.mPassword.Resize(passwordDataLength);
+#if ION_NET_FEATURE_SECURITY
 			  ion::NetSecure::Random(rcs.mNonce.Data(), rcs.mNonce.ElementCount);
+#endif
 			  memcpy(rcs.mPassword.Data(), passwordData, passwordDataLength);
 			  rcs.timeoutTimeMs = timeoutTime;
 			  data.mRequests.Insert(rcs.systemAddress, rcs);
@@ -320,7 +322,9 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 
 	ION_NET_LOG_VERBOSE("Startup: Run");
 
+#if ION_NET_FEATURE_SECURITY
 	memset(net.mSecurity.mSecretKey.data, 0xAA, ion::NetSecure::SecretKeyLength);
+#endif
 	ion::NetControlLayer::Init(net, parameters);
 
 	NetExchangeLayer::Init(net.mExchange, parameters, net.mControl.mMemoryResource);
@@ -346,7 +350,7 @@ int ion_net_startup(ion_net_peer handle, const ion_net_startup_parameters pars)
 
 	if (result != ION_NET_CODE_STARTED)
 	{		
-		ion_net_shutdown(handle, 1, 0, (unsigned int)NetPacketPriority::Low);
+		ion_net_shutdown(handle, 1, 0, (unsigned int)NetPacketPriority::Immediate);
 	}
 	return result;
 }

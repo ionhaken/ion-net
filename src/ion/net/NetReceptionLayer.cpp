@@ -493,6 +493,7 @@ ion::NetSocketReceiveData* Receive(NetReception& reception, NetControl& control,
 		ion::Thread::Sleep(ion::NetUpdateInterval * 2);
 	}
 	reception.mNumBufferedBytes += data->SocketBytesRead();
+	ION_ASSERT(data->Address().IsAssigned(), "Invalid data");
 	reception.mReceiveBuffer.Enqueue(data);
 	NetSocketReceiveData* ptr = ion::NetControlLayer::AllocateReceiveBuffer(control);
 	reception.mDataBufferedCallback();
@@ -626,7 +627,10 @@ void RemoveFromBanList(NetReception& reception, NetControl& control, const char*
 			  if (strcmp(IP, banList[index]->IP.Data()) == 0)
 			  {
 				  temp = std::move(banList[index]);
-				  banList[index] = std::move(banList[banList.Size() - 1]);
+				  if (index != banList.Size() - 1)
+				  {
+					  banList[index] = std::move(banList[banList.Size() - 1]);
+				  }
 				  banList.Erase(banList.Size() - 1);
 				  reception.mIsAnyoneBanned = banList.Size() != 0;
 				  break;

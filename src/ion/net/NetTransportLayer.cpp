@@ -312,15 +312,16 @@ bool Input(NetTransport& transport, NetControl& control, NetRemoteSystem& remote
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(transport.mGuard);
 	ION_ASSERT(recvFromStruct.SocketBytesRead() >= NetConnectedProtocolMinOverHead, "Invalid data for KCP");
+	ION_ASSERT((uintptr_t(recvFromStruct.mPayload) % alignof(NetPacket) == 0), "Invalid allocation");
+
 	size_t length = recvFromStruct.SocketBytesRead();
 
 	if (conversation != remote.mConversationId)
 	{
-		ION_NET_LOG_ABNORMAL("Invalid conversation: " << conversation << ";len=" << length);
+		// If this happens in ideal conditions, check is it slow disconnect notification
+		ION_NET_LOG_ABNORMAL("Invalid conversation: " << conversation << ";len=" << length << ";Expected conv=" << remote.mConversationId);
 		return false;
 	}
-
-	ION_ASSERT((uintptr_t(recvFromStruct.mPayload) % alignof(NetPacket) == 0), "Invalid allocation");
 
 #if ION_NET_FEATURE_SECURITY
 	if (remote.mDataTransferSecurity == NetDataTransferSecurity::Secure)

@@ -59,9 +59,9 @@ IF (WIN32 AND NOT UNIX)
 ENDIF(WIN32 AND NOT UNIX)
 
 IF (WIN32 AND NOT UNIX)
-	set(ION_NET_LIBRARY_LIBS ws2_32.lib ion libsodium tlsf Dbghelp)
+	set(ION_NET_LIBRARY_LIBS ws2_32.lib ion-core libsodium tlsf Dbghelp)
 ELSE(WIN32 AND NOT UNIX)
-	set(ION_NET_LIBRARY_LIBS pthread ion libsodium tlsf)
+	set(ION_NET_LIBRARY_LIBS pthread ion-core libsodium tlsf)
 ENDIF(WIN32 AND NOT UNIX)
 
 set(CMAKE_DEBUG_POSTFIX "_d")
@@ -84,10 +84,8 @@ set( ION_NET_INCLUDE_DIRS
 	${ION_NET_INCLUDE_ONLY_DIR} 
 	${PROJECT_SOURCE_DIR}/src/ion
 	${PROJECT_SOURCE_DIR}/depend/libsodium/src
-	${PROJECT_SOURCE_DIR}/depend/ion/src
-	${PROJECT_SOURCE_DIR}/depend/ion/3rdparty)
-
-#add_subdirectory(lib)
+	${PROJECT_SOURCE_DIR}/depend/ion-core/src
+	${PROJECT_SOURCE_DIR}/depend/ion-core/depend)
 
 FILE(GLOB_RECURSE ALL_HEADER_SRCS ${PROJECT_SOURCE_DIR}/src/*.h)
 FILE(GLOB_RECURSE ALL_CPP_SRCS ${PROJECT_SOURCE_DIR}/src/*.cpp)

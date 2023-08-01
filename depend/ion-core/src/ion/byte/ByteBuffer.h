@@ -20,13 +20,6 @@
 
 namespace ion
 {
-namespace serialization
-{
-struct Tag
-{
-	size_t mIndex;
-};
-}  // namespace serialization
 
 // A view to container that will be accessed by byte writer or byte reader.
 // View will resize container to written size after end of life span

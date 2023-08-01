@@ -54,7 +54,15 @@ public:
 	{
 		ION_ACCESS_GUARD_WRITE_BLOCK(mReadGuard);
 		ION_ACCESS_GUARD_WRITE_BLOCK(mWriteGuard);
+#if ION_EXTERNAL_SPSC_QUEUE
 		return mData.peek() != nullptr;
+#else
+		bool hasItems = false;
+		mMutex.Lock();
+		hasItems = !mData.IsEmpty();
+		mMutex.Unlock();
+		return hasItems;
+#endif
 	}
 
 	bool Dequeue(T& item)
@@ -67,7 +75,7 @@ public:
 		mMutex.Lock();
 		if (!mData.IsEmpty())
 		{
-			std::swap(item, mData.Back());
+			item = std::move(mData.Back());
 			mData.PopBack();
 			found = true;
 		}

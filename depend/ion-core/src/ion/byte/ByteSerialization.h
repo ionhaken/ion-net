@@ -198,5 +198,4 @@ inline bool ByteWriterUnsafe::Process(const T& t)
 	return true;
 }
 
-
 }  // namespace ion

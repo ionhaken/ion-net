@@ -74,7 +74,7 @@ private:
 
 	ion::ThreadPool mThreadPool;
 	SCThreadSynchronizer mSynchronizer;
-	MPSCQueue<DispatcherJob*, ion::CoreAllocator<char>> mInQueue;
+	MPSCQueue<DispatcherJob*, ion::CoreAllocator<DispatcherJob*>> mInQueue;
 	Vector<DispatcherJob*, ion::CoreAllocator<DispatcherJob*>> mTimedQueue;	 // #TODO: Use priority queue
 	Runner mThread;
 };

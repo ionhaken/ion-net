@@ -184,6 +184,7 @@ ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* TrackedRealloc(void* pointer, size
 
 void TrackedFree(void* pointer, MemTag)
 {
+	ION_ASSERT(pointer, "Invalid free");
 	uint32_t alignment;
 	void* actualPtr = ion::memory_tracker::OnAlignedDeallocation(pointer, alignment, ion::memory_tracker::Layer::Global);
 	Free(actualPtr);
@@ -255,29 +256,38 @@ void TrackedNativeAlignedFree(void* pointer, MemTag)
 
 void operator delete(void* p) noexcept
 {
+	if (p)
+	{
 	#if ION_MEMORY_TRACKER
-	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
+		return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
 	#else
-	return ion::detail::Free(p);
+		return ion::detail::Free(p);
 	#endif
+	}
 }
 
 void operator delete(void* p, size_t) noexcept
 {
+	if (p)
+	{
 	#if ION_MEMORY_TRACKER
-	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
+		return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
 	#else
-	return ion::detail::Free(p);
+		return ion::detail::Free(p);
 	#endif
+	}
 }
 
 void operator delete[](void* p) noexcept
 {
+	if (p)
+	{
 	#if ION_MEMORY_TRACKER
-	return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
+		return ion::detail::TrackedFree(p, ion::detail::GetMemoryTag());
 	#else
-	return ion::detail::Free(p);
+		return ion::detail::Free(p);
 	#endif
+	}
 }
 
 	#if (__cplusplus >= 201703L)

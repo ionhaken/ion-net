@@ -37,7 +37,7 @@
 
 namespace ion
 {
-template <typename T, typename TAllocator = ion::GlobalAllocator<char>>
+template <typename T, typename TAllocator = ion::GlobalAllocator<T>>
 class MPSCQueue
 {
 public:
@@ -124,7 +124,8 @@ public:
 
 private:
 #if MPSC_IS_LOCK_FREE
-	moodycamel::ConcurrentQueue<T, TAllocator> mData;
+	using Allocator = typename TAllocator::template rebind<char>::other;
+	moodycamel::ConcurrentQueue<T, Allocator> mData;
 #else
 	// Resource mResource;
 	// Use SPSC queue, but have lock on writer side to create MPSC queue.
@@ -134,7 +135,7 @@ private:
 	ION_ACCESS_GUARD(mReadGuard);
 };
 
-template <typename T, typename Allocator = GlobalAllocator<char>>
+template <typename T, typename Allocator = GlobalAllocator<T>>
 class MPSCQueueCounted
 {
 public:

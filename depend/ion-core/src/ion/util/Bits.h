@@ -82,7 +82,12 @@ void ForEachEnabledBit(T bitset, Callback&& callback)
 template <typename T>
 [[nodiscard]] inline int CountLeadingZeroes(T v)
 {
-	return ion_CountLeadingZeroes32(ion::SafeRangeCast<unsigned long>(v));
+	int count = ion_CountLeadingZeroes32(ion::SafeRangeCast<unsigned long>(v));
+	if constexpr (sizeof(T) != 4)
+	{
+		count -= (32 - (sizeof(T) * 8));
+	}
+	return count;
 }
 
 template <>

@@ -385,7 +385,7 @@ void RemoteSystemReceive(RemoteReceiveContext& context)
 {
 	while (ion::NetPacket* packet = ReceiveFromReassebly(context.mRemote.mTransport))
 	{
-		ION_NET_LOG_VERBOSE_MSG("Msg: Receiving id=" << Hex<uint8_t>(packet->Data()[0]) << ";Length=" << packet->Length()
+		ION_NET_LOG_VERBOSE_MSG("Msg: Receiving id=" << Hex<uint8_t>(packet->Data()[0]) << "h;Length=" << packet->Length()
 													 << ";GUID=" << packet->mGUID << ";Flags=" << int(packet->mFlags));
 		if (context.mRemote.mMetrics)
 		{
@@ -611,37 +611,29 @@ void AddToBanList(NetReception& reception, NetControl& control, const char* IP, 
 
 void RemoveFromBanList(NetReception& reception, NetControl& control, const char* IP)
 {
-	unsigned index;
-	ion::NetInterfacePtr<NetBanStruct> temp;
-
 	if (IP == 0 || IP[0] == 0 || strlen(IP) > 15)
+	{
 		return;
-
-	index = 0;
+	}
 
 	reception.mBanList.Access(
-	  [&reception, &index, &temp, &IP](NetBanListVector& banList)
+	  [&reception, &IP, &control](NetBanListVector& banList)
 	  {
-		  for (; index < banList.Size(); index++)
+		  for (unsigned index = 0; index < banList.Size(); index++)
 		  {
 			  if (strcmp(IP, banList[index]->IP.Data()) == 0)
 			  {
-				  temp = std::move(banList[index]);
+				  ion::DeleteArenaPtr(&control.mMemoryResource, banList[index]);
 				  if (index != banList.Size() - 1)
 				  {
 					  banList[index] = std::move(banList[banList.Size() - 1]);
 				  }
 				  banList.Erase(banList.Size() - 1);
-				  reception.mIsAnyoneBanned = banList.Size() != 0;
+				  reception.mIsAnyoneBanned = banList.Size() != 0;			  
 				  break;
 			  }
 		  }
 	  });
-
-	if (temp)
-	{
-		ion::DeleteArenaPtr(&control.mMemoryResource, temp);
-	}
 }
 
 void ClearBanList(NetReception& reception, NetControl& control)
@@ -672,22 +664,23 @@ NetBanStatus IsBanned(NetReception& reception, NetControl& control, const char* 
 		return NetBanStatus::NotBanned;
 	}
 
-	ion::NetInterfacePtr<NetBanStruct> temp;
 	NetBanStatus banStatus = NetBanStatus::NotBanned;
-	unsigned banListIndex = 0;
 
 	reception.mBanList.Access(
 	  [&](NetBanListVector& banList)
 	  {
+		  unsigned banListIndex = 0;
 		  while (banListIndex < banList.Size())
 		  {
 			  if (banList[banListIndex]->timeout != 0 && ion::DeltaTime(banList[banListIndex]->timeout, now) < 0)
 			  {
 				  // Delete expired ban
-				  temp = std::move(banList[banListIndex]);
-				  banList[banListIndex] = std::move(banList[banList.Size() - 1]);
-				  banList.Erase(banList.Size() - 1);
-				  ion::DeleteArenaPtr(&control.mMemoryResource, temp);
+				  ion::DeleteArenaPtr(&control.mMemoryResource, banList[banListIndex]);
+				  if (banListIndex != banList.Size() - 1)
+				  {
+					  banList[banListIndex] = std::move(banList[banList.Size() - 1]);
+				  }
+				  banList.Erase(banList.Size() - 1);			  
 				  reception.mIsAnyoneBanned = banList.Size() != 0;
 			  }
 			  else

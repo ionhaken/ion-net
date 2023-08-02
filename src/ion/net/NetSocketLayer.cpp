@@ -82,22 +82,20 @@ struct AddressInfo
 		}
 
 		struct addrinfo aip;
-		aip.ai_protocol = mBindParameters.protocol;
-		aip.ai_socktype = mBindParameters.type;
+
+		aip.ai_protocol = mBindParameters.protocol == 0 ? IPPROTO_UDP : mBindParameters.protocol;
+		aip.ai_socktype = mBindParameters.type == 0 ? SOCK_DGRAM : mBindParameters.type;
 
 		// Fallback to IPv6
 		if (mBindParameters.addressFamily != AF_INET)
 		{
 			aip.ai_family = AF_INET6;
-			sockaddr_in6 addr6;
-			memset(&addr6, 0, sizeof(struct sockaddr_in6));
-			addr6.sin6_addr = IN6ADDR_ANY_INIT;
-			addr6.sin6_port = htons(mBindParameters.port);
-			aip.ai_addr = reinterpret_cast<struct sockaddr*>(&addr6);
-			aip.ai_addrlen = sizeof(addr6);
+			aip.ai_addr = reinterpret_cast<struct sockaddr*>(&mFallbackAddr6);
+			aip.ai_addrlen = sizeof(mFallbackAddr6);
+			ION_ASSERT(mFallbackAddr6.sin6_port == htons(mBindParameters.port), "Invalid fallback port");
 			if (mBindParameters.hostAddress[0])
 			{
-				inet_pton(AF_INET6, mBindParameters.hostAddress, &addr6.sin6_addr);
+				inet_pton(AF_INET6, mBindParameters.hostAddress, &mFallbackAddr6.sin6_addr);
 			}
 			if (callback(&aip) == ion::ForEachOp::Break)
 			{
@@ -108,15 +106,12 @@ struct AddressInfo
 		// Fallback to IPv4
 		{
 			aip.ai_family = AF_INET;
-			sockaddr_in addr4;
-			memset(&addr4, 0, sizeof(struct sockaddr_in));
-			addr4.sin_addr.s_addr = INADDR_ANY;
-			addr4.sin_port = htons(mBindParameters.port);
-			aip.ai_addr = reinterpret_cast<struct sockaddr*>(&addr4);
-			aip.ai_addrlen = sizeof(addr4);
+			aip.ai_addr = reinterpret_cast<struct sockaddr*>(&mFallbackAddr4);
+			aip.ai_addrlen = sizeof(mFallbackAddr4);
+			ION_ASSERT(mFallbackAddr4.sin_port == htons(mBindParameters.port), "Invalid fallback port");
 			if (mBindParameters.hostAddress[0])
 			{
-				inet_pton(AF_INET, mBindParameters.hostAddress, &addr4.sin_addr);
+				inet_pton(AF_INET, mBindParameters.hostAddress, &mFallbackAddr4.sin_addr);
 			}
 			if (callback(&aip) == ion::ForEachOp::Break)
 			{
@@ -129,9 +124,21 @@ struct AddressInfo
 private:
 	ion::NetBindParameters mBindParameters;
 	struct addrinfo* mServinfo = nullptr;
+	sockaddr_in6 mFallbackAddr6 = {};
+	sockaddr_in mFallbackAddr4 = {};
+
 
 	void Load(const ion::NetBindParameters& bindParameters)
 	{
+		memset(&mFallbackAddr4, 0, sizeof(struct sockaddr_in));
+		mFallbackAddr4.sin_addr.s_addr = INADDR_ANY;
+		mFallbackAddr4.sin_port = htons(bindParameters.port);
+
+		memset(&mFallbackAddr6, 0, sizeof(struct sockaddr_in6));
+		mFallbackAddr6.sin6_addr = IN6ADDR_ANY_INIT;
+		mFallbackAddr6.sin6_port = htons(bindParameters.port);
+
+
 		mBindParameters = bindParameters;
 		struct addrinfo hints;
 		memset(&hints, 0, sizeof(addrinfo));
@@ -174,10 +181,10 @@ private:
 };
 
 template <typename T>
-inline int SetSocketOption(ion::NetNativeSocket& nativeSocket, int level, int optname, T& optVal)
+inline int SetSocketOption(ion::NetNativeSocket& nativeSocket, int level, int optname, T& optVal, bool warn = true)
 {
 	int result = setsockopt(nativeSocket, level, optname, reinterpret_cast<const char*>(&optVal), sizeof(T));
-	if (result != 0)
+	if (warn && result != 0)
 	{
 		ION_NET_LOG_ABNORMAL("setsockopt() failed. " << ion::debug::GetLastErrorString() << ";level=" << level << ";option=" << optname);
 	}
@@ -241,7 +248,7 @@ ion::NetBindResult BindSocketInternal(NetSocket& socketLayer, ion::NetBindParame
 	  [&](struct addrinfo* aip)
 	  {
 		  socketLayer.mNativeSocket = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
-		  if (!socketLayer.mNativeSocket)
+		  if (socketLayer.mNativeSocket == NetInvalidSocket)
 		  {
 			  ION_NET_LOG_ABNORMAL("Invalid socket: " << ion::debug::GetLastErrorString());
 			  return ion::ForEachOp::Next;
@@ -268,14 +275,12 @@ ion::NetBindResult BindSocketInternal(NetSocket& socketLayer, ion::NetBindParame
 			  SetSocketOption(socketLayer.mNativeSocket, SOL_SOCKET, SO_SNDTIMEO, tv);
 		  }
 
-		  /*if (aip->ai_socktype == SOCK_STREAM)
+		  // Make sure linger is disabled. It should not matter anymore, but it caused previously issues with Windows Vista.
 		  {
-			  struct linger opt = {
-				.l_onoff = 1,
-				.l_linger = 0,
-			  };
-			  SetSocketOption(nativeSocket, SOL_SOCKET, SO_LINGER, opt);
-		  }*/
+			  struct linger opt = {.l_onoff = 0, .l_linger = 0};
+			  SetSocketOption(socketLayer.mNativeSocket, SOL_SOCKET, SO_LINGER, opt, false /* ignore error */);
+		  }
+
 		  SetSocketOption(socketLayer.mNativeSocket, SOL_SOCKET, SO_SNDBUF, ion::NetDefaultSendBufferSizeBytes);
 		  if (aip->ai_socktype == SOCK_DGRAM)
 		  {
@@ -448,7 +453,8 @@ void RecvFromBlocking(const NetSocket& socketLayer, ion::NetSocketReceiveData& r
 		if (bytesRead == -1)
 		{
 			DWORD dwIOError = GetLastError();
-			if (dwIOError != 10035)
+			if (dwIOError != 10035 && // No data available
+				dwIOError != 10054) // Remote address is not bound
 			{
 				ION_DBG_TAG(Network, "Recvfrom failed:" << dwIOError);
 			}
@@ -706,7 +712,7 @@ void CancelThreads(NetSocket& socket)
 	if (socket.mReceiveThreadState == NetSocket::ThreadState::Active)
 	{
 		auto boundAddress = socket.mBoundAddress;
-		socket.mReceiveThreadState = NetSocket::ThreadState::Stopping;	
+		socket.mReceiveThreadState = NetSocket::ThreadState::Stopping;
 		if (boundAddress.GetPort() != 0)  // Make sure receive thread had time to bind bort
 		{
 			ION_ALIGN(alignof(ion::NetSocketSendParameters)) uint32_t zero[ion::NetSocketSendParametersHeaderSize + sizeof(uint32_t)] = {};

@@ -171,7 +171,7 @@
 	#define ION_NO_INLINE	 __declspec(noinline)
 #else
 	#define ION_FORCE_INLINE __attribute__((always_inline)) inline
-	#define ION_NO_INLINE
+	#define ION_NO_INLINE __attribute__ ((noinline))
 #endif
 #if ION_CONFIG_PLATFORM_WRAPPERS == 1
 	#define ION_PLATFORM_INLINING ION_FORCE_INLINE

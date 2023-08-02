@@ -690,7 +690,8 @@ ion::NetRemoteSystem* AssignSystemAddressToRemoteSystemList(NetExchange& exchang
 			AddToActiveSystemList(exchange, ion::NetRemoteIndex(assignedIndex));
 			if (rsp.incomingNetSocket->mBoundAddress != bindingAddress)
 			{
-				ION_ABNORMAL("Incoming address does not match with bound address of incoming socket");
+				ION_DBG("Bound address of incoming socket " << rsp.incomingNetSocket->mBoundAddress << " does not match with incoming address "
+															<< bindingAddress);
 			}
 			remoteSystem->netSocket = rsp.incomingNetSocket;
 
@@ -1211,14 +1212,14 @@ void SendImmediate(NetExchange& exchange, NetControl& control, NetCommandPtr com
 		auto& remoteSystem = exchange.mRemoteSystemList[remoteIndex];
 		ION_ASSERT(NetModeIsOpen(exchange.mRemoteSystemList[remoteIndex].mMode), "Remote not reachable");
 		ION_ASSERT(remoteSystem.mMode != NetMode::Disconnected, "Invalid state to send reliable data");
-		ION_NET_LOG_VERBOSE_MSG("Msg: Sending id=" << Hex<uint8_t>(command.Get()->mData));
+		ION_NET_LOG_VERBOSE_MSG("Msg: Sending id=" << Hex<uint8_t>(command.Get()->mData) << "h");
 		NetTransportLayer::Send(remoteSystem.mTransport, control, now, remoteSystem, *command.Get());
 		if (remoteSystem.mMetrics)
 		{
 			remoteSystem.mMetrics->OnSent(
 			  now,
 			  command->mReliability == NetPacketReliability::Reliable ? ion::PacketType::UserReliable : ion::PacketType::UserUnreliable,
-			  command->mNumberOfBytesToSend);
+			  size_t(command->mNumberOfBytesToSend));
 		}
 	}
 	if (command->mRefCount == 0)

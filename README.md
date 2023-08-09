@@ -35,7 +35,7 @@ Key features
 
 Limitations
 ------------------------------------------
-- No support for NAT Punch or UPnP since due to current server prices client-server model is feasible for any developer.
+- Tailored for client-server model and hence has no support for NAT Punch or UPnP.
 
 
 Benchmarks

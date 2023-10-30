@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 #include <ion/byte/ByteBuffer.h>
+#include <ion/container/Vector.h>
+
 #include <ion/core/Core.h>
 #include <ion/filesystem/Folder.h>
 #if ION_PLATFORM_MICROSOFT
@@ -39,6 +41,9 @@ static AAssetManager* gAssetmanager = nullptr;
 	#include <stdio.h>
 	#include <limits.h>
 #endif
+
+#include <filesystem>
+
 
 namespace
 {
@@ -66,11 +71,26 @@ ion::String WorkingDir()
 	return ion::String(".");
 #endif
 }
+
 }  // namespace
 
 #if ION_PLATFORM_ANDROID
 void ion::Folder::SetAssetManager(AAssetManager* a) { gAssetmanager = a; }
 #endif
+
+void ion::Folder::AllFiles(ion::Vector<ion::String>& files) const
+{
+
+	size_t pathLength = mPath.Length()+1;
+
+	for (std::filesystem::recursive_directory_iterator i(mPath.CStr()), end; i != end; ++i)
+	{
+		if (!is_directory(i->path()))
+		{	
+			files.Add(&i->path().string().c_str()[pathLength]);
+		}
+	}
+}
 
 bool ion::Folder::IsAvailable() const
 {

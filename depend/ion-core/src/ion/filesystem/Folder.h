@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 #pragma once
-#include <ion/Base.h>
-#include <ion/string/String.h>
+
 #include <ion/Types.h>
+#include <ion/string/String.h>
+
 #if ION_PLATFORM_ANDROID
 	#include <ion/byte/ByteBuffer.h>
 struct AAssetManager;
@@ -33,6 +34,10 @@ public:
 	bool IsAvailable() const;
 
 	ion::String FullPathTo(const ion::String& target) const;
+
+	void AllFiles(ion::Vector<ion::String>& files) const;
+
+	const ion::String& FullPath() { return mPath; }
 
 	static Folder FindFromTree(ion::String folder, UInt maxDepth = 5);
 

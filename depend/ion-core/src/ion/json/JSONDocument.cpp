@@ -19,7 +19,7 @@
 	#include <ion/byte/ByteWriter.h>
 	#include <ion/core/Core.h>
 	#include <ion/filesystem/File.h>
-	#include <ion/filesystem/Folder.h>
+	#include <ion/filesystem/ResourceLoader.h>
 	#include <ion/string/String.h>
 	#include <rapidjson/encodings.h>
 	#include <rapidjson/stringbuffer.h>
@@ -80,13 +80,13 @@ void ion::JSONDocument::Save(ByteBufferBase& buffer)
 	serializer.Write(*this);
 }
 
-void ion::JSONDocument::Save(const ion::Folder& folder, const char* filename)
+void ion::JSONDocument::Save(const ion::Folder& folder, StringView filename)
 {
 	auto target = folder.FullPathTo(filename);
-	Save(target.CStr());
+	Save(target);
 }
 
-void ion::JSONDocument::Save(const char* filename)
+void ion::JSONDocument::Save(StringView filename)
 {
 	ion::ByteBuffer<> buffer(32 * 1024);
 	Save(buffer);
@@ -94,9 +94,9 @@ void ion::JSONDocument::Save(const char* filename)
 	ion::file_util::ReplaceTargetFile(filename, reader);
 }
 
-void ion::JSONDocument::Load(const char* target)
+void ion::JSONDocument::Load(StringView target)
 {
-	std::string tmp = target;
+	std::string tmp = target.CStr();
 	size_t pos = std::numeric_limits<size_t>::max();
 	for (int i = int(tmp.length() - 1); i >= 0; i--)
 	{
@@ -111,45 +111,48 @@ void ion::JSONDocument::Load(const char* target)
 		auto left = tmp.substr(0, pos);
 		auto right = tmp.substr(pos, tmp.size());
 
-		ion::Folder folder(left.c_str());
-		Load(folder, right.c_str());
+		ion::Folder folder(StringView(left.c_str(), left.size()));
+		Load(folder, StringView(right.c_str(), right.length()), nullptr);
 	}
 	else
 	{
 		ion::Folder folder("");
-		Load(folder, tmp.c_str());
+		Load(folder, StringView(tmp.c_str(), tmp.length()), nullptr);
 	}
 }
 
-void ion::JSONDocument::Load(const ion::Folder& folder, const char* target)
+void ion::JSONDocument::Load(ion::Folder& folder, StringView target, const ion::DataProcessorRegistry* processorregistry)
 {
-	std::string data;
+	ion::Vector<uint8_t> data;
 	{
-		ion::FileIn mFile(folder, target);
-		if (!mFile.Get(data))
-		{
-			ION_ABNORMAL("Cannot read " << target);
-		}
+		FileLoader fileLoader(folder, processorregistry, target, *ion::core::gSharedScheduler);
+		
+		fileLoader.Wait();
+		fileLoader.Get(data);
 	}
-	if (!data.empty())
+	if (data.IsEmpty())
 	{
-		Parse(target, ion::String(data.c_str()));
+		ION_ABNORMAL("Cannot read '" << target << "'");
+	}	
+	else
+	{
+		data.Add(uint8_t(0));
+		Parse(target, ion::StringView(reinterpret_cast<char*>(data.Data()), data.size()-1));
 	}
 }
 
-void ion::JSONDocument::Parse(const char* target, const ion::String& coredata)
+void ion::JSONDocument::Parse(StringView fileName, ion::StringView dataView)
 {
-	std::string data(coredata.CStr());
-	mDocument.Parse(data.c_str());
+	mDocument.Parse(dataView.CStr());
 	if (mDocument.HasParseError())
 	{
-		ION_LOG_INFO("File " << target << " has parse error");
+		ION_LOG_INFO("File " << fileName << " has parse error");
 		size_t line = 0;
 		size_t prevLineStart = 0;
 		size_t lineStart = 0;
 		for (size_t i = 0; i < mDocument.GetErrorOffset(); i++)
 		{
-			if (data[i] == '\n')
+			if (dataView.CStr()[i] == '\n')
 			{
 				prevLineStart = lineStart;
 				lineStart = i + 1;
@@ -157,6 +160,7 @@ void ion::JSONDocument::Parse(const char* target, const ion::String& coredata)
 			}
 		}
 
+		std::string data(dataView.CStr());	// #TODO: Implement substr to string view
 		if (line > 1)
 		{
 			ION_LOG_INFO("Line " << (line) << ": '" << data.substr(prevLineStart, lineStart - prevLineStart - 1).c_str() << "'");

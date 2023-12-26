@@ -63,7 +63,7 @@ template <typename T>
 using NetAllocator = DomainAllocator<T, NetResourceProxy>;
 
 template <typename T>
-using NetPtr = Ptr<T, NetAllocator<T>>;
+using NetPtr = Ptr<T>;
 
 template <typename T, typename... Args>
 inline NetPtr<T> MakeNetPtr(Args&&... args)

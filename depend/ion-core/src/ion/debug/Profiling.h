@@ -38,7 +38,9 @@ struct TemporaryStringBuffer;
 class ProfilingBuffer
 {
 public:
-	enum class Event : uint16_t
+	using Category = uint8_t;
+
+	enum class Event : uint8_t
 	{
 		None,
 		Begin,
@@ -50,43 +52,39 @@ public:
 		Counter,
 		AsyncStart,
 		AsyncFinish,
-		Event
+		Event,
+		HasDetail = 1 << 7
 	};
 
 	class Sample
 	{
-		using Category = uint16_t;
-		static const size_t MetaLength = sizeof(ion::SystemTimeUnit) + sizeof(Category) + sizeof(Event);
-		static_assert(MetaLength < ION_CONFIG_CACHE_LINE_SIZE / 4, "Too long meta");
-
 	public:
 		Sample() : mTimePoint(SystemTimePoint::Current()) {}
 
 		Sample(const SystemTimePoint& t, uint32_t tag, Event eventType, uint32_t eventId)
-		  : mTimePoint(t), id(eventId), cat(ion::SafeRangeCast<Category>(tag)), type(eventType)
+		  : mTimePoint(t), id(ion::SafeRangeCast<uint16_t>(eventId)), mDetailId(0), cat(ion::SafeRangeCast<Category>(tag)), type(eventType)
 		{
-			mDetailedInfo[0] = 0;
 		}
 
-		template <typename Detail>
-		Sample(const SystemTimePoint& t, uint32_t tag, Event eventType, uint32_t eventId, const Detail& detail)
-		  : mTimePoint(t), id(eventId), cat(ion::SafeRangeCast<Category>(tag)), type(eventType)
+		Sample(const SystemTimePoint& t, uint32_t tag, Event eventType, uint32_t eventId, uint16_t detailId)
+		  : mTimePoint(t), id(ion::SafeRangeCast<uint16_t>(eventId)), mDetailId(detailId), cat(ion::SafeRangeCast<Category>(tag)), type(Event(uint8_t(eventType) | uint8_t(Event::HasDetail)))
 		{
-			StringWriter writer(mDetailedInfo, 12);
-			serialization::Serialize(detail, writer);
 		}
 
 		SystemTimePoint mTimePoint;
 		uint32_t id;
+		uint16_t mDetailId;
 		Category cat;
 		Event type = Event::None;
-		char mDetailedInfo[12];
+
+		static_assert(sizeof(mTimePoint) + sizeof(id) + sizeof(cat) + sizeof(type) + sizeof(mDetailId) ==
+						ION_CONFIG_CACHE_LINE_SIZE / 4,
+					  "Sample not cache efficient");
 	};
-	static_assert(sizeof(Sample) == ION_CONFIG_CACHE_LINE_SIZE / 2, "Sample not cache efficient");
 
-	ProfilingBuffer() {}
+	ProfilingBuffer();
 
-	void Resize(size_t maxSamples) { mSamples.Resize(maxSamples); }
+	void Resize(size_t maxSamples);
 
 	void Save(profiling::TemporaryStringBuffer& stringBuffer, ion::JSONArrayWriter& tracesArray, ion::SystemTimePoint now, uint64_t lenNs,
 			  UInt tid);
@@ -102,20 +100,30 @@ public:
 	template <typename Detail>
 	void Begin(const SystemTimePoint& t, uint32_t tag, uint32_t id, const Detail& detail)
 	{
-		Add(Sample(t, tag, Event::Begin, id, detail));
+		uint16_t nextDetailPos = ion::Mod2(mDetailPos++, mDetailInfo.Size());
+		size_t samplePos = Add(Sample(t, tag, Event::Begin, id, nextDetailPos));
+		
+		mDetailInfo[nextDetailPos].mSampleIndex = uint32_t(samplePos);
+		StringWriter writer(mDetailInfo[nextDetailPos].mText.Data(), sizeof(mDetailInfo[nextDetailPos].mText));
+		serialization::Serialize(detail, writer);
 	}
 
 	void End(const SystemTimePoint& t, uint32_t id) { Add(Sample(t, 0 /* tag*/, Event::End, id)); }
 
+
 private:
-	void Add(const Sample& sample)
-	{
-		size_t nextSamplePos = mSamplePos++;
-		mSamples[nextSamplePos % mSamples.Size()] = sample;
-	}
+	size_t Add(const Sample& sample);
 
 	ion::Vector<Sample, ion::DebugAllocator<Sample>> mSamples;
 	std::atomic<size_t> mSamplePos = 0;
+	std::atomic<uint16_t> mDetailPos = 0;
+	struct DetailInfo
+	{
+		uint32_t mSampleIndex; // map detail to sample
+		ion::Array<char, 12> mText;
+	};
+
+	ion::Vector<DetailInfo, ion::DebugAllocator<DetailInfo>> mDetailInfo;
 };
 
 void ProfilingInit();
@@ -178,27 +186,25 @@ public:
 	const uint32_t mId;
 	const bool mIsEnabled;
 };
-};	// namespace profiling
-}  // namespace ion
 
-namespace ion
-{
-namespace profiling
-{
 namespace tag
 {
-constexpr const uint16_t Core = 1;
-constexpr const uint16_t Scheduler = 2;
-constexpr const uint16_t Job = 3;
-constexpr const uint16_t Tracing = 4;
-constexpr const uint16_t Network = 5;
-constexpr const uint16_t Render = 6;
-constexpr const uint16_t Physics = 7;
-constexpr const uint16_t Audio = 8;
-constexpr const uint16_t NodeScript = 9;
-constexpr const uint16_t Memory = 10;
-constexpr const uint16_t Online = 11;
-constexpr const uint16_t Game = 255;
+constexpr const ProfilingBuffer::Category Core = 1;
+constexpr const ProfilingBuffer::Category Scheduler = 2;
+constexpr const ProfilingBuffer::Category Job = 3;
+constexpr const ProfilingBuffer::Category Tracing = 4;
+constexpr const ProfilingBuffer::Category Network = 5;
+constexpr const ProfilingBuffer::Category Render = 6;
+constexpr const ProfilingBuffer::Category Physics = 7;
+constexpr const ProfilingBuffer::Category Audio = 8;
+constexpr const ProfilingBuffer::Category NodeScript = 9;
+constexpr const ProfilingBuffer::Category Memory = 10;
+constexpr const ProfilingBuffer::Category Online = 11;
+constexpr const ProfilingBuffer::Category Game = 255;
+
+constexpr const ion::Array<const char* const, 13> TagStrings = {"Generic", "Core",	"Scheduler",  "Job",	"Tracing", "Network", "Render",
+																"Physics", "Audio", "NodeScript", "Memory", "Online",  "Game"};
+
 }  // namespace tag
 }  // namespace profiling
 }  // namespace ion
@@ -211,10 +217,10 @@ constexpr const uint16_t Game = 255;
 		ion::profiling::Block ION_ANONYMOUS_VARIABLE(profilingBlock)(ion::profiling::tag::__tag, \
 																	 ION_CONCATENATE(profile_event_id_, __LINE__))
 
-	#define ION_PROFILER_SCOPE_DETAIL(__tag, __name, __detail)                                   \
-		ION_PROFILER_REGISTER_EVENT_ID(ion::profiling::tag::__tag, __name);                      \
-		ion::profiling::Block ION_ANONYMOUS_VARIABLE(profilingBlock)(ion::profiling::tag::__tag, \
-																	 ION_CONCATENATE(profile_event_id_, __LINE__), __detail)
+	#define ION_PROFILER_SCOPE_DETAIL(__tag, __name, __detail)              \
+		ION_PROFILER_REGISTER_EVENT_ID(ion::profiling::tag::__tag, __name); \
+		ion::profiling::Block ION_ANONYMOUS_VARIABLE(profilingBlock)(       \
+		  ion::profiling::tag::__tag, ION_CONCATENATE(profile_event_id_, __LINE__), __detail)
 
 	#define ION_PROFILER_RECORD(__len) ion::profiling::Record(__len)
 

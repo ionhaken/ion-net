@@ -41,7 +41,7 @@ public:
 
 	void Wait(TimeMS time);
 
-	inline UInt NumWaitingThreads() const { return UInt(mWaitingThreads); }
+	inline UInt NumWaitingThreads() const { return ion::SafeRangeCast<UInt>(mWaitingThreads); }
 
 private:
 	void NotifyAll();
@@ -61,10 +61,11 @@ private:
 	using ConditionVariableWrapper = ObjectWrapper<4, 4>;
 	#endif
 #endif
-	std::atomic<UInt> mWaitingThreads = 0;
 	ConditionVariableWrapper mConditionVariable;
+	std::atomic<size_t> mWaitingThreads = 0;
 };
 
+class ThreadPool;
 class ThreadSynchronizerLock
 {
 	ThreadSynchronizer& mSynchronizer;
@@ -102,6 +103,9 @@ public:
 		mSynchronizer.Wait(0xFFFFFFFF);
 	}
 
+	// Unlock and wait, but also ensure that blocked workers have companion workers.
+	void UnlockAndWaitEnsureWork(ThreadPool& threadPool);
+
 	template <typename TPredicate>
 	void UnlockAndWaitFor(TPredicate&& predicate)
 	{
@@ -119,10 +123,23 @@ public:
 		return mNumThreadsToWake;
 	}
 
+	inline UInt Notify(UInt num)
+	{
+		UInt numThreadsToWake = ion::Min(num, mSynchronizer.NumWaitingThreads());	
+		mNumThreadsToWake = numThreadsToWake;
+		return numThreadsToWake;
+	}
+
 	inline UInt NotifyOne()
 	{
-		mNumThreadsToWake = mSynchronizer.NumWaitingThreads() != 0 ? 1 : 0;
-		return mNumThreadsToWake;
+		UInt numThreadsToWake = mSynchronizer.NumWaitingThreads() != 0 ? 1u : 0u;
+		mNumThreadsToWake += numThreadsToWake;
+		return numThreadsToWake;
+	}
+
+	inline UInt NumWaitingThreads()
+	{
+		return mSynchronizer.NumWaitingThreads();
 	}
 
 protected:
@@ -154,7 +171,7 @@ public:
 		// Unlock mutex after notification for "predictable scheduling behavior"
 		// https://linux.die.net/man/3/pthread_cond_signal
 		Synchronizer().Unlock();
-	}
+	}	
 };
 
 template <>

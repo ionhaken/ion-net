@@ -76,7 +76,7 @@ public:
 	}
 
 protected:
-	virtual void RunTask() final override
+	void DoWork() final
 	{
 		ION_PROFILER_SCOPE_DETAIL(Scheduler, "Task List intermediate", ListJobBase::NumItems());
 		this->OnTaskStarted();

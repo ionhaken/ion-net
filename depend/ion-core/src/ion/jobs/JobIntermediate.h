@@ -24,7 +24,7 @@ namespace ion
 template <typename TData, size_t DefaultSize =
 							ion::MinMax(static_cast<uint64_t>(1),
 										// Stack reservation - By default, use 4KB from stack for intermediates
-										static_cast<uint64_t>(4096u / sizeof(CriticalData<TData>)), static_cast<uint64_t>(ion::MaxThreads))>
+										static_cast<uint64_t>(4096u / sizeof(CriticalData<TData>)), static_cast<uint64_t>(ion::MaxQueues*2))>
 class JobIntermediate
 {
 	ION_CLASS_NON_COPYABLE_NOR_MOVABLE(JobIntermediate);

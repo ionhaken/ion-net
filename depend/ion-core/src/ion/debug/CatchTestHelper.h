@@ -27,6 +27,7 @@
 #ifdef TEST_MAIN
 	#define CATCH_CONFIG_RUNNER
 #endif
+#include <ion/memory/Memory.h>
 #include <catch2/catch.hpp>	 // Catch v2.
 
 #ifdef TEST_MAIN

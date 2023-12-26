@@ -16,44 +16,76 @@
 #pragma once
 
 #include <ion/container/ArrayView.h>
+
 #include <ion/tracing/Log.h>
 #include <ion/util/SafeRangeCast.h>
-#include <ion/string/StringUtil.h>
-#include <ion/string/StringWriter.h>
 
 namespace ion
 {
-const char gNullString = 0;
+
+template <size_t StackCapacity, size_t MaxCapacity>
+class StackStringFormatter;
+
+template <size_t StackCapacity>
+class StackString;
+
+template <typename Allocator>
+class BasicString;
+
+class String;
+
 class StringView
 {
-public:
-	StringView() : mArray(&gNullString, 0) {}
+	friend class String;
+	friend class StringWriter;
+	friend class JSONStructWriter;
 
-	// StringView(const ion::String& string) : mArray(string.CStr(), ion::SafeRangeCast<uint32_t>(string.Length())) {}
+public:
+	StringView();
+
 	constexpr explicit StringView(const char* const text, size_t size) : mArray(text, size) {}
 
 	// Compile time view of string. If compilation fails, use ion::StringLength() to get runtime string length for string view.
 	// Note: It's not always good idea to have compile time generated view as it uses additional memory for string length.
-	ION_CONSTEVAL StringView(const char text[]) : StringView(text, ion::ConstexprStringLength(text)) {}
+	ION_CONSTEVAL StringView(const char text[]) : StringView(text, ConstexprStringLength(text)) {}
 
-	[[nodiscard]] const char* const CStr() const { return mArray.Data(); }
+	explicit StringView(const String& string);
+
+	template <size_t StackCapacity, size_t MaxCapacity = 256 * 1024>
+	constexpr StringView(const StackStringFormatter<StackCapacity, MaxCapacity>& formatter)
+	  : StringView(formatter.CStr(), formatter.Length())
+	{
+	}
+
+	template <size_t StackCapacity>
+	constexpr StringView(const StackString<StackCapacity>& stackString) : StringView(stackString.CStr(), stackString.Length())
+	{
+	}
+
+	template <typename Allocator>
+	constexpr StringView(const BasicString<Allocator>& string) : StringView(string.CStr(), string.Length())
+	{
+	}
+
+	[[nodiscard]] const char* const CStr() const
+	{
+		ION_ASSERT_FMT_IMMEDIATE(mArray.Data()[Length()] == 0, "String is not null terminated");
+		return mArray.Data();
+	}
 	[[nodiscard]] size_t Length() const { return mArray.Size(); }
 
+	[[nodiscard]] bool operator==(const char* str) const;
+
+	[[nodiscard]] bool operator==(const StringView other) const
+	{
+		return other.Length() == Length() && memcmp(mArray.Data(), other.mArray.Data(), Length()) == 0;
+	}
+
 private:
+	// To by-pass assert of CStr() - used by friend classes only.
+	[[nodiscard]] const char* const Copy() const { return mArray.Data(); }
+
 	ArrayView<const char, size_t> mArray;
 };
-
-namespace serialization
-{
-template <>
-inline ion::UInt Serialize(const StringView& data, StringWriter& writer)
-{
-	ION_ASSERT_FMT_IMMEDIATE(writer.Available() > data.Length(), "Out of buffer");
-	memcpy(writer.Data(), data.CStr(), data.Length());
-	writer.Skip(data.Length());
-	return ion::SafeRangeCast<ion::UInt>(data.Length());
-}
-
-}  // namespace serialization
 
 }  // namespace ion

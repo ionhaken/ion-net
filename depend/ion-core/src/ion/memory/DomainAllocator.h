@@ -18,7 +18,6 @@
 
 #include <cstddef>
 #include <ion/Base.h>
-#include <utility>	// forward
 
 namespace ion
 {
@@ -118,7 +117,7 @@ public:
 	[[nodiscard]] static constexpr value_type* Construct(Args&&... args)
 	{
 		DomainAllocator a;
-		return new (static_cast<void*>(a.allocate(1))) value_type(std::forward<Args>(args)...);
+		return new (static_cast<void*>(a.allocate(1))) value_type(ion_forward(args)...);
 	}
 
 	static constexpr void Destroy(value_type* p)

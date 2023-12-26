@@ -64,16 +64,24 @@ ION_SECTION_END
 ION_CODE_SECTION(".jobs")
 void ion::JobScheduler::PushMainThreadJob(BaseJob& job)
 {
-	Task task(&job);
-	mDispatcher.ThreadPool().AddMainThreadTask(std::move(task));
+	JobWork work(&job);
+	mDispatcher.ThreadPool().AddMainThreadTask(std::move(work));
 }
 ION_SECTION_END
 
 ION_CODE_SECTION(".jobs")
-void ion::JobScheduler::PushLongJob(BaseJob& job)
+void ion::JobScheduler::PushIOJob(BaseJob& job)
 {
-	Task task(&job);
-	mDispatcher.ThreadPool().PushLongTask(std::move(task));
+	JobWork work(&job);
+	mDispatcher.ThreadPool().PushIOTask(std::move(work));
+}
+ION_SECTION_END
+
+ION_CODE_SECTION(".jobs")
+void ion::JobScheduler::PushBackgroundJob(BaseJob& job)
+{
+	JobWork work(&job);
+	mDispatcher.ThreadPool().PushBackgroundTask(std::move(work));
 }
 ION_SECTION_END
 
@@ -114,5 +122,30 @@ void ion::JobScheduler::UpdateOptimizer(double t)
 		mMeasurement.mLastTime = t;
 	} while (0);
 	mMeasurement.mVolatility = ion::Clamp(mMeasurement.mVolatility * volatilityMult, 0.9f, 1.1f);
+}
+ION_SECTION_END
+
+ION_CODE_SECTION(".jobs")
+bool ion::JobScheduler::CheckParallelization(JobQueueStatus& status, UInt numItems, UInt partitionSize)
+{
+#if ION_MAIN_THREAD_IS_A_WORKER
+	if (mDispatcher.ThreadPool().GetWorkerCount() > 0)
+#endif
+	{
+		// If there's low item count, it's likely it's faster to run items locally than wake up a worker.
+		if (numItems < size_t(partitionSize) * 512 * mDispatcher.ThreadPool().GetWorkerCount())
+		{
+			// Run locally until there's a thread available.
+			status.FindFreeQueue(mDispatcher.ThreadPool());
+		}
+		else
+		{
+			// If there are many generated partitions, parallel jobs will be generated
+			// even if there are no available threads.
+			status.FindAnyQueue(mDispatcher.ThreadPool());
+		}
+		return true;
+	}
+	return false;
 }
 ION_SECTION_END

@@ -16,6 +16,12 @@
 #pragma once
 #include <ion/memory/Memory.h>
 
+#define ION_THREAD_USE_SCHEDULING_POLICY 0
+
+// Not enabled since there is not enough information for hand picking ideal processor for queue.
+// It's probably better not to restrict OS scheduler
+#define ION_THREAD_USE_IDEAL_PROCESSOR 0
+
 #if ION_PLATFORM_MICROSOFT
 	#define ION_THREAD_WAIT_AFTER_TERMINATE 0
 #else
@@ -136,7 +142,9 @@ bool IsThreadInitialized();
 inline void SetCurrentJob([[maybe_unused]] BaseJob* const job)
 {
 #if ION_CONFIG_JOB_SCHEDULER
-	ION_ASSERT(job == nullptr || mTLS.mJob != job, "Job already set");
+	ION_ASSERT(job == nullptr || mTLS.mJob != job ||
+				 ion::Thread::GetQueueIndex() == ion::Thread::NoQueueIndex,	 // Companions can have same work recursively
+			   "Job already set");
 	mTLS.mJob = job;
 #endif
 }

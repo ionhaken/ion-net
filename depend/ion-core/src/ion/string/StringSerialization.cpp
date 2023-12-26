@@ -135,5 +135,10 @@ ion::UInt Serialize(const char* data, StringWriter& writer)
 	return u;
 }
 
+template <>
+UInt Serialize(const StringView& data, StringWriter& writer)
+{
+	return writer.Write(data);
+}
 
 }  // namespace ion::serialization

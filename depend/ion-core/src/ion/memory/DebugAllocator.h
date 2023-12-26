@@ -41,7 +41,7 @@ public:
 	}
 	[[nodiscard]] inline T* allocate(size_t num)
 	{
-		ion::MemoryScope scope(ion::tag::IgnoreLeaks);
+		ION_MEMORY_SCOPE(ion::tag::IgnoreLeaks);
 		return reinterpret_cast<T*>(ion::detail::NativeMalloc(num * sizeof(T)));
 	}
 

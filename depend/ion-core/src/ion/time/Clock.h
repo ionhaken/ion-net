@@ -155,6 +155,9 @@ public:
 	uint64_t NanosecondsSinceStart() const;
 	double SecondsSinceStart() const;
 
+	bool operator==(const SystemTimePoint& other) const { return mTimeStamp == other.mTimeStamp; }
+	bool operator!=(const SystemTimePoint& other) const { return mTimeStamp != other.mTimeStamp; }
+
 protected:
 	inline ContainerType& InitialTimePoint() { return mTimeStamp; }
 	inline const ContainerType& InitialTimePoint() const { return mTimeStamp; }

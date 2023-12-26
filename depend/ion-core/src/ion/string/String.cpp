@@ -23,22 +23,22 @@
 	#include <locale>
 	#include <codecvt>
 
-ion::String::String(const wchar_t* aString) : BasicString<>()
+ion::String::String(const wchar_t* aString) : mImpl()
 {
 	// setup converter
 	auto len = wcslen(aString);
 	int size_needed = WideCharToMultiByte(CP_UTF8, 0, aString, (int)len, NULL, 0, NULL, NULL);
 	std::string strTo(size_needed, 0);
 	WideCharToMultiByte(CP_UTF8, 0, aString, (int)len, &strTo[0], size_needed, NULL, NULL);
-	Native() = strTo;
+	mImpl.Native() = strTo;
 }
 
 std::unique_ptr<wchar_t[]> ion::String::WStr() const
 {
-	size_t newsize = Native().size() + 1;
+	size_t newsize = mImpl.Native().size() + 1;
 	std::unique_ptr<wchar_t[]> wcstring = std::make_unique<wchar_t[]>(newsize);
 	size_t convertedChars = 0;
-	mbstowcs_s(&convertedChars, wcstring.get(), newsize, Native().c_str(), _TRUNCATE);
+	mbstowcs_s(&convertedChars, wcstring.get(), newsize, mImpl.Native().c_str(), _TRUNCATE);
 	return wcstring;
 }
 
@@ -46,13 +46,13 @@ std::unique_ptr<wchar_t[]> ion::String::WStr() const
 std::wstring ion::String::WideString() const
 {
 	int len;
-	int slength = (int)Native().length() + 1;
-	len = MultiByteToWideChar(CP_ACP, 0, Native().c_str(), slength, 0, 0);
+	int slength = (int)mImpl.Native().length() + 1;
+	len = MultiByteToWideChar(CP_ACP, 0, mImpl.Native().c_str(), slength, 0, 0);
 
 	std::unique_ptr<wchar_t[]> buf = std::make_unique<wchar_t[]>(len);
 	// wchar_t* buf = new wchar_t[len];
 
-	MultiByteToWideChar(CP_ACP, 0, Native().c_str(), slength, buf.get(), len);
+	MultiByteToWideChar(CP_ACP, 0, mImpl.Native().c_str(), slength, buf.get(), len);
 	std::wstring r(buf.get());
 	// delete[] buf;
 	return r;

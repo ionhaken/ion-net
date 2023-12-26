@@ -103,7 +103,7 @@ Engine::Engine()
 	gIsDynamicInitExitDone = true;
 	ion::Engine::Start();
 	{
-		ion::MemoryScope scope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		ion::core::gInstance.Data().InitGlobalSettings();
 	}
 }
@@ -111,7 +111,7 @@ Engine::Engine()
 Engine::~Engine()
 {
 	{
-		ion::MemoryScope scope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		ion::core::gInstance.Data().DeinitGlobalSettings();
 	}
 	ion::Engine::Stop();

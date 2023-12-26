@@ -46,8 +46,10 @@ public:
 	explicit constexpr Fraction(long long val) : mNumerator(val), mDenominator(1) {}
 
 	explicit constexpr Fraction(unsigned long long val) : mNumerator(val), mDenominator(1) {}
-
-	explicit constexpr operator float() const noexcept { return static_cast<float>(mNumerator) / mDenominator; }
+#if ION_CONFIG_REAL_IS_FIXED_POINT
+	explicit 
+		#endif
+		constexpr operator float() const noexcept { return static_cast<float>(mNumerator) / mDenominator; }
 
 	explicit constexpr operator double() const noexcept { return static_cast<double>(mNumerator) / mDenominator; }
 

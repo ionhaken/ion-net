@@ -41,19 +41,34 @@ public:
 
 	BasicString(const char* aString, size_t length) : mImpl(aString, length) {}
 
-	void operator=(const char* str) { mImpl = str; }
+	BasicString() : mImpl() {}
 
-/*/ #if ION_PLATFORM_LINUX
-	template <typename Resource>
-	BasicString(Resource*) : mImpl()
+	BasicString(BasicString&& other) noexcept : mImpl(std::move(other.mImpl)) {}
+
+	BasicString(const BasicString& other) : mImpl(other.mImpl) {}
+
+	BasicString(const NativeType& native) : mImpl(native) {}
+
+	~BasicString() {}
+
+	BasicString& operator=(BasicString&& other)
 	{
+		mImpl = std::move(other.mImpl);
+		return *this;
 	}
 
-	template <typename Resource>
-	BasicString(Resource*, const char* aString) : mImpl(aString)
+	BasicString& operator=(const char* str)
 	{
+		mImpl = str;
+		return *this;
 	}
-#else*/
+
+	BasicString& operator=(const BasicString& other)
+	{
+		mImpl = other.mImpl;
+		return *this;
+	}
+
 	template <typename Resource>
 	BasicString(Resource* resource) : mImpl(resource)
 	{
@@ -64,12 +79,8 @@ public:
 	{
 		mImpl = aString;
 	}
-//#endif
 
 	void Resize(size_t len) { mImpl.resize(len); }
-
-	BasicString() {}
-	~BasicString() {}
 
 	template <size_t charCount>
 	void StrCopy(char (&output)[charCount], const char* pSrc)
@@ -86,7 +97,7 @@ public:
 
 	bool operator==(const char* other) const { return Native().compare(other) == 0; }
 
-	char operator[](size_t index) const { return Native()[index]; }
+	[[nodiscard]] char operator[](size_t index) const { return Native()[index]; }
 
 	[[nodiscard]] const char* CStr() const { return mImpl.c_str(); }
 
@@ -102,12 +113,6 @@ public:
 		return "";
 	}
 
-	/*template <typename OtherString>
-	[[nodiscard]] constexpr int Compare(const OtherString& other) const
-	{
-		return mImpl.compare(other.CStr());
-	}*/
-
 	template <class ContainerT>
 	void Tokenize(ContainerT& tokens) const
 	{
@@ -117,7 +122,7 @@ public:
 	template <class ContainerT>
 	void Tokenize(ContainerT& tokens, const char* delimiters, bool trimEmpty) const;
 
-	size_t Length() const { return mImpl.length(); }
+	[[nodiscard]] size_t Length() const { return mImpl.length(); }
 
 	using Iterator = std::string::iterator;
 	using ConstIterator = std::string::const_iterator;
@@ -145,6 +150,8 @@ public:
 
 	const NativeType& Native() const { return mImpl; }
 
+	void Replace(size_t index, const char c) { Native().replace(index, 1, 1, c); }
+
 private:
 	NativeType mImpl;
 };
@@ -156,76 +163,127 @@ namespace ion
 template <size_t N>
 class StackString;
 
-class String : public BasicString<>
+class String
 {
+	using NativeType = BasicString<>::NativeType;
+
+	BasicString<> mImpl;
+
 public:
-	String(const StringView& view) : BasicString<>(view.CStr(), view.Length()) {}
+	String(StringView view) : mImpl(view.Copy(), view.Length()) {}
 	String(const wchar_t* aString);
 
-	StringView View() const { return ion::StringView(Data(), Length()); }
+	StringView View() const { return ion::StringView(mImpl.Data(), mImpl.Length()); }
 
 	template <size_t N>
 	String(StackString<N>& string);
 
 	String() {}
+
+	String(String&& other) noexcept : mImpl(std::move(other.mImpl)) {}
+
+	String(const String& other) : mImpl(other.mImpl) {}
+
 	~String() {}
 
-	String(const NativeType& native) { Native() = native; }
-
-	void Replace(size_t index, const char c) { Native().replace(index, 1, 1, c); }
-
-	String(const char* aString) : BasicString<>(aString) {}
-
-	String(const char* aString, size_t length) : BasicString<>(aString, length) {}
-
-	operator std::string() const { return std::string(Native().c_str()); }
-
-	ion::String operator+(const ion::String& other)
+	String& operator=(String&& other) noexcept
 	{
-		NativeType str = Native() + other.Native();
+		mImpl = std::move(other.mImpl);
+		return *this;
+	}
+
+	String& operator=(const String& other)
+	{
+		mImpl = other.mImpl;
+		return *this;
+	}
+
+	String(const NativeType& native) : mImpl(native) {}
+
+	void Replace(size_t index, const char c) { mImpl.Replace(index, c); }
+
+	String(const char* aString) : mImpl(aString) {}
+
+	String(const char* aString, size_t length) : mImpl(aString, length) {}
+
+	[[nodiscard]] char operator[](size_t index) const { return mImpl[index]; }
+
+	[[nodiscard]] operator std::string() const { return std::string(mImpl.Data()); }
+
+	[[nodiscard]] operator StringView() const { return StringView(mImpl.Data(), mImpl.Length()); }
+
+	[[nodiscard]] ion::String operator+(const ion::String& other)
+	{
+		NativeType str = mImpl.Native() + other.mImpl.Native();
 		return ion::String(str.c_str());
 	}
 
 	ion::String& operator+=(const ion::String& other)
 	{
-		Native() += other.Data();
+		mImpl.Native() += other.mImpl.Data();
 		return *this;
 	}
 
 
 	template <size_t charCount>
-	ion::String& operator+(const char (&other)[charCount])
+	[[nodiscard]] ion::String& operator+(const char (&other)[charCount])
 	{
-		Native() += other;
+		mImpl.Native() += other;
 		return *this;
 	}
-	size_t Hash() const
+
+	[[nodiscard]] size_t Hash() const
 	{
 #if ION_PLATFORM_LINUX
 		return ion::HashDJB2(CStr());  // #TODO: Fix build
 #else
-		return std::hash<NativeType>{}(Native());
+		return std::hash<NativeType>{}(mImpl.Native());
 #endif
 	}
 
-	constexpr bool operator==(const String& other) const { return Native().compare(other.Native()) == 0; }
+	[[nodiscard]] constexpr bool operator==(const String& other) const { return mImpl.Native().compare(other.mImpl.Native()) == 0; }
 
 	template <size_t N>
-	constexpr bool operator==(const StackString<N>& other) const
+	[[nodiscard]] constexpr bool operator==(const StackString<N>& other) const
 	{
-		return Native().compare(other->Native()) == 0;
+		return mImpl.Native().compare(other->mImpl.Native()) == 0;
 	}
 
-	int Compare(const String& other) const { return Native().compare(other.Native()); }
+	void Resize(size_t len) { mImpl.Resize(len); }
 
-	/*bool operator==(const char* other) const
+	[[nodiscard]] int Compare(const String& other) const { return mImpl.Native().compare(other.mImpl.Native()); }
+
+	template <class ContainerT>
+	void Tokenize(ContainerT& tokens) const
 	{
-		return Native().compare(other) == 0;
-	}*/
+		mImpl.Tokenize(tokens);
+	}
+
+	template <class ContainerT>
+	void Tokenize(ContainerT& tokens, const char* delimiters, bool trimEmpty) const
+	{
+		mImpl.Tokenize(tokens, delimiters, trimEmpty);
+	}
+
+	[[nodiscard]] size_t Find(const char* str) { return mImpl.Find(str); }
+
+	[[nodiscard]] size_t FindFirstOf(const char c, size_t pos = 0) const { return mImpl.FindFirstOf(c, pos); }
+
+	[[nodiscard]] size_t FindLastOf(const char c, size_t pos = std::string::npos) const { return mImpl.FindLastOf(c, pos); }
+
+	[[nodiscard]] ion::BasicString<> SubStr(size_t pos = 0, size_t len = std::string::npos) const { return mImpl.SubStr(pos, len); }
+
+	[[nodiscard]] char* Data() { return mImpl.Data(); }
+	[[nodiscard]] const char* Data() const { return mImpl.Data(); }
+
+	[[nodiscard]] const char* CStr() const { return mImpl.CStr(); }
+	[[nodiscard]] size_t Length() const { return mImpl.Length(); }
+
+	[[nodiscard]] bool IsEmpty() const { return mImpl.IsEmpty(); }
 
 #if ION_PLATFORM_MICROSOFT
-	std::unique_ptr<wchar_t[]> WStr() const;
-	std::wstring WideString() const;
+	[[nodiscard]] std::unique_ptr<wchar_t[]> WStr() const;
+	[[nodiscard]] std::wstring WideString() const;
 #endif
 };
 
@@ -237,7 +295,7 @@ inline size_t Hasher<ion::String>::operator()(const ion::String& key) const
 }
 
 template <size_t N>
-String::String(ion::StackString<N>& string) : BasicString<>(string.CStr())
+String::String(ion::StackString<N>& string) : mImpl(string.CStr())
 {
 }
 

@@ -17,7 +17,7 @@
 #include <atomic>
 #include <ion/container/Vector.h>
 #include <ion/container/Algorithm.h>
-#include <ion/jobs/TaskQueue.h>
+#include <ion/jobs/JobQueue.h>
 #include <ion/jobs/SchedulerConfig.h>
 
 #define ION_MAIN_THREAD_IS_A_WORKER 1
@@ -29,19 +29,12 @@ class Runner;
 class ThreadPool
 {
 	ThreadPool& operator=(const ThreadPool&) = delete;
-	const UInt mNumWorkers;
-	const UInt mNumWorkerQueues;
-
-	std::atomic<Int> mCompanionWorkersNeeded;
-	std::atomic<UInt> mCompanionWorkersActive;
-	ThreadSynchronizer mCompanionSynchronizer;
-	TaskQueue::Stats mStats;
 
 public:
-	const UInt GetWorkerCount() const { return mNumWorkers; }
+	ION_FORCE_INLINE const UInt GetWorkerCount() const { return mNumWorkers; }
 	const UInt GetQueueCount() const { return mNumWorkerQueues; }
 
-	void AddCompanionWorker();
+	void AddCompanionWorker(Thread::QueueIndex = Thread::NoQueueIndex);
 
 	void RemoveCompanionWorker() { mCompanionWorkersNeeded--; }
 
@@ -57,14 +50,14 @@ public:
 	// Thread::NoQueueIndex is returned if no suitable index is found
 	Thread::QueueIndex UseJoblessQueueIndexExceptThis()
 	{
-		const Thread::QueueIndex index = mStats.joblessQueueIndex;
+		const Thread::QueueIndex index = mStats.mJoblessQueueIndex;
 		if (index != Thread::NoQueueIndex)
 		{
 			if (index == ion::Thread::GetQueueIndex())
 			{
 				return Thread::NoQueueIndex;
 			}
-			mStats.joblessQueueIndex = Thread::NoQueueIndex;
+			mStats.mJoblessQueueIndex = Thread::NoQueueIndex;
 		}
 		return index;
 	}
@@ -79,10 +72,10 @@ public:
 		return index;
 	}
 
-	ION_FORCE_INLINE void AddTaskWithoutWakeUp(ion::Task&& task, Thread::QueueIndex index)
+	ION_FORCE_INLINE void AddTaskWithoutWakeUp(ion::JobWork&& task, Thread::QueueIndex index)
 	{
 		ION_ASSERT(index < mNumWorkerQueues, "Invalid queue index " << index);
-		mTaskQueues[index].PushTask(std::move(task));
+		mJobQueues[index].PushTask(std::move(task));
 		ION_ASSERT(index != ion::Thread::GetQueueIndex() || GetWorkerCount() == 0, "Trying to notify own thread");
 	}
 
@@ -92,7 +85,7 @@ public:
 		Int leftToWoken = Int(count);
 		for (size_t i = 0;;)
 		{
-			AddTaskWithoutWakeUp(Task(job), nextIndex);
+			AddTaskWithoutWakeUp(JobWork(job), nextIndex);
 
 			++i;
 			if (i >= count)
@@ -108,65 +101,30 @@ public:
 		WakeUp(leftToWoken, firstQueueIndex);
 	}
 
-	inline UInt PushTask(ion::Task&& task)
+	inline UInt PushTask(ion::JobWork&& task)
 	{
 		UInt index = UseNextQueueIndexExceptThis();
 		ION_ASSERT(index != ion::Thread::GetQueueIndex() || GetWorkerCount() == 0, "Trying to notify own thread");
-		mTaskQueues[index].PushTask(std::move(task));
+		mJobQueues[index].PushTask(std::move(task));
 		WakeUp(1, index);
 		return index;
 	}
 
-	void PushLongTask(ion::Task&& task);
+	void PushDelayedTask(ion::JobWork&& task);
 
-	void AddMainThreadTask(ion::Task&& task);
+	void PushDelayedTasks(Vector<JobWork, ion::CoreAllocator<JobWork>>& tasks);
 
-	inline void WakeUp(Int numLeftToActivate, UInt index)
-	{
-		UInt wakeIndex = index;
-		for (;;)
-		{
-			auto woken = mTaskQueues[wakeIndex].WakeUp();
-			wakeIndex = (wakeIndex + 1) % mNumWorkerQueues;
-			if (woken)
-			{
-				numLeftToActivate -= woken;
-				if (numLeftToActivate <= 0)
-				{
-					break;
-				}
-			}
-			else
-			{
-				if (wakeIndex == index || mStats.slackingWorkers <= 0)
-				{
-					break;
-				}
-			}
-		}
-		Update(index);
-	}
+	void PushIOTask(ion::JobWork&& task);
+
+	void PushBackgroundTask(ion::JobWork&& task);
+
+	void AddMainThreadTask(ion::JobWork&& task);
+
+	void WakeUp(Int numLeftToActivate, UInt index);
 
 	Thread::QueueIndex DoJobWork(UInt target, BaseJob* currentJob);
 
-	Thread::QueueIndex DoJobWork(UInt initialTarget)
-	{
-		for (UInt i = 0; i < mNumWorkerQueues; i++)
-		{
-			UInt target = (i + initialTarget) % mNumWorkerQueues;
-			auto status = mTaskQueues[target].Run();
-			switch (status)
-			{
-			case TaskQueue::Status::Waiting:
-				return Thread::QueueIndex(target);
-			case TaskQueue::Status::Empty:
-				return Thread::QueueIndex(target + 1);
-			default:
-				break;
-			}
-		}
-		return ion::Thread::NoQueueIndex;
-	}
+	Thread::QueueIndex DoJobWork(UInt initialTarget);
 
 	void WorkOnMainThread();
 	void WorkOnMainThreadNoBlock();
@@ -178,12 +136,12 @@ private:
 
 	void Update(UInt index)
 	{
-		if (mStats.joblessQueueIndex == Thread::NoQueueIndex)
+		if (mStats.mJoblessQueueIndex == Thread::NoQueueIndex)
 		{
-			auto newIndex = FindFreeQueue(index);
-			if (newIndex != Thread::NoQueueIndex && mStats.joblessQueueIndex == Thread::NoQueueIndex)
+			Thread::QueueIndex newIndex = FindFreeQueue(index);
+			if (newIndex != Thread::NoQueueIndex && mStats.mJoblessQueueIndex == Thread::NoQueueIndex)
 			{
-				mStats.joblessQueueIndex = newIndex;
+				mStats.mJoblessQueueIndex = newIndex;
 			}
 		}
 	}
@@ -193,7 +151,7 @@ private:
 		for (Thread::QueueIndex i = 1; i < mNumWorkerQueues; i++)
 		{
 			UInt target = (i + index) % mNumWorkerQueues;
-			if (mTaskQueues[target].IsMaybeEmpty())
+			if (mJobQueues[target].IsMaybeEmpty())
 			{
 				return Thread::QueueIndex(target);
 			}
@@ -202,19 +160,37 @@ private:
 	}
 
 	bool Worker(Thread::QueueIndex index);
-	bool CompanionWorker();
-	ion::TaskQueue::Status ProcessQueues(UInt index);
+	bool CompanionWorker(Thread::QueueIndex index);
+	ion::JobQueueStatus ProcessQueues(UInt index);
 
-	ION_ALIGN_CACHE_LINE ion::Array<TaskQueue, MaxQueues> mTaskQueues;
-	TaskQueue& MainThreadQueue() { return mNumWorkers > 0 ? mTaskQueues[mNumWorkerQueues] : mTaskQueues[0]; }
+	JobQueueSingleOwner& MainThreadQueue() { return mNumWorkers > 0 ? mJobQueues[mNumWorkerQueues] : mJobQueues[0]; }
 
-	TaskQueue mLongTaskQueue;
-	std::atomic<UInt> mNumAvailableLongTasks;
 
-	// Cold data
-	Vector<CorePtr<Runner>, ion::CoreAllocator<CorePtr<Runner>>> mCompanionThreads;
-	Vector<Runner, ion::CoreAllocator<Runner>> mThreads;
+	struct LongJobPool
+	{
+		JobQueueMultiOwner mJobQueue;
+		Vector<CorePtr<Runner>, ion::CoreAllocator<CorePtr<Runner>>> mThreads;
+	};
+
+	bool LongJobWorker(LongJobPool& pool);
+
+	ION_ALIGN_CACHE_LINE ion::Array<JobQueueSingleOwner, MaxQueues> mJobQueues;
+	JobQueueMultiOwner mCompanionJobQueue;
+	JobQueueStats mStats;
+	const UInt mNumWorkers;
+	const UInt mNumWorkerQueues;
+	const UInt mMaxBackgroundWorkers;
+	std::atomic<Int> mCompanionWorkersNeeded;
+	std::atomic<UInt> mCompanionWorkersActive;
+	std::atomic<UInt> mNumAvailableBackgroundTasks = 0;
+	std::atomic<UInt> mNumBackgroundWorkers = 0;
 	std::atomic<bool> mAreCompanionsActive;
+	
+	// Cold data
+	std::atomic<UInt> mNumAvailableIOTasks = 0;
+	Vector<CorePtr<Runner>, ion::CoreAllocator<CorePtr<Runner>>> mCompanionThreads;
+	LongJobPool mIoJobPool;
+	Vector<Runner, ion::CoreAllocator<Runner>> mThreads;
 	JOB_SCHEDULER_STATS(ion::StopClock mTimer);
 };
 }  // namespace ion

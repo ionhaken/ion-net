@@ -282,7 +282,7 @@ void ion_net_preupdate(ion_net_peer handle, ion_job_scheduler scheduler)
 {
 	NetInterface& net = *(NetInterface*)handle;
 
-	MemoryScope memoryScope(tag::Network);
+	ION_MEMORY_SCOPE(tag::Network);
 	ION_PROFILER_SCOPE(Network, "NetPre");
 	const TimeMS now = SteadyClock::GetTimeMS();
 #if ION_NET_SIMULATOR
@@ -296,7 +296,7 @@ void ion_net_postupdate(ion_net_peer handle, ion_job_scheduler scheduler)
 {
 	NetInterface& net = *(NetInterface*)handle;
 
-	ion::MemoryScope memoryScope(ion::tag::Network);
+	ION_MEMORY_SCOPE(ion::tag::Network);
 	ION_PROFILER_SCOPE(Network, "NetPost");
 	const ion::TimeMS now = ion::SteadyClock::GetTimeMS();
 	ion::NetControlLayer::Process(net.mControl, net.mExchange, net.mConnections, now);
@@ -474,9 +474,8 @@ int ion_net_connect(ion_net_peer handle, ion_net_connect_target target_ptr, cons
 					ion_net_public_key publicKey, unsigned connectionSocketIndex, unsigned sendConnectionAttemptCount,
 					unsigned timeBetweenSendConnectionAttemptsMS, uint32_t timeoutTime)
 {
-	NetInterface& net = *(NetInterface*)handle;
-	NetConnectTarget& target = *(NetConnectTarget*)target_ptr;
-
+	[[maybe_unused]] NetInterface& net = *(NetInterface*)handle;
+	[[maybe_unused]] NetConnectTarget& target = *(NetConnectTarget*)target_ptr;
 	ION_NET_API_CHECK(target.host != 0, ION_NET_CODE_INVALID_PARAMETER, "Invalid host");
 	ION_NET_API_CHECK(connectionSocketIndex < net.mConnections.mSocketList.Size(), ION_NET_CODE_INVALID_PARAMETER, "Invalid socket");
 	ION_NET_API_CHECK(target.remote_port != 0, ION_NET_CODE_INVALID_PARAMETER, "Invalid port");

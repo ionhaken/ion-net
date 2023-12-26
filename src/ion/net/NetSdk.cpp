@@ -1,8 +1,8 @@
 #include <ion/net/NetSecure.h>
 
-#include <ion/memory/MemoryScope.h>
-
 #include <ion/debug/AccessGuard.h>
+
+#include <ion/memory/MemoryScope.h>
 
 #include <ion/string/String.h>
 #include <libsodium/include/sodium.h>
@@ -39,16 +39,15 @@ bool NetIsInitialized() { return net::gIsInitialized != 0; }
 
 bool NetInit()
 {
+	ION_MEMORY_SCOPE(ion::tag::Network);
 	ION_ACCESS_GUARD_WRITE_BLOCK(net::gGuard);
-	if (0 != net::gIsInitialized++)
+
+	if (0 != net::gRefCount++)
 	{
 		return true;
 	}
 	TracingInit();
-	ION_MEMORY_SCOPE(ion::tag::Network);
-	net::gInstance.Init(4 * 1024 * 1024);
 
-	ion::MemoryScope memoryScope(ion::tag::Network);
 	int netStartup = 0;
 #if ION_PLATFORM_MICROSOFT
 	WSADATA winsockInfo;
@@ -59,48 +58,54 @@ bool NetInit()
 	}
 #endif
 
-	//
-	// See https://libsodium.gitbook.io/doc/usage
-	//
+	if (netStartup == 0)
+	{
+		//
+		// See https://libsodium.gitbook.io/doc/usage
+		//
 #if ION_PLATFORM_LINUX && defined(RNDGETENTCNT)
-	int fd;
-	int c;
-	if ((fd = open("/dev/random", O_RDONLY)) != -1)
-	{
-		if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160)
+		int fd;
+		int c;
+		if ((fd = open("/dev/random", O_RDONLY)) != -1)
 		{
-			fputs(
-			  "This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
-			  "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
-			  "On virtualized Linux environments, also consider using virtio-rng.\n"
-			  "The service will not start until enough entropy has been collected.\n",
-			  stderr);
+			if (ioctl(fd, RNDGETENTCNT, &c) == 0 && c < 160)
+			{
+				fputs(
+				  "This system doesn't provide enough entropy to quickly generate high-quality random numbers.\n"
+				  "Installing the rng-utils/rng-tools, jitterentropy or haveged packages may help.\n"
+				  "On virtualized Linux environments, also consider using virtio-rng.\n"
+				  "The service will not start until enough entropy has been collected.\n",
+				  stderr);
+			}
+			(void)close(fd);
 		}
-		(void)close(fd);
-	}
 #endif
-
-	int sodiumInit = sodium_init();
-	ION_ASSERT(sodiumInit >= 0, "Sodium init failed");
-	if (sodiumInit >= 0 && netStartup == 0)
-	{
+		int sodiumInit = sodium_init();
+		ION_ASSERT(sodiumInit >= 0, "Sodium init failed");
+		
+		net::gInstance.Init(4 * 1024 * 1024);
+		net::gIsInitialized = true;
 		return true;
 	}
-	else
-	{
-		net::gIsInitialized--;
-		return false;
-	}
+
+	TracingDeinit();	
+	net::gRefCount--;
+	return false;
 }
 
 void NetDeinit()
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(net::gGuard);
-	if (1 != net::gIsInitialized--)
+	if (1 != net::gRefCount--)
 	{
 		return;
 	}
-	ion::MemoryScope memoryScope(ion::tag::Network);
+	net::gIsInitialized = false;
+	ION_MEMORY_SCOPE(ion::tag::Network);
+
+	net::gInstance.Deinit();
+	randombytes_close();
+
 #ifdef _WIN32
 	int ret = WSACleanup();
 	if (ret != 0)
@@ -108,8 +113,6 @@ void NetDeinit()
 		ION_NET_LOG_ABNORMAL("WSA cleanup failed: " << ion::debug::GetLastErrorString());
 	}
 #endif
-	randombytes_close();
-	net::gInstance.Deinit();
 	TracingDeinit();
 }
 

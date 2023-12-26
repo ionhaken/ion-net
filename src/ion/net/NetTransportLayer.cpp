@@ -127,7 +127,7 @@ NetPacket* Receive(NetChannel& channel, NetControl& control, NetRemoteSystem& re
 					{
 						ION_NET_LOG_VERBOSE("Received big data request from " << remote.guid.Raw() << ";size=" << (totalSize / 1024)
 																			  << "KB");
-						NetPacket* buffer = ion::NetControlLayer::AllocateUserPacket(control, totalSize);
+						NetPacket* buffer = ion::NetControlLayer::AllocateUserPacket(control, ion::SafeRangeCast<size_t>(totalSize));
 						if (buffer)
 						{
 							buffer->mLength = SafeRangeCast<uint32_t>(totalSize);  // #TODO: Support 64-bit packet size

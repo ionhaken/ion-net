@@ -28,7 +28,7 @@ void Sort(Iterator begin, Iterator end, JobScheduler& js, size_t cutoff = 512)
 	size_t numItems = static_cast<size_t>(end - begin);
 	if (numItems >= cutoff)
 	{
-		JobScheduler::TaskQueueStatus stats;
+		JobScheduler::JobQueueStatus stats;
 		stats.FindFreeQueue(js.GetPool());
 		if (stats.IsFree())
 		{

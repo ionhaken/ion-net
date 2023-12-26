@@ -60,7 +60,7 @@ namespace ion
 		{
 			double delta = static_cast<double>(DeltaTime(now, t)) / 1000.0;
 			TimeDeltaMS skew = static_cast<TimeDeltaMS>(rate * delta);
-			TimeDeltaMS MaxSkew = static_cast<TimeDeltaMS>(ion::Abs(delta) * MaxSlewMsPerSecond);
+			TimeDeltaMS MaxSkew = static_cast<TimeDeltaMS>(ion::Absf(delta) * MaxSlewMsPerSecond);
 			skew = ion::MinMax(-MaxSkew, skew, MaxSkew);
 			return skew;
 		}

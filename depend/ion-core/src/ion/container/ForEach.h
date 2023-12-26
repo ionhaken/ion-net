@@ -29,7 +29,7 @@ constexpr T&& Forward(std::remove_reference_t<T>& param)
 
 // Erases target, but can change order of items for performance.
 template <typename Container, typename Iterator>
-inline Iterator UnorderedErase(Container& container, Iterator iter)
+ION_FORCE_INLINE Iterator UnorderedErase(Container& container, Iterator iter)
 {
 	ION_ASSERT_FMT_IMMEDIATE(iter != container.End(), "Invalid iterator");
 	if (iter != (container.End()-1))
@@ -42,7 +42,7 @@ inline Iterator UnorderedErase(Container& container, Iterator iter)
 
 // Erases index, but can change order of items for performance.
 template <typename Container>
-inline void UnorderedEraseAt(Container& container, size_t index)
+ION_FORCE_INLINE void UnorderedEraseAt(Container& container, size_t index)
 {
 	if (index != container.Size() - 1)
 	{
@@ -52,7 +52,7 @@ inline void UnorderedEraseAt(Container& container, size_t index)
 }
 
 template <typename Container, typename Iterator>
-inline Iterator Erase(Container& container, Iterator iter)
+ION_FORCE_INLINE Iterator Erase(Container& container, Iterator iter)
 {
 	ION_ASSERT_FMT_IMMEDIATE(iter != container.End(), "Invalid iterator");
 	return container.Erase(iter);
@@ -86,7 +86,7 @@ struct UnorderedEraseVisitor
 };
 
 template <typename EraseVisitor, typename TData, typename TFunc>
-inline void ForEachEraseInternal(TData& data, TFunc&& func)
+ION_FORCE_INLINE void ForEachEraseInternal(TData& data, TFunc&& func)
 {
 	auto iter = data.Begin();
 	auto last = data.End();
@@ -108,7 +108,7 @@ inline void ForEachEraseInternal(TData& data, TFunc&& func)
 }  // namespace
 
 template <typename TData, typename TFunc>
-inline void ForEachPartial(TData* iter, TData* last, TFunc&& func)
+ION_FORCE_INLINE void ForEachPartial(TData* iter, TData* last, TFunc&& func)
 {
 	for (; iter != last; ++iter)
 	{
@@ -117,7 +117,7 @@ inline void ForEachPartial(TData* iter, TData* last, TFunc&& func)
 }
 
 template <typename TData, typename TFunc>
-inline void ForEach(TData& data, TFunc&& func)
+ION_FORCE_INLINE void ForEach(TData& data, TFunc&& func)
 {
 	auto iter = data.Begin();
 	const auto last = data.End();
@@ -129,7 +129,7 @@ inline void ForEach(TData& data, TFunc&& func)
 }
 
 template <typename TData, typename TFunc>
-inline ion::ForEachOp ForEachBreakable(TData& data, TFunc&& func)
+ION_FORCE_INLINE ion::ForEachOp ForEachBreakable(TData& data, TFunc&& func)
 {
 	auto iter = data.Begin();
 	const auto last = data.End();
@@ -147,19 +147,19 @@ inline ion::ForEachOp ForEachBreakable(TData& data, TFunc&& func)
 }
 
 template <typename TData, typename TFunc>
-inline void ForEachErase(TData& data, TFunc&& func)
+ION_FORCE_INLINE void ForEachErase(TData& data, TFunc&& func)
 {
 	ion::ForEachEraseInternal<EraseVisitor>(data, Forward<TFunc>(func));
 }
 
 template <typename TData, typename TFunc>
-inline void ForEachEraseUnordered(TData& data, TFunc&& func)
+ION_FORCE_INLINE void ForEachEraseUnordered(TData& data, TFunc&& func)
 {
 	ion::ForEachEraseInternal<UnorderedEraseVisitor>(data, Forward<TFunc>(func));
 }
 
 template <typename TData, typename TFunc>
-inline void ForEachReverse(TData& data, TFunc&& func)
+ION_FORCE_INLINE void ForEachReverse(TData& data, TFunc&& func)
 {
 	auto iter = data.RBegin();
 	const auto last = data.REnd();
@@ -171,7 +171,7 @@ inline void ForEachReverse(TData& data, TFunc&& func)
 }
 
 template <typename TData, typename TFunc>
-inline void ForEachPartialIndex(TData* iter, TData* last, TFunc&& func)
+ION_FORCE_INLINE void ForEachPartialIndex(TData* iter, TData* last, TFunc&& func)
 {
 	size_t index = 0;
 	for (; iter != last; ++iter)
@@ -182,7 +182,7 @@ inline void ForEachPartialIndex(TData* iter, TData* last, TFunc&& func)
 }
 
 template <typename TData, typename TFunc>
-inline void ForEachIndex(TData& data, TFunc&& func)
+ION_FORCE_INLINE void ForEachIndex(TData& data, TFunc&& func)
 {
 	auto iter = data.Begin();
 	const auto last = data.End();

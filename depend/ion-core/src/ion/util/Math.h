@@ -173,17 +173,39 @@ template <typename T>
 
 [[nodiscard]] inline double fmod(double x, double y) { return std::fmod(x, y); }
 
-[[nodiscard]] inline float Abs(float value) noexcept { return std::abs(value); }
+[[nodiscard]] inline long long Abs(long long value) noexcept { return (std::abs(value)); }
+[[nodiscard]] inline int Abs(int value) noexcept { return (std::abs(value)); }
 
-[[nodiscard]] inline double Abs(double value) noexcept { return std::abs(value); }
 
+template<typename T>
+[[nodiscard]] inline T Absf(T value) noexcept;
+
+template<typename T>
+[[nodiscard]] inline T sqrt(T x) noexcept;
+
+template <>
+[[nodiscard]] inline float Absf(float value) noexcept
+{
+	return std::fabs(value);
+}
+
+template <>
+[[nodiscard]] inline double Absf(double value) noexcept
+{
+	return std::fabs(value);
+}
+
+template <>
 [[nodiscard]] inline float sqrt(float x) noexcept { return std::sqrt(x); }
 
+template <>
 [[nodiscard]] inline double sqrt(double x) noexcept { return std::sqrt(x); }
 
 [[nodiscard]] inline float exp(float x) noexcept { return std::exp(x); }
 
 [[nodiscard]] inline double exp(double x) noexcept { return std::exp(x); }
+
+[[nodiscard]] inline float WrapValue(const float& a, float limit) { return a > limit ? a - limit * 2 : (a < -limit ? a + limit * 2 : a); }
 
 template <typename T>
 [[nodiscard]] inline T round(T x) noexcept
@@ -232,7 +254,7 @@ template <typename Vec, typename LengthType = typename Vec::type>
 template <typename Vec, typename DistanceType = typename Vec::type>
 [[nodiscard]] constexpr DistanceType ManhattanDistance(const Vec& a, const Vec& b)
 {
-	return ion::Abs(a.x() - b.x()) + ion::Abs(a.y() - b.y());
+	return ion::Absf(a.x() - b.x()) + ion::Absf(a.y() - b.y());
 }
 
 template <typename Vec>
@@ -291,6 +313,25 @@ template <typename T>
 {
 	ION_ASSERT_FMT_IMMEDIATE(low <= high, "Invalid limits");
 	return value < low ? low : (value > high ? high : value);
+}
+
+[[nodiscard]] inline bool IsNormal(float y)
+{
+	return !isnan(y) && y != 0;
+}
+
+[[nodiscard]] inline bool SignBit(float y)
+{
+	return y < 0;
+}
+
+[[nodiscard]] inline float nextafter(float from, float to) noexcept { return std::nextafter(from, to); }
+
+
+template<typename T>
+constexpr T ConvertRealTo(const float& value)
+{
+	return static_cast<T>(value);
 }
 
 }  // namespace ion

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 #pragma once
-#include <ion/util/Hasher.h>
+#include <ion/Base.h>
 
 namespace ion
 {
@@ -26,7 +26,7 @@ template <typename TData, typename TSize>
 struct ArrayView
 {
 	constexpr ArrayView() : mData(nullptr), mSize(0) {}
-	constexpr ArrayView(TData* const aData, const TSize aSize) : mData(aData), mSize(aSize) {}
+	constexpr ArrayView(TData* aData, TSize aSize) : mData(aData), mSize(aSize) {}
 
 	template <typename T>
 	constexpr ArrayView(T& container) : mData(container.Data()), mSize(container.Size())
@@ -42,21 +42,17 @@ struct ArrayView
 
 	using Iterator = TData*;
 	using ConstIterator = const TData* const;
-	TData* const Data() { return mData; }
-	const TData* const Data() const { return mData; }
-	TSize Size() const { return mSize; }
+	[[nodiscard]] TData* Data() { return mData; }
+	[[nodiscard]] TData* const Data() const { return mData; }
+	[[nodiscard]] TSize Size() const { return mSize; }
 	[[nodiscard]] constexpr Iterator Begin() { return Data(); }
 	[[nodiscard]] constexpr Iterator End() { return Data() + mSize; }
 	[[nodiscard]] constexpr ConstIterator Begin() const { return Data(); }
 	[[nodiscard]] constexpr ConstIterator End() const { return Data() + mSize; }
 
-	struct Hasher
-	{
-		size_t operator()(const ArrayView& key) const { return ion::HashKey<TData>(key.mData, sizeof(TData) * key.mSize); }
-	};
 
 private:
-	TData* const mData;
+	TData* mData;
 	TSize mSize;
 };
 

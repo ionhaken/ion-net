@@ -22,8 +22,6 @@ namespace ion
 {
 namespace parallel_for
 {
-void PreFetch(const void* addr);
-
 class SinglePartition
 {
 public:
@@ -299,9 +297,9 @@ private:
 
 	protected:
 
-		virtual void RunTask() override
+		void DoWork() override
 		{
-			ION_ASSERT(false, "Sub class must implement RunTask()");
+			ION_ASSERT(false, "Sub class must implement DoWork()");
 		}
 
 		bool HasTasks(size_t tsIndex) const;
@@ -373,7 +371,7 @@ private:
 
 	protected:
 
-		virtual void RunTask() final override
+		void DoWork() final
 		{
 			ION_PROFILER_SCOPE(Scheduler, "Task List");
 			this->OnTaskStarted();
@@ -455,7 +453,7 @@ namespace ion
 
 	protected:
 
-		virtual void RunTask() final override
+		void DoWork() final
 		{
 			ION_PROFILER_SCOPE(Scheduler, "Task List(intermediate)");
 			this->OnTaskStarted();

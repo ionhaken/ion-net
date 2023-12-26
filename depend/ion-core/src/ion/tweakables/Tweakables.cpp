@@ -117,6 +117,7 @@ void GetTweakable(const char* id, char* buffer, size_t bufferLen)
 
 void SetTweakable(const char* id, const char* newValue, bool isCommandLine)
 {
+	ION_MEMORY_SCOPE(ion::tag::Debug);
 	TweakablesInit();
 	ION_ACCESS_GUARD_WRITE_BLOCK(Instance().mGuard);
 	tweakables::String str(&Source(), id);
@@ -284,24 +285,19 @@ void ConfigString::Set(const char* value)
 
 void TweakablesInit()
 {
-	ION_ACCESS_GUARD_WRITE_BLOCK(tweakables::gGuard);
-	if (tweakables::gIsInitialized.exchange(1))
-	{
-		return;
-	}
 	ION_MEMORY_SCOPE(ion::tag::Debug);
-	tweakables::gInstance.Init();
+	ION_ACCESS_GUARD_WRITE_BLOCK(tweakables::gGuard);
+	tweakables::Init([]() {});
 }
 void TweakablesDeinit()
 {
+	ION_MEMORY_SCOPE(ion::tag::Debug);
 	ION_ACCESS_GUARD_WRITE_BLOCK(tweakables::gGuard);
-	if (!tweakables::gIsInitialized.exchange(0))
-	{
-		return;
-	}
+
+	tweakables::gRefCount--; // Don't care about ref count, because tweakables are initialized dynamically
+	tweakables::gIsInitialized = false;
 #if ION_CLEAN_EXIT
 	tweakables::gInstance.Deinit();
 #endif
 }
-
 }  // namespace ion

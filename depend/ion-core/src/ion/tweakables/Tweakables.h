@@ -119,7 +119,7 @@ private:
 class ConfigString : public ConfigValueBase
 {
 public:
-	ConfigString(const char* id, const char* defaultValue = nullptr) : mDefaultValue(defaultValue ? defaultValue : "")
+	ConfigString(const char* id, const char* defaultValue = nullptr) : mDefaultValue(defaultValue ? defaultValue : ""), mValue()
 	{
 		if (defaultValue)
 		{

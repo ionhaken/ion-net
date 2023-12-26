@@ -21,6 +21,7 @@
 namespace ion
 {
 class String;
+class StringView;
 
 class StringWriter
 {
@@ -32,6 +33,15 @@ public:
 		ION_ASSERT_FMT_IMMEDIATE(size_t(mEnd - mBuffer) >= s, "Buffer overflow");
 		mBuffer += s;
 	}
+
+	UInt Write(char c)
+	{
+		*mBuffer = c;
+		Skip(1);
+		return 1;
+	}
+
+	UInt Write(const StringView& str);
 
 	size_t Available() { return size_t(mEnd - mBuffer); }
 

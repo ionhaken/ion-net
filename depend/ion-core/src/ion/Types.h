@@ -107,7 +107,7 @@ class JSONStructWriter;
 class Mailbox;
 class MailRegistry;
 
-template <typename T, typename Allocator>
+template <typename T>
 class Ptr;
 
 template <typename T, typename Allocator>

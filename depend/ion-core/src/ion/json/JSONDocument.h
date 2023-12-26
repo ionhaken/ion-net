@@ -20,8 +20,8 @@
 #if ION_EXTERNAL_JSON
 	#include <ion/memory/Memory.h>
 
-	#define RAPIDJSON_ASSERT(__expr)		  ION_ASSERT(__expr, "RapidJSON");
-	#define RAPIDJSON_NOEXCEPT_ASSERT(__expr) ION_ASSERT(__expr, "RapidJSON");
+	#define RAPIDJSON_ASSERT(__expr)		  ION_ASSERT(__expr, "RapidJSON")
+	#define RAPIDJSON_NOEXCEPT_ASSERT(__expr) ION_ASSERT(__expr, "RapidJSON")
 	//#define RAPIDJSON_LIKELY(__cond) ION_LIKELY(__cond )
 	//#define RAPIDJSON_UNLIKELY(__cond) ION_UNLIKELY(__cond )
 	#if ION_CPU_SSE2_ASSUMED == 1
@@ -46,6 +46,7 @@ namespace ion
 class Folder;
 class JSONDocument;
 class ByteBufferBase;
+class DataProcessorRegistry;
 
 class JSONElement
 {
@@ -65,17 +66,17 @@ public:
 
 	JSONDocument();
 
-	void Save(const ion::Folder& folder, const char* target);
+	void Save(const ion::Folder& folder, StringView target);
 
-	void Save(const char* target);
+	void Save(StringView target);
 
 	void Save(ByteBufferBase& target);
 
-	void Load(const ion::Folder& folder, const char* target);
+	void Load(ion::Folder& folder, StringView target, const ion::DataProcessorRegistry* registry = nullptr);
 
-	void Load(const char* target);
+	void Load(StringView target);
 
-	void Parse(const char* target, const ion::String& data);
+	void Parse(StringView target, ion::StringView data);
 
 	void Set(const char* name, const char* string)
 	{

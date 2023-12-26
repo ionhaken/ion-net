@@ -52,16 +52,7 @@ private:
 	MemTag mPreviousJobTag = ion::tag::Unset;
 };
 }  // namespace ion
-
+	#define ION_MEMORY_SCOPE(__tag) ion::MemoryScope ION_ANONYMOUS_VARIABLE(memoryScope)(__tag)
 #else
-namespace ion
-{
-class MemoryScope
-{
-public:
-	constexpr MemoryScope(MemTag) {}
-};
-}  // namespace ion
+	#define ION_MEMORY_SCOPE(__tag)
 #endif
-
-#define ION_MEMORY_SCOPE(__tag) ion::MemoryScope ION_ANONYMOUS_VARIABLE(scope) (__tag)

@@ -72,7 +72,7 @@ void ion::TimedJob::OnRemoved()
 ION_SECTION_END
 
 ION_CODE_SECTION(".jobs")
-void ion::TimedJob::RunTask()
+void ion::TimedJob::DoWork()
 {
 #if ION_ABORT_ON_FAILURE && ION_DEBUG_TIMED_JOB
 	if (mDispatcherJob->TimeLeft(SteadyClock::GetTimeUS()) < TimeDeltaUS(-5 * 1000))
@@ -168,7 +168,7 @@ ion::OneShotJob::~OneShotJob() { WaitUntilDone(); }
 ION_SECTION_END
 
 ION_CODE_SECTION(".jobs")
-void ion::OneShotJob::RunTask()
+void ion::OneShotJob::DoWork()
 {
 	RunTimedTask();
 	OnRemoved();
@@ -205,7 +205,7 @@ void ion::PeriodicJob::SetInterval(double interval)
 ION_SECTION_END
 
 ION_CODE_SECTION(".jobs")
-void ion::PeriodicJob::RunTask()
+void ion::PeriodicJob::DoWork()
 {
 	// Pre-start handling: Sleep/Busyloop until it's the actual time to run the task
 	ION_ASSERT(TimeLeft() <= 0 || mPreStartTime > 0, "Pre-started although no pre-start time set");

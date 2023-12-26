@@ -28,7 +28,7 @@ inline void Handler(Logger& logger, const T& value)
 {
 	if (logger.Available() >= 127)
 	{
-		auto pos = &logger.mWriteBuffer[sizeof(LogMessageHeader) + logger.mNumWritten];
+		auto pos = &logger.mWriteBuffer[logger.mNumWritten];
 		StringWriter writer(pos, 127);
 		logger.mNumWritten += serialization::Serialize(value, writer);
 	}

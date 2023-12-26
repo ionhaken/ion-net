@@ -389,7 +389,7 @@ public:
 	// Note: Do not pass local strings to RapidJSON!
 	void AddMember(const char* const name, const char* const string) { AddString(name, string, strlen(string)); }
 
-	void AddMember(const char* const name, const ion::StringView& string) { AddString(name, string.CStr(), string.Length()); }
+	void AddMember(const char* const name, ion::StringView string) { AddString(name, string.Copy(), string.Length()); }
 
 	template <>
 	void AddMember(const char* name, const ion::String& string)

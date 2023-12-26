@@ -15,6 +15,7 @@
  */
 #include <ion/debug/Profiling.h>
 
+#include <ion/memory/GlobalMemoryPool.h>
 #include <ion/memory/UniquePtr.h>
 
 #include <ion/concurrency/Runner.h>
@@ -23,7 +24,6 @@
 #include <ion/jobs/BaseJob.h>
 
 #include <ion/temporary/TemporaryAllocator.h>
-#include <ion/memory/GlobalMemoryPool.h>
 
 #include <atomic>
 #include <ion/core/Core.h>
@@ -31,26 +31,25 @@
 #include <ion/hw/FPControl.h>
 #include <ion/string/String.h>
 #include <ion/util/IdPool.h>
+#include <ion/util/Math.h>
 #include <ion/util/Random.h>
 
 #if ION_PLATFORM_MICROSOFT
 	#include <timeapi.h>
 #else
-#include <unistd.h>
+	#include <unistd.h>
 #endif
 
 class EmptyJob : public ion::BaseJob
 {
 public:
-	void RunTask(){};
+	void DoWork() final{};
 };
 
 namespace ion
 {
-#if ION_PLATFORM_LINUX
-
+#if ION_THREAD_USE_SCHEDULING_POLICY
 int SchedulingPolicy = SCHED_FIFO;
-
 #endif
 namespace
 {
@@ -64,12 +63,12 @@ template <typename T>
 class ThreadIdPool
 {
 public:
-#if ION_THREAD_WAIT_AFTER_TERMINATE
+	#if ION_THREAD_WAIT_AFTER_TERMINATE
 	ion::ThreadSynchronizer mSynchronizer;
-#endif
+	#endif
 	ThreadIdPool()
 	{
-		ion::MemoryScope memoryScope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		gSleepMinMicros = 1000;
 		mFreeingIds.Reserve(1024);
 	}
@@ -78,15 +77,15 @@ public:
 
 	T Reserve()
 	{
-		ion::MemoryScope memoryScope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		mMutex.Lock();
 
 		// IdPool allocates memory only when freeing ids, so it's safe to reserve id before memory pool is ready
 		T id = mIds.Reserve();
 		ion::Thread::mTLS.mId = id;
-#if ION_CONFIG_GLOBAL_MEMORY_POOL
+	#if ION_CONFIG_GLOBAL_MEMORY_POOL
 		GlobalMemoryThreadInit(id);
-#endif
+	#endif
 		ProcessFreesInternal();
 		mMutex.Unlock();
 		return id;
@@ -94,7 +93,7 @@ public:
 
 	void Free(T id)
 	{
-		ion::MemoryScope memoryScope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		mMutex.Lock();
 		mFreeingIds.Add(id);
 		ion::Thread::mTLS.mId = ~static_cast<UInt>(0);
@@ -103,7 +102,7 @@ public:
 
 	bool ProcessFrees()
 	{
-		ion::MemoryScope memoryScope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		bool isEmpty;
 		mMutex.Lock();
 		isEmpty = ProcessFreesInternal();
@@ -121,9 +120,9 @@ private:
 			mIds.Free(id);
 			if (id != 0)
 			{
-#if ION_CONFIG_GLOBAL_MEMORY_POOL
+	#if ION_CONFIG_GLOBAL_MEMORY_POOL
 				GlobalMemoryThreadDeinit(id);
-#endif
+	#endif
 			}
 		}
 		mFreeingIds.Clear();
@@ -163,15 +162,15 @@ void InitThreadIdPool()
 	{
 		isInitialized = true;
 		{
-			ion::MemoryScope memoryScope(ion::tag::Core);
+			ION_MEMORY_SCOPE(ion::tag::Core);
 			gThreadIdPool.store(new ion::ThreadIdPool<UInt>());
 		}
-#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
+	#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
 		{
-			ion::MemoryScope scope(ion::tag::Profiling);
+			ION_MEMORY_SCOPE(ion::tag::Profiling);
 			ion::ProfilingInit();
 		}
-#endif
+	#endif
 	}
 #endif
 }
@@ -182,11 +181,11 @@ void FreeHeaps()
 	{
 	#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
 		{
-			ion::MemoryScope scope(ion::tag::Profiling);
+			ION_MEMORY_SCOPE(ion::tag::Profiling);
 			ProfilingDeinit();
 		}
 	#endif
-		ion::MemoryScope memoryScope(ion::tag::Core);
+		ION_MEMORY_SCOPE(ion::tag::Core);
 		delete gThreadIdPool.load();
 		gThreadIdPool.store(nullptr);
 	}
@@ -215,7 +214,6 @@ void ion::Thread::Init(ion::Thread::QueueIndex index, ion::Thread::Priority prio
 	gThreadIdPool.load()->Reserve();
 #endif
 	InitInternal(index, priority);
-
 }
 
 void ion::Thread::Deinit()
@@ -247,7 +245,7 @@ namespace ion
 {
 Int Thread::GetSchedulingPolicy()
 {
-#if ION_PLATFORM_LINUX
+#if ION_THREAD_USE_SCHEDULING_POLICY
 	return SchedulingPolicy;
 #else
 	return 0;
@@ -258,8 +256,7 @@ Int Thread::ThreadPriority(ion::Thread::Priority priority)
 {
 #if ION_PLATFORM_MICROSOFT
 	return static_cast<Int>(priority) - 2;
-#elif ION_PLATFORM_ANDROID
-	// Special case for Android, we can use setpriority nice values
+#elif ION_PLATFORM_ANDROID || ION_PLATFORM_LINUX
 	switch (priority)
 	{
 	case Thread::Priority::Lowest:
@@ -269,11 +266,11 @@ Int Thread::ThreadPriority(ion::Thread::Priority priority)
 	case Thread::Priority::Normal:
 		return 0;
 	case Thread::Priority::AboveNormal:
-		return -10;
+		return -5;
 	case Thread::Priority::Highest:
-		return -20;
+		return -10;	 // OS allows up to -20, but avoid real-time priorities.
 	}
-#else
+#elif ION_THREAD_USE_SCHEDULING_POLICY
 	int minPriority = sched_get_priority_min(SchedulingPolicy);
 	int maxPriority = sched_get_priority_max(SchedulingPolicy);
 
@@ -296,23 +293,19 @@ Int Thread::ThreadPriority(ion::Thread::Priority priority)
 
 void ion::Thread::SetMainThreadPolicy()
 {
-#if ION_PLATFORM_LINUX
+#if ION_THREAD_USE_SCHEDULING_POLICY
 	pthread_t handle = pthread_self();
 	int policy;
 	struct sched_param param;
 	pthread_getschedparam(handle, &policy, &param);
 	if (policy != SchedulingPolicy)
 	{
-	#ifdef ION_UPDATE_SCHEDULING_POLICY
 		ION_LOG_IMMEDIATE("Updating scheduling policy");
 		auto err = pthread_setschedparam(handle, SchedulingPolicy, &param);
 		if (err != 0)
-	#endif
 		{
-	#ifdef ION_UPDATE_SCHEDULING_POLICY
 			ION_LOG_FMT_IMMEDIATE("Cannot update main thread scheduling policy from %i to %i;error: %s", policy, SchedulingPolicy,
 								  strerror(err));
-	#endif
 			SchedulingPolicy = policy;
 		}
 	}
@@ -324,38 +317,37 @@ void ion::Thread::SetPriority(ion::Thread::Priority priority)
 	int targetThreadPriority = ion::Thread::ThreadPriority(priority);
 #if ION_PLATFORM_MICROSOFT
 	auto handle = GetCurrentThread();
-	int currentThreadPriority = GetThreadPriority(handle);
-#elif ION_PLATFORM_ANDROID
+#elif ION_PLATFORM_ANDROID || ION_PLATFORM_LINUX
+	struct rlimit limit;
+	getrlimit(RLIMIT_NICE, &limit);
+	targetThreadPriority = ion::Clamp(targetThreadPriority, int(20 - limit.rlim_cur), int(19));
+
+	#ifdef SYS_gettid
+	int tid = syscall(SYS_gettid);
+	#else
+	int tid = 0;
+	#endif
+	
 	errno = 0;
-	int currentThreadPriority = getpriority(PRIO_PROCESS, 0);
-	if (errno != 0)
-	{
-		ION_ABNORMAL("getpriority failed:" << strerror(errno));
-		return;
-	}
-#else
+#elif ION_THREAD_USE_SCHEDULING_POLICY
 	pthread_t handle = pthread_self();
 	int policy;
 	struct sched_param param;
-	pthread_getschedparam(handle, &policy, &param);
-	int currentThreadPriority = param.sched_priority;
 #endif
-	if (currentThreadPriority != targetThreadPriority)
 	{
 #if ION_PLATFORM_MICROSOFT
-		constexpr BOOL ResultOK = TRUE;
-		auto err = SetThreadPriority(handle, targetThreadPriority);
-#elif ION_PLATFORM_ANDROID
-		constexpr int ResultOK = 0;
+		[[maybe_unused]] constexpr BOOL ResultOK = TRUE;
+		[[maybe_unused]] auto err = SetThreadPriority(handle, targetThreadPriority);
+#elif ION_PLATFORM_ANDROID || ION_PLATFORM_LINUX
+		[[maybe_unused]] constexpr int ResultOK = 0;
 		// Note that other systems than Android you must be running as superuser for setpriority to work.
-		auto err = setpriority(PRIO_PROCESS, 0, targetThreadPriority);
-#else
-		constexpr int ResultOK = 0;
+		[[maybe_unused]] auto err = setpriority(PRIO_PROCESS, tid, targetThreadPriority);
+#elif ION_THREAD_USE_SCHEDULING_POLICY
+		[[maybe_unused]] constexpr int ResultOK = 0;
 		param.sched_priority = targetThreadPriority;
-		auto err = pthread_setschedparam(handle, SchedulingPolicy, &param);
+		[[maybe_unused]] auto err = pthread_setschedparam(handle, SchedulingPolicy, &param);
 #endif
-		ION_ASSERT(err == ResultOK,
-				   "Cannot change thread priority from " << currentThreadPriority << " to " << targetThreadPriority << ";err=" << err);
+		ION_ASSERT(err == ResultOK, "Cannot change thread priority to " << targetThreadPriority << ";err=" << err);
 	}
 }
 
@@ -383,12 +375,9 @@ void ion::Thread::InitInternal(ion::Thread::QueueIndex index, ion::Thread::Prior
 	}
 #endif
 
-	// #TODO: High priority threads should have affinities
 	SetPriority(priority);
 
-	// Not enabled since there is not enough information for hand picking ideal processor for queue.
-	// It's probably better not to restrict OS scheduler
-#ifdef ION_USE_IDEAL_PROCESSOR
+#if ION_THREAD_USE_IDEAL_PROCESSOR
 	// Use ideal processor when index is set, but let main thread (id 0) choose ideal processor itself
 	if (index != NoQueueIndex && mTLS.mId != 0)
 	{
@@ -493,22 +482,20 @@ bool ion::Thread::SleepMs(int64_t ms) { return Sleep(int64_t(1000) * ms); }
 
 int64_t ion::Thread::MinSleepUsec()
 {
-	return 2 * gSleepMinMicros;  // 2x due to sampling rate
+	return 2 * gSleepMinMicros;	 // 2x due to sampling rate
 }
 
 void ion::Thread::YieldCPU() { ion::platform::Yield(); }
-
 
 #if ION_THREAD_WAIT_AFTER_TERMINATE
 ion::ThreadSynchronizer& ion::Thread::Synchronizer() { return gThreadIdPool.load()->mSynchronizer; }
 #endif
 
-
 namespace ion::Thread
 {
 ION_ACCESS_GUARD_STATIC(gGuard);
 std::atomic<int> gIsInitialized = 0;
-}
+}  // namespace ion::Thread
 
 void ion::Thread::InitMain()
 {

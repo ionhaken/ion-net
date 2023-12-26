@@ -29,6 +29,14 @@ inline int StringCopy(char* ION_RESTRICT dest, [[maybe_unused]] size_t destByteS
 #endif
 }
 
+inline int StringCompare(const char* ION_RESTRICT a, const char* ION_RESTRICT b)
+{
+	return strcmp(a, b);
+}
+
+inline int StringCompare(const char* ION_RESTRICT a, const char* ION_RESTRICT b, size_t length) { return strncmp(a, b, length); }
+
+
 inline int StringCaseCompare(const char* ION_RESTRICT a, const char* ION_RESTRICT b)
 {
 #if ION_PLATFORM_MICROSOFT

@@ -26,6 +26,10 @@
 	#include <crtdbg.h>
 #endif
 
+#if ION_COMPILER_MSVC 
+	#include <memory> // std::assume_aligned
+#endif
+
 #define ION_ALIGNED_MALLOC(__size, __alignment) ion::AlignedMalloc(__size, __alignment, __FILE__, __LINE__)
 #define ION_ALIGNED_FREE(__pointer)				ion::AlignedFree(__pointer)
 #define ION_ALIGN_CLASS(__name)                                                    \
@@ -309,8 +313,8 @@ inline void Free(void* pointer) { _free_dbg(pointer, 1); }
 
 [[nodiscard]] inline ION_RESTRICT_RETURN_VALUE void* AlignedMalloc(size_t size, size_t alignment, const char* file, unsigned int line)
 {
-	ION_ASSERT_FMT_IMMEDIATE((alignment != 0) && ((alignment & (alignment - 1)) == 0), "Alignment not power of two");
-	ION_ASSERT_FMT_IMMEDIATE(alignment >= 16, "Invalid alignment");
+	ION_ASSUME_FMT_IMMEDIATE((alignment != 0) && ((alignment & (alignment - 1)) == 0), "Alignment not power of two");
+	ION_ASSUME_FMT_IMMEDIATE(alignment >= 16, "Invalid alignment");
 	auto* p = _aligned_malloc_dbg(size, alignment, file, line);
 	ION_ASSERT_FMT_IMMEDIATE(p, "Out of memory. Requested %zu, %zu bytes;alignment=", size, alignment);
 	return p;
@@ -321,10 +325,10 @@ inline void AlignedFree(void* pointer) { _aligned_free_dbg(pointer); }
 template <typename T, size_t N = alignof(T)>
 [[nodiscard]] constexpr T* const AssumeAligned(T* const ptr)
 {
-	ION_ASSERT_FMT_IMMEDIATE(reinterpret_cast<uintptr_t>(ptr) % N == 0, "Invalid alignment;assumed alignment=%zu;found=%zu", N,
+	ION_ASSUME_FMT_IMMEDIATE(reinterpret_cast<uintptr_t>(ptr) % N == 0, "Invalid alignment;assumed alignment=%zu;found=%zu", N,
 							 (reinterpret_cast<uintptr_t>(ptr) % N));
 #if ION_COMPILER_MSVC
-	return ptr;
+	return std::assume_aligned<N, T>(ptr);
 #else
 	return reinterpret_cast<T*>(__builtin_assume_aligned(ptr, N));
 #endif

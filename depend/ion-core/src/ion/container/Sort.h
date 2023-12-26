@@ -26,5 +26,10 @@ inline void Sort(Iterator first, Iterator last)
 	// but clang and MSVC do std::sort differently.
 	gfx::timsort(first, last);
 }
+template <typename Iterator, typename Callback>
+inline void Sort(Iterator first, Iterator last, Callback&& callback)
+{
+	gfx::timsort(first, last, std::forward<Callback&&>(callback));
+}
 
 }  // namespace ion

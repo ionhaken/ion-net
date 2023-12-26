@@ -17,8 +17,6 @@
 #include <ion/concurrency/Delegate.h>
 #include <ion/concurrency/Thread.h>
 
-#include <ion/jobs/TaskQueue.h>
-
 #if ION_PLATFORM_APPLE
 	#import <CoreFoundation/CoreFoundation.h>
 	#include <sys/socket.h>

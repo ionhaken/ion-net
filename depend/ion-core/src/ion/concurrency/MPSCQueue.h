@@ -31,7 +31,9 @@
 	#include <ion/arena/ArenaAllocator.h>
 	#include <ion/memory/MultiPoolResource.h>
 	#include <ion/concurrency/SPSCQueue.h>
+	#include <atomic>
 #endif
+
 
 #include <ion/debug/AccessGuard.h>
 

@@ -63,10 +63,12 @@ void ion::NetRttTracker::OnPong(TimeMS now, TimeMS sentPingTime, TimeMS remoteTi
 		}
 		return false;
 	};
-		
+
 	if (!ClearActivePing())
 	{
-		ION_NET_LOG_ABNORMAL("Ping not found from active list;ts=" << sentPingTime << ";last=" << mLastPingTime);
+		ION_NET_LOG_ABNORMAL("Ping not found from active list;ts=" << sentPingTime << "(" << int(now - sentPingTime) << "ms)"
+																   << ";last=" << mLastPingTime << "(" << int(now - mLastPingTime)
+																   << "ms)");
 		return;
 	}
 	mPingsReceived++;

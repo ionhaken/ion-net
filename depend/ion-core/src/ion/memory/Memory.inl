@@ -60,7 +60,7 @@ ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* NativeMalloc(size_t size) /*
 
 ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* NativeRealloc(void* ptr, size_t size)
 {
-	ION_PROFILER_SCOPE(Memory, "Memory alloc");
+	ION_PROFILER_SCOPE(Memory, "Memory realloc");
 	return realloc(ptr, size);
 }
 
@@ -85,7 +85,7 @@ ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* Malloc(size_t size,
 
 ION_RESTRICT_RETURN_VALUE [[nodiscard]] void* Realloc(void* ptr, size_t size)
 {
-	ION_PROFILER_SCOPE(Memory, "Memory alloc");
+	ION_PROFILER_SCOPE(Memory, "Memory realloc");
 #if ION_CONFIG_GLOBAL_MEMORY_POOL
 	return GlobalMemoryReallocate(Thread::GetId(), ptr, size);
 #else

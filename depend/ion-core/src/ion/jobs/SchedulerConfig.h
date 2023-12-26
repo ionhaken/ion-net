@@ -23,10 +23,11 @@ namespace ion
 // - Limit threads to prevent running out of TLS
 // - Higher thread counts are not tested with real system
 #if ION_PLATFORM_ANDROID
-static constexpr UInt MaxQueues = 16;
-static constexpr UInt MaxThreads = 16;
+constexpr UInt MaxQueues = 16;
+constexpr UInt MaxIOThreads = 4;
 #else
-static constexpr UInt MaxQueues = 128;
-static constexpr UInt MaxThreads = MaxQueues * 2;
+constexpr UInt MaxQueues = 128;
+constexpr UInt MaxIOThreads = 32;
 #endif
+constexpr UInt MaxThreads = MaxQueues * 2;
 }  // namespace ion

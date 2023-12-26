@@ -16,9 +16,9 @@ NetCommand::NetCommand(const ArrayView<NetSocketAddress>& addresses) : mTarget(a
 NetCommand::NetCommand(NetCommandPtr& other, size_t capacity)
   : mTarget(std::move(other->mTarget), other->mCommand),
 	mNumberOfBytesToSend(other->mNumberOfBytesToSend),
-	mCommand(other->mCommand),
 	mRefCount(other->mRefCount.load()),
 	mChannel(other->mChannel),
+	mCommand(other->mCommand),
 	mPriority(other->mPriority),
 	mReliability(other->mReliability),
 	mConnectionMode(other->mConnectionMode)

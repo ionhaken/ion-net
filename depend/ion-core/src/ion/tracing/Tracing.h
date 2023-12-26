@@ -35,37 +35,39 @@ namespace tracing
 
 void SetOutputFile(ion::FileOut* file);
 
-static constexpr size_t EventBufferSize = 32 * 1024;
-
 enum class EventType : uint8_t
 {
 	EventDebug,
 	EventInfo,
 	EventWarning,
-	EventError,
-	EventGTest	// Force debugger output
+	EventError
 };
 
 template <size_t TSize>
 struct BytePage;
 
+constexpr size_t LogMessageSize = 1024;
+constexpr size_t EventBufferSize = 32 * LogMessageSize;
+
 struct LogMessageHeader
 {
-	BytePage<EventBufferSize>* mPage;
 #if !ION_PLATFORM_ANDROID
 	uint64_t mTimeStamp;
 #endif
+	BytePage<EventBufferSize>* mPage;
 	uint16_t mMsgLength;
 	ion::tracing::EventType mType;
 	bool mIsShortBlock;
 };
 
-const constexpr size_t MaxStaticMsgLength = 1024;
+constexpr size_t LogMessageHeaderSize = offsetof(LogMessageHeader, mIsShortBlock) + sizeof(bool);
+constexpr size_t LogContentSize = LogMessageSize - LogMessageHeaderSize;
 
 struct LogMessage
 {
 	LogMessageHeader mHeader;
-	char mData[MaxStaticMsgLength];
+	// Log content starts at header filler bytes
+	char mTrailingPayload[LogMessageSize - sizeof(LogMessageHeader)];
 };
 
 void Flush();
@@ -77,8 +79,6 @@ void Print(EventType type, const char* text);
 
 }  // namespace tracing
 }  // namespace ion
-
-#define ion_forward(...) static_cast<decltype(__VA_ARGS__)&&>(__VA_ARGS__)
 
 namespace ion::tracing
 {
@@ -139,9 +139,16 @@ public:
 	void Write(const char* someChars, size_t aCount);
 	void Write(char key, const char* someChars, size_t aCount);
 	inline void Write(const char* someChars);
-	inline size_t Available() const { return MaxStaticMsgLength - sizeof(LogMessageHeader) - mNumWritten; }
 
-	char* ION_RESTRICT mWriteBuffer;
+#if ION_PLATFORM_MICROSOFT
+	static constexpr size_t MsgFootersize = 3;
+#else
+	static constexpr size_t MsgFootersize = 2;
+#endif
+
+	inline size_t Available() const { return LogContentSize - MsgFootersize - mNumWritten; }
+
+	char* mWriteBuffer;
 	int mNumWritten;
 };
 }  // namespace ion::tracing

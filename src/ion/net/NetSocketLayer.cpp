@@ -26,7 +26,7 @@ struct AddressInfo
 	{
 		ion::NetBindParameters bindParameters;
 		memset(&bindParameters, 0x0, sizeof(ion::NetBindParameters));
-		int err = gethostname(bindParameters.hostAddress, sizeof(bindParameters.hostAddress));
+		[[maybe_unused]] int err = gethostname(bindParameters.hostAddress, sizeof(bindParameters.hostAddress));
 		ION_ASSERT(err != -1, "No hostname: " << ion::debug::GetLastErrorString());
 
 		bindParameters.type = type;
@@ -276,6 +276,7 @@ ion::NetBindResult BindSocketInternal(NetSocket& socketLayer, ion::NetBindParame
 		  }
 
 		  // Make sure linger is disabled. It should not matter anymore, but it caused previously issues with Windows Vista.
+		  if (aip->ai_socktype == SOCK_STREAM)
 		  {
 			  struct linger opt = {.l_onoff = 0, .l_linger = 0};
 			  SetSocketOption(socketLayer.mNativeSocket, SOL_SOCKET, SO_LINGER, opt, false /* ignore error */);
@@ -466,7 +467,7 @@ void RecvFromBlocking(const NetSocket& socketLayer, ion::NetSocketReceiveData& r
 void SetNonBlocking(NetSocket& socket, unsigned long nonblocking)
 {
 #if ION_PLATFORM_MICROSOFT
-	int res = ioctlsocket(socket.mNativeSocket, FIONBIO, &nonblocking);
+	[[maybe_unused]] int res = ioctlsocket(socket.mNativeSocket, FIONBIO, &nonblocking);
 	ION_ASSERT(res == 0, "Bad socket");
 
 #else

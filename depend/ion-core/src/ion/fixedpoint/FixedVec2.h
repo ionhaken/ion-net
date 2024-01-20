@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 #pragma once
+#include <ion/container/Vector.h>
+
 #include <ion/fixedpoint/FixedMath.h>
 #include <ion/string/String.h>
 #include <ion/util/Vec.h>
-#include <ion/container/Vector.h>
 
 namespace ion
 {
@@ -27,7 +28,7 @@ template <>
 [[nodiscard]] inline Fixed32 Length(const Fixed32Vec2& vec)
 {
 	const unsigned int LargeScale = 100;
-	if (ion::Abs(vec.x()) + ion::Abs(vec.y()) > LargeScale)
+	if (ion::Absf(vec.x()) + ion::Absf(vec.y()) > LargeScale)
 	{
 		Fixed32 x = vec.x() / LargeScale;
 		Fixed32 y = vec.y() / LargeScale;
@@ -45,13 +46,13 @@ template <>
 	auto len = ion::Length(vec);
 	if (len > 0)
 	{
-#if ION_CONFIG_FAST_MATH
+	#if ION_CONFIG_FAST_MATH
 		/*auto inv = ion::Reciprocal(len);
 		return Vec(x() * inv, y() * inv);*/
 		return Vec(x() / len, y() / len);
-#else
+	#else
 		return Fixed32Vec2(vec.x() / len, vec.y() / len);
-#endif
+	#endif
 	}
 	else
 	{
@@ -66,5 +67,4 @@ inline void tracing::Handler(LogEvent& e, const Vec2<ion::Fixed32>& value)	// , 
 	snprintf(buffer, 32, "%f, %f", static_cast<float>(value.x()), static_cast<float>(value.y()));
 	e.Write(buffer);
 }
-
 }  // namespace ion

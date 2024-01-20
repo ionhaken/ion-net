@@ -28,15 +28,16 @@ NetSocketDescriptor::NetSocketDescriptor(unsigned short _port, const char* _host
 }
 
 NetStartupParameters::NetStartupParameters()
-  : mUpdateMode(ion::core::gSharedScheduler ? NetPeerUpdateMode::Job : NetPeerUpdateMode::Worker),
-	mJobScheduler(ion::core::gSharedScheduler)
+  : mJobScheduler(ion::core::gSharedScheduler),
+	mUpdateMode(ion::core::gSharedScheduler ? NetPeerUpdateMode::Job : NetPeerUpdateMode::Worker)
+
 {
 }
 
 NetStartupParameters::NetStartupParameters(unsigned int maxConnections, const ion::NetSocketDescriptor* socketDescriptors,
 										   unsigned socketDescriptorCount)
-  : mUpdateMode(ion::core::gSharedScheduler ? NetPeerUpdateMode::Job : NetPeerUpdateMode::Worker),
-	mJobScheduler(ion::core::gSharedScheduler)
+  : mJobScheduler(ion::core::gSharedScheduler),
+	mUpdateMode(ion::core::gSharedScheduler ? NetPeerUpdateMode::Job : NetPeerUpdateMode::Worker)
 {
 	*this = Create(maxConnections, socketDescriptors, socketDescriptorCount);
 }

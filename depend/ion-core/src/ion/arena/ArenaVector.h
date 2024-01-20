@@ -625,6 +625,8 @@ private:
 		else
 		{
 			static_assert(StaticItemCount == 0, "Cannot use custom types with static item buffer");
+			static_assert(sizeof(Value) == 1, "Source size not supported");
+			ION_ASSERT(newCapacity % sizeof(typename Allocator::value_type) == 0, "Invalid capacity");
 			items = reinterpret_cast<Value*>(allocator.allocate(newCapacity / sizeof(typename Allocator::value_type)));
 		}
 		return items;
@@ -764,9 +766,10 @@ private:
 		ION_ASSERT(newCapacity != InternalCapacity(), "Invalid size");
 		ION_ASSERT(
 		  InternalCapacity() == StaticItemCount || reinterpret_cast<uintptr_t>(Data()) % alignof(typename Allocator::value_type) == 0,
-		  "Alignment changed before clearing old buffer");
-
+		  "Alignment changed to before clearing old buffer. Expected: " << alignof(typename Allocator::value_type)
+																		<< " ptr=" << reinterpret_cast<uintptr_t>(Data()));
 		Value* items = Allocate(allocator, newCapacity);
+		ION_ASSERT(reinterpret_cast<uintptr_t>(items) % alignof(typename Allocator::value_type) == 0, "Invalid alignment");
 
 		if (InternalCapacity() != StaticItemCount)
 		{

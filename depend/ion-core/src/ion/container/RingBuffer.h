@@ -224,9 +224,9 @@ public:
 private:
 	[[nodiscard]] constexpr CountType Mod(CountType val) const { return val % TSize; }
 
+	ion::StaticBuffer<T, TSize> mBuffer;
 	CountType mNumElems;
 	CountType mReadPos;
-	ion::StaticBuffer<T, TSize> mBuffer;
 };
 
 template <typename T, size_t TSize, typename TAlloc = GlobalAllocator<T>, typename CountType = uint32_t>

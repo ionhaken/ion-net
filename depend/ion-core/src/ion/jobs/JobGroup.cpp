@@ -16,6 +16,7 @@
 #include <ion/jobs/JobGroup.h>
 #include <ion/concurrency/Thread.h>
 #include <ion/jobs/JobScheduler.h>
+#include <ion/jobs/JobQueue.inl>
 
 namespace ion
 {
@@ -34,8 +35,9 @@ ION_SECTION_END
 ION_CODE_SECTION(".jobs")
 bool JobGroup::Work(ion::JobScheduler& js)
 {
-	if (mQueue.Run() == TaskQueue::Status::Empty)
+	if (mQueue.Run() == JobQueueStatus::Empty)
 	{
+		ION_ASSERT(ion::Thread::GetQueueIndex() != ion::Thread::NoQueueIndex, "Not supported. See WaitableJob::Wait()");
 		if ION_LIKELY (js.GetPool().GetWorkerCount() > 0)
 		{
 			js.GetPool().AddCompanionWorker();
@@ -61,7 +63,7 @@ ION_CODE_SECTION(".jobs")
 void JobGroup::Finalize()
 {
 	mNumJobsAvailable--;
-	mQueue.WakeUp();
+	mQueue.WakeUpAll();
 }
 ION_SECTION_END
 

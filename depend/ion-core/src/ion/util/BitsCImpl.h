@@ -15,6 +15,8 @@
  */
 #pragma once
 
+#include <ion/Base.h>
+
 #include <assert.h>
 
 #ifdef _MSC_VER

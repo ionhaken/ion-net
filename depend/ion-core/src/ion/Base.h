@@ -95,7 +95,6 @@
 #endif
 
 #if ION_COMPILER_CLANG
-	#pragma clang diagnostic ignored "-Wassume"
 	#pragma clang diagnostic error "-Wundef"
 #endif
 
@@ -139,11 +138,6 @@
 	#define ION_UNLIKELY(__cond) (__builtin_expect(!!(__cond), 0))
 #endif
 
-#if ION_COMPILER_MSVC
-	#define ION_ASSUME(__expr) __assume(__expr)
-#else
-	#define ION_ASSUME(__expr) __builtin_assume(__expr)
-#endif
 
 //
 // Non copyable nor movable class
@@ -166,6 +160,12 @@
 	T(T&&) = delete;
 
 #define ION_INLINE __inline // Inlining hint
+#if ION_BUILD_DEBUG
+	#define ION_INLINE_RELEASE
+#else
+	#define ION_INLINE_RELEASE ION_INLINE
+#endif
+
 #if ION_PLATFORM_MICROSOFT
 	#define ION_FORCE_INLINE __forceinline
 	#define ION_NO_INLINE	 __declspec(noinline)
@@ -173,11 +173,17 @@
 	#define ION_FORCE_INLINE __attribute__((always_inline)) inline
 	#define ION_NO_INLINE __attribute__ ((noinline))
 #endif
+#if ION_BUILD_DEBUG
+	#define ION_FORCE_INLINE_RELEASE
+#else
+	#define ION_FORCE_INLINE_RELEASE ION_FORCE_INLINE
+#endif
 #if ION_CONFIG_PLATFORM_WRAPPERS == 1
 	#define ION_PLATFORM_INLINING ION_FORCE_INLINE
 #else
 	#define ION_PLATFORM_INLINING
 #endif
+
 
 #define ION_CONCATENATE_DIRECT(s1, s2) s1##s2
 #define ION_STRINGIFY(__str)		   #__str
@@ -209,10 +215,12 @@
 	#define ION_EXCEPTIONS_ENABLED 0
 #endif
 
-#if __cplusplus > 201703L
+#if defined(__cplusplus)
+	#if __cplusplus > 201703L
 	#define ION_CONSTEVAL consteval
 #else
 	#define ION_CONSTEVAL constexpr
+#endif
 #endif
 
 #if ION_CONFIG_DEV_TOOLS
@@ -253,8 +261,8 @@
 	#define ION_LOG_FMT_IMMEDIATE_CALL(__type, __format, ...) ion::tracing::PrintFormatted(__type, __format "\n", __VA_ARGS__);
 	#define ION_LOG_IMMEDIATE_CALL(__type, __format)		  ion::tracing::PrintFormatted(__type, __format "\n");
 #else
-	#define ION_LOG_FMT_IMMEDIATE_CALL(__type, __format, ...) ion::tracing::PrintFormatted(__type, __format##"\n", __VA_ARGS__);
-	#define ION_LOG_IMMEDIATE_CALL(__type, __format)		  ion::tracing::Print(__type, __format##"\n");
+	#define ION_LOG_FMT_IMMEDIATE_CALL(__type, __format, ...) ion::tracing::PrintFormatted(__type, __format##"\r\n", __VA_ARGS__);
+	#define ION_LOG_IMMEDIATE_CALL(__type, __format)		  ion::tracing::Print(__type, __format##"\r\n");
 #endif
 
 #ifndef ION_NONSTATIC
@@ -269,4 +277,17 @@
 	#else
 		#define ION_EXPORT __attribute__((visibility("default")))
 	#endif
+#endif
+
+#define ion_forward(...) static_cast<decltype(__VA_ARGS__)&&>(__VA_ARGS__)
+
+#if ION_COMPILER_MSVC
+	#define ION_DEBUG_BREAK				 __debugbreak();
+	#define THROW_EXCEPTION(__exception) throw __exception
+#elif ION_COMPILER_CLANG
+	#define ION_DEBUG_BREAK __builtin_debugtrap()
+	#define THROW_EXCEPTION(__exception)
+#else
+	#define ION_DEBUG_BREAK __builtin_trap()
+	#define THROW_EXCEPTION(__exception)
 #endif

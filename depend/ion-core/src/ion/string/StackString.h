@@ -48,6 +48,8 @@ public:
 		return this->Native().Format(std::forward<Args>(args)...);
 	}
 
+	size_t Length() const { return this->Native().Length(); }
+
 private:
 	ION_CLASS_NON_COPYABLE_NOR_MOVABLE(StackString);
 };

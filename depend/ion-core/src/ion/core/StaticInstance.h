@@ -16,6 +16,8 @@
 #pragma once
 #include <ion/container/StaticRawBuffer.h>
 
+#include <atomic>
+
 namespace ion
 {
 template <typename InstanceData, typename MemoryResource>
@@ -57,22 +59,47 @@ private:
 };
 }  // namespace ion
 
-#define STATIC_INSTANCE(__dataType, __resourceType)                                 \
-	ION_ACCESS_GUARD_STATIC(gGuard);                                                \
-	namespace                                                                       \
-	{                                                                               \
-	std::atomic<int> gIsInitialized = 0;                                            \
-	}                                                                               \
-	::ion::StaticInstance<__dataType, __resourceType> gInstance;                    \
-	__dataType& Instance()                                                          \
-	{                                                                               \
-		ION_ASSERT_FMT_IMMEDIATE(gIsInitialized != 0, "Static instance not ready"); \
-		return gInstance.Data();                                                    \
-	}                                                                               \
-	__resourceType& Source()                                                        \
-	{                                                                               \
-		ION_ASSERT_FMT_IMMEDIATE(gIsInitialized != 0, "Static instance not ready"); \
-		return gInstance.Source();                                                  \
+#define STATIC_INSTANCE(__dataType, __resourceType)                            \
+	ION_ACCESS_GUARD_STATIC(gGuard);                                           \
+	namespace                                                                  \
+	{                                                                          \
+	bool gIsInitialized = false;                                               \
+	}                                                                          \
+	::ion::StaticInstance<__dataType, __resourceType> gInstance;               \
+	__dataType& Instance()                                                     \
+	{                                                                          \
+		ION_ASSERT_FMT_IMMEDIATE(gIsInitialized, "Static instance not ready"); \
+		return gInstance.Data();                                               \
+	}                                                                          \
+	__resourceType& Source()                                                   \
+	{                                                                          \
+		ION_ASSERT_FMT_IMMEDIATE(gIsInitialized, "Static instance not ready"); \
+		return gInstance.Source();                                             \
+	}                                                                          \
+	namespace                                                                  \
+	{                                                                          \
+	std::atomic<int> gRefCount = 0;                                            \
+	template <typename Callback, typename... Args>                             \
+	void Init(Callback&& callback, Args... args)                               \
+	{                                                                          \
+		if (0 != gRefCount++)                                                  \
+		{                                                                      \
+			return;                                                            \
+		}                                                                      \
+		callback();                                                            \
+		gInstance.Init(std::forward<Args>(args)...);                           \
+		gIsInitialized = true;                                                 \
+	}                                                                          \
+	template <typename Callback, typename... Args>                             \
+	void Deinit(Callback&& callback, Args... args)                             \
+	{                                                                          \
+		if (1 != gRefCount--)                                                  \
+		{                                                                      \
+			return;                                                            \
+		}                                                                      \
+		gIsInitialized = false;                                                \
+		gInstance.Deinit(std::forward<Args>(args)...);                         \
+		callback();                                                            \
+	}                                                                          \
 	}
-
 #define STATIC_INSTANCE_PUBLIC(__dataType, __resourceType) extern ::ion::StaticInstance<__dataType, __resourceType> gInstance;

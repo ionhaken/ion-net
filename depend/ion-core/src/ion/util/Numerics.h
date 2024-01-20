@@ -24,7 +24,7 @@ namespace numerics
 {
 // Linear interpolation
 template <typename T, typename U>
-[[nodiscard]] constexpr T Lerp(T v0, T v1, U t)
+[[nodiscard]] constexpr T Lerp(const T& v0, const T& v1, U t)
 {
 	// #TODO: Support bool batch
 	// ION_ASSERT_FMT_IMMEDIATE(t >= U(0) && t <= U(1), "Invalid time");
@@ -32,60 +32,32 @@ template <typename T, typename U>
 }
 
 template <typename T, typename U>
-[[nodiscard]] constexpr T LerpPrecise(T v0, T v1, U t)
+[[nodiscard]] constexpr T LerpPrecise(const T& v0, const T& v1, U t)
 {
 	// #TODO: Support bool batch
 	// ION_ASSERT_FMT_IMMEDIATE(t >= U(0) && t <= U(1), "Invalid time");
 	return v0 * (-t + 1.0f) + v1 * t;
 }
 
-namespace detail
+template <typename T, typename U>
+[[nodiscard]] constexpr T AngleLerp(const T& a1, const T& a2, U fraction)
 {
-template <typename T, typename U = T>
-[[nodiscard]] constexpr T ShortAngleDist(T a0, T a1)
-{
-	T max(ion::Math::Pi<typename BaseType<U>::type>());
-	T da = ion::Mod(a1 - a0, max);
-	return ion::Mod(da * 2, max) - da;
+	T diff(a2 - a1);
+	T wrappedDiff = ion::WrapValue(diff, ion::Math::Pi<float>());
+	return a1 + (wrappedDiff * fraction);
 }
-}  // namespace detail
 
 template <typename T, typename U>
-[[nodiscard]] constexpr T AngleLerp(T a1, T a2, U fraction)
+[[nodiscard]] constexpr T AngleHerp(const T& a1, const T& /*v1*/, const T& a2, const T& /*v2*/, U fraction)
 {
-	return ion::numerics::Lerp(a1, a2, fraction);
-	// T delta = a1 + detail::ShortAngleDist<T, U>(a1, a2) * t;
-	// TODO: calculate intermediate angles correctly with high angular velocity
-	// Make sure direction of angular velocity is correct
-	/*if ((delta > 0 && v > 0) || (delta < 0 && v < 0))
-	{
-		return Lerp(a1, a1 + delta, fraction);
-	}
-	else
-	{
-		return a2;
-	}*/
-	// return delta;
+	T diff(a2 - a1);
+	//auto iVelWrapped = ion::WrapValue(v1, ion::Math::Pi<float>());
+	//auto iVel = v1 - iVelWrapped;
+
+	T wrappedDiff = ion::WrapValue(diff, ion::Math::Pi<float>());
+	return a1 + ((wrappedDiff /*+ iVel*/) * fraction);
 }
-#if 0
-		template<typename T, typename U>
-		[[nodiscard]] constexpr T AngleHerp(T a1, T v1, T a2, T v2, U t)
-		{
-			T v = Lerp(v1, v2, fraction);
-			T delta = a1 + detail::ShortAngleDist(a1, a2) * t;
-			// TODO: calculate intermediate angles correctly with high angular velocity
-			// Make sure direction of angular velocity is correct
-			/*if ((delta > 0 && v > 0) || (delta < 0 && v < 0))
-			{
-				return Lerp(a1, a1 + delta, fraction);
-			}
-			else
-			{
-				return a2;
-			}*/
-			return delta;
-		}
-#endif
+
 // Returns the unit length vector for the given angle (in radians).
 template <typename RadiansType, typename VecType = ion::Vec2<RadiansType>>
 [[nodiscard]] constexpr VecType RadiansToUVec(RadiansType radians)
@@ -116,29 +88,6 @@ template <typename T>
 [[nodiscard]] constexpr T RadiansToDegrees(T radians)
 {
 	return radians * (static_cast<T>(ion::Fraction32(180)) / ion::Math::Pi<T>());
-}
-
-template <typename T, typename U>
-[[nodiscard]] constexpr T LinearInterpolation(T a1, T a2, U fraction)
-{
-	return ion::numerics::Lerp(a1, a2, fraction);
-}
-
-template <typename T>
-[[nodiscard]] T AngularInterpolation(T a1, T v1, T a2, T v2, T fraction)
-{
-	T v = LinearInterpolation(v1, v2, fraction);
-	T delta = ion::Math::WrappedDelta<T>(a1, a2, static_cast<T>(ion::Math::Pi()));
-	// TODO: calculate intermediate angles correctly with high angular velocity
-	// Make sure direction of angular velocity is correct
-	if ((delta > 0 && v > 0) || (delta < 0 && v < 0))
-	{
-		return LinearInterpolation(a1, a1 + delta, fraction);
-	}
-	else
-	{
-		return a2;
-	}
 }
 
 template <typename T>
@@ -179,7 +128,7 @@ template <typename T>
 }
 
 template <typename VecType, typename OutType = typename VecType::type>
-OutType DotProduct(VecType& left, VecType& right)
+inline OutType DotProduct(VecType& left, VecType& right)
 {
 	return right.x() * left.x() + right.y() * left.y();
 }

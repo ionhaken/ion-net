@@ -26,6 +26,10 @@
 	#include <Windows.h>
 	#undef Yield
 	#include <intrin.h>
+	#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
+		#include <mmintrin.h>
+	#endif
+
 #else
 	#include <sched.h>
 	#include <pthread.h>
@@ -40,7 +44,7 @@ namespace ion
 {
 namespace platform
 {
-static inline void Yield()
+inline void Yield()
 {
 #if ION_PLATFORM_MICROSOFT
 	SwitchToThread();
@@ -50,7 +54,7 @@ static inline void Yield()
 }
 
 // The PAUSE instruction is x86 specific. It's sole use is in spin-lock wait loops
-static inline void RelaxCPU()
+inline void RelaxCPU()
 {
 #if ION_PLATFORM_MICROSOFT
 	YieldProcessor();  //_mm_pause();
@@ -61,7 +65,7 @@ static inline void RelaxCPU()
 #endif
 }
 
-static inline void Nop()
+inline void Nop()
 {
 #if ION_PLATFORM_MICROSOFT
 	__nop();
@@ -70,31 +74,44 @@ static inline void Nop()
 #endif
 }
 
-enum PreFetchLocality : int
+inline void PreFetchL1(const void* ptr)
 {
-	None,
-	Level1,
-	Level2,
-	Level3
-};
-
-template <PreFetchLocality locality>
-static void PreFetch(const void* addr)
-{
-#if ION_PLATFORM_MICROSOFT
-	PreFetchCacheLine(0, addr);
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
+	_mm_prefetch((const char*)(ptr), _MM_HINT_T0);
+#elif defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
+	__builtin_prefetch((ptr), 0 /* rw==read */, 3 /* locality */);
+#elif defined(ION_ARCH_ARM_64)
+	__asm__ __volatile__("prfm PLDL1KEEP, %0" ::"Q"(*(ptr)))
 #else
-	__builtin_prefetch(addr, 0, locality);
+	(void)(ptr);
 #endif
 }
 
-static inline void PreFetchForWrite(const void* addr)
+inline void PreFetchL2(const void* ptr)
 {
-#if ION_PLATFORM_MICROSOFT
-	_m_prefetchw(addr);
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
+	_mm_prefetch((const char*)(ptr), _MM_HINT_T1);
+#elif defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
+	__builtin_prefetch((ptr), 0 /* read */, 2 /* locality */);
+#elif defined(ION_ARCH_ARM_64)
+	__asm__ __volatile__("prfm PLDL2KEEP, %0" ::"Q"(*(ptr)))
 #else
-	__builtin_prefetch(addr, 1);
+	(void)(ptr);
 #endif
 }
+
+inline void PreFetchL1ForWrite(const void* ptr)
+{
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
+	_m_prefetchw(ptr);
+#elif defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
+	__builtin_prefetch(ptr, 1 /* write */, 3 /* locality */);
+#elif defined(ION_ARCH_ARM_64)
+	__asm__ __volatile__("prfm PSTL1STRM, %0" ::"Q"(*(ptr)))
+#else
+	(void)(ptr);
+#endif
+}
+
 };	// namespace platform
 }  // namespace ion

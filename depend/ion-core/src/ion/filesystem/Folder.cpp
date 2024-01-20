@@ -13,197 +13,263 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <ion/container/ForEach.h>
+
+#include <ion/concurrency/ThreadSynchronizer.h>
+
 #include <ion/byte/ByteBuffer.h>
-#include <ion/core/Core.h>
-#include <ion/filesystem/Folder.h>
-#if ION_PLATFORM_MICROSOFT
-	#define WIN32_LEAN_AND_MEAN
-	#include <Windows.h>
-	#include <direct.h>
-#elif ION_PLATFORM_ANDROID
-	#include <android/asset_manager.h>
-	#include <sys/stat.h>
-#else
-	#include <sys/stat.h>
-#endif
-
 #include <ion/byte/ByteWriter.h>
+#include <ion/core/Core.h>
+#include <ion/filesystem/File.h>
+#include <ion/filesystem/FileContentJob.h>
+#include <ion/filesystem/FileContentTracker.h>
+#include <ion/filesystem/Folder.h>
 #include <ion/string/String.h>
+#include <ion/filesystem/PackIndex.h>
 
-#if ION_PLATFORM_ANDROID
-static AAssetManager* gAssetmanager = nullptr;
-#endif
 
-#if ION_PLATFORM_LINUX
-	#include <unistd.h>
-	#include <stdio.h>
-	#include <limits.h>
-#endif
-
-namespace
+namespace ion::filesystem
 {
-ion::String WorkingDir()
+// Remote \\ from windows file paths
+ion::String SanitizePath(ion::StringView path)
 {
 #if ION_PLATFORM_MICROSOFT
-	constexpr size_t PathMaxLength = ion::Max(MAX_PATH, 4096);
-	char buffer[PathMaxLength];
-	if (_getcwd(buffer, PathMaxLength) != nullptr)
+	ion::SmallVector<char, 256> buffer;
+	buffer.Reserve(path.Length() + 1);
+
+	for (size_t i = 0; i < path.Length(); ++i)
 	{
-		return ion::String(buffer);
+		if (path.CStr()[i] == '\\')
+		{
+			buffer.Add('/');
+		}
+		else
+		{
+			buffer.Add(path.CStr()[i]);
+		}
 	}
-#elif ION_PLATFORM_LINUX
-	constexpr size_t PathMaxLength = ion::Max(PATH_MAX, 4096);
-	char buffer[PathMaxLength];
-	if (getcwd(buffer, PathMaxLength) != nullptr)
-	{
-		return ion::String(buffer);
-	}
-#endif
-#if ION_PLATFORM_ANDROID
-	return ion::String();
+	buffer.Add(0);
+	ion::String output(buffer.Data(), buffer.Size() - 1);
+	return output;
 #else
-	ION_ABNORMAL("Cannot get working directoy");
-	return ion::String(".");
+	return path;
 #endif
 }
-}  // namespace
-
-#if ION_PLATFORM_ANDROID
-void ion::Folder::SetAssetManager(AAssetManager* a) { gAssetmanager = a; }
-#endif
-
-bool ion::Folder::IsAvailable() const
-{
-#if ION_PLATFORM_MICROSOFT
-	auto widestring = mPath.WideString();
-	LPCTSTR szPath = widestring.c_str();
-	DWORD dwAttrib = GetFileAttributes(szPath);
-
-	return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
-#else
-	struct stat stats;
-	stat(mPath.CStr(), &stats);
-	if (S_ISDIR(stats.st_mode))	 // Check for file existence
-	{
-		return true;
-	}
-	return false;
-#endif
 }
 
-ion::Folder::Folder(const ion::String& path) : mPath(path) {}
+ion::Folder::Folder(ion::StringView path) : mPath(ion::filesystem::SanitizePath(path)) {}
+
+bool ion::Folder::IsAvailable() const { return mPacked ? true : ion::file_util::IsPathAvailable(mPath); }
+
+void ion::Folder::AllFiles(ion::Vector<ion::String>& files) const { ion::file_util::AllFiles(mPath, files); }
 
 ion::Folder ion::Folder::FindFromTree(ion::String path, UInt maxDepth)
 {
 	ion::Folder folder(path);
-	if (!folder.IsAvailable())
+	if (!file_util::IsPathAvailable(path))
 	{
-		auto dir = WorkingDir();
+		auto dir = file_util::WorkingDir();
 		do
 		{
 			auto fullPath = dir + "/" + path;
-			ion::Folder other = ion::Folder(fullPath);
-			if (other.IsAvailable())
+			ion::Folder other(fullPath);
+			if (file_util::IsPathAvailable(fullPath))
 			{
 				return other;
 			}
-			dir = dir + "/..";
+			dir = dir + "..";
 		} while (--maxDepth > 0);
 	}
 	else
 	{
-		folder = ion::Folder(WorkingDir() + "/" + path);
+		folder = std::move(ion::Folder(file_util::WorkingDir() + path));
 	}
 	return folder;
 }
 
-ion::String ion::Folder::FullPathTo(const ion::String& target) const
+bool ion::Folder::IsAvailable(ion::StringView filename) const
 {
+	if (mPacked)
+	{
+		auto idToFileInfoIter = mPacked->mIdToFileInfo.Find(filename);
+		if (idToFileInfoIter != mPacked->mIdToFileInfo.End())
+		{
+			return true;
+		}
+	}
+	return file_util::IsFileAvailable(FullPathTo(filename));
+}
+
+ion::String ion::Folder::FullPathTo(ion::StringView target) const
+{
+	ion::String tmp = target;
+	if (mPacked)
+	{
+		auto idToFileInfoIter = mPacked->mIdToFileInfo.Find(target);
+		if (idToFileInfoIter != mPacked->mIdToFileInfo.End())
+		{
+			tmp = mPacked->mPackFiles[idToFileInfoIter->second.mPackFileIndex];
+		}
+	}
 #if ION_PLATFORM_ANDROID
-	return target;
+	return tmp;
 #else
 	auto dir = mPath;
-	dir = dir + "/" + target;
+	if (dir.Length() > 0 && dir[dir.Length() - 1] != '/')
+	{
+		dir = dir + "/";
+	}
+	dir = dir + tmp;
 	return dir;
 #endif
 }
 
-void ion::Folder::Replace([[maybe_unused]] const char* sourceCstr, [[maybe_unused]] const char* destCstr)
+void ion::Folder::SetPacked(ion::PackIndex&& index)
 {
-#if ION_PLATFORM_MICROSOFT
-	auto source = ion::String(sourceCstr).WStr();
-	auto dest = ion::String(destCstr).WStr();
-	auto fSuccess = MoveFileExW(source.get(), dest.get(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
-	if (fSuccess == 0)
-	{
-		ION_ABNORMAL("Move " << sourceCstr << " to " << destCstr << " failed: " << ion::debug::GetLastErrorString());
-	}
-#elif ION_PLATFORM_ANDROID
-	ION_ASSERT(false, "not implemented for this platform");
-#else
-	int ret = rename(sourceCstr, destCstr);
-	if (ret != 0)
-	{
-		ION_ABNORMAL("Move " << sourceCstr << " to " << destCstr << " failed: " << strerror(ret));
-	}
-#endif
+	mPacked = ion::MakeUnique<ion::PackIndex>(std::move(index));
+	mFileReaders.Resize(mPacked->mPackFiles.Size() + 1);
+}
+void ion::Folder::OnContentAccessStarted(FileContentTracker& tracker)
+{
+	// Assume locked.
+	tracker.mNumActiveRequests++;
 }
 
-void ion::Folder::Delete(const char* fileStr)
+void ion::Folder::OnContentAccessEnded(FileContentTracker& tracker)
 {
-#if ION_PLATFORM_MICROSOFT
-	auto source = ion::String(fileStr).WStr();
-	auto fSuccess = DeleteFile(source.get());
-	if (fSuccess == 0)
+	AutoLock<Mutex> lock(mMutex);
+	--tracker.mNumActiveRequests;
+	if (tracker.mNumActiveRequests != 0)
 	{
-		ION_LOG_INFO("Delete " << fileStr << " failed: " << ion::debug::GetLastErrorString());
-	}
-#else
-	ION_ASSERT(false, "not implemented for this platform");
-#endif
-}
-
-#if ION_PLATFORM_ANDROID
-void ion::Folder::GetContents(const ion::String& filename, ion::ByteBuffer<>& buffer) const
-{
-	ion::String fullPath = FullPathTo(filename);
-
-	// ION_ASSERT(fullPath[0] != '/', "Not supported reading system files");
-
-	ION_ASSERT(gAssetmanager, "No asset manager");
-
-	AAsset* asset = AAssetManager_open(gAssetmanager, fullPath.CStr(), AASSET_MODE_BUFFER);
-	if (nullptr == asset)
-	{
-		ION_ABNORMAL("Asset not found:" << fullPath.CStr());
 		return;
 	}
-	ION_DBG("ion::Folder::GetContents: " << fullPath.CStr());
-
-	auto size = AAsset_getLength(asset);
-	const uint32_t MaxSize = 1024 * 1024;
-	if (size <= MaxSize)
+	for (size_t i = 0; i < mFileReaders.Size(); ++i)
 	{
-		buffer.Reserve(SafeRangeCast<uint32_t>(size));
-		int readsize;
+		for (auto iter = mFileReaders[i].mContents.Begin(); iter != mFileReaders[i].mContents.End(); ++iter)
 		{
-			ByteWriter writer(buffer);
-			readsize = AAsset_read(asset, &writer.WriteArrayKeepCapacity<char>(size), size);
-			ION_DBG("ReadSize=" << readsize << " total size=" << size);
-		}
-		if (readsize < size)
-		{
-			if (readsize >= 0)	// not error code
+			if (iter->get() == &tracker)
 			{
-				buffer.Reserve(readsize);
+				UnorderedErase(mFileReaders[i].mContents, iter);
+
+				if (mFileReaders[i].mContents.IsEmpty())
+				{
+					mFileReaders[i].mFileJob->Wait();
+					if (!mPacked || i >= mPacked->mPackFiles.Size())
+					{
+						UnorderedErase(mFileReaders, mFileReaders.Begin() + i);
+					}
+					else
+					{
+						mFileReaders[i].mFileJob = nullptr;
+					}
+				}
+				return;
 			}
-			ION_ABNORMAL("Read failed;readsize=" << readsize);
 		}
 	}
-	else
+	ION_ASSERT(false, "Content not found");
+}
+
+
+ion::Folder::FileContentAccess ion::Folder::GetFileContent(ion::JobScheduler& js, ion::StringView target, FileJobCallback&& callback)
+{
+	AutoLock<Mutex> lock(mMutex);
+	FileContentTracker* content = nullptr;
+	if (mPacked)
 	{
-		ION_ABNORMAL("Unexpected resource size: " << size);
+		auto idToFileInfoIter = mPacked->mIdToFileInfo.Find(target);
+		if (idToFileInfoIter != mPacked->mIdToFileInfo.End())
+		{
+			content = mFileReaders[idToFileInfoIter->second.mPackFileIndex].mContents.Add(MakeUnique<FileContentTracker>())->get();
+			if (!mFileReaders[idToFileInfoIter->second.mPackFileIndex].mFileJob)
+			{
+				mFileReaders[idToFileInfoIter->second.mPackFileIndex].mFileJob =
+				  MakeUnique<FileContentJob>(FullPathTo(mPacked->mPackFiles[idToFileInfoIter->second.mPackFileIndex]));
+			}
+			mFileReaders[idToFileInfoIter->second.mPackFileIndex].mFileJob->Request(
+			  js, std::forward<FileJobCallback&&>(callback), target, content, idToFileInfoIter->second.mPackFilePosition,
+			  idToFileInfoIter->second.mPackedSize,
+			  idToFileInfoIter->second.mUnpackedSize);
+			return ion::Folder::FileContentAccess(*this, *content);
+		}
+		ION_ABNORMAL("Cannot find " << target << " from pack");
 	}
-	AAsset_close(asset);
+
+	auto fullPath = FullPathTo(target);
+	Folder::FileReader* fileReader = nullptr;
+	for (size_t i = 0; i < mFileReaders.Size(); ++i)
+	{
+		if (mFileReaders[i].mFileJob && mFileReaders[i].mFileJob->Filename() == fullPath)
+		{
+			fileReader = &mFileReaders[i];
+			break;
+		}
+	}
+
+	if (fileReader == nullptr)
+	{
+		fileReader = mFileReaders.Add(FileReader());
+		fileReader->mFileJob = MakeUnique<FileContentJob>(fullPath);
+	}
+	content = fileReader->mContents.Add(MakeUnique<FileContentTracker>())->get();
+	fileReader->mFileJob->Request(js, std::forward<FileJobCallback&&>(callback), target, content);
+
+	return ion::Folder::FileContentAccess(*this, *content);
+}
+
+ion::Folder::FileReader::FileReader(ion::Folder::FileReader&& other) noexcept
+  : mFileJob(std::move(other.mFileJob)), mContents(std::move(other.mContents))
+{
+}
+
+ion::Folder::FileReader::FileReader() {}
+
+ion::Folder::FileReader::~FileReader() {}
+
+#if (ION_ASSERTS_ENABLED == 1)
+bool ion::Folder::HasOpenContent() const
+{
+	for (size_t i = 0; i < mFileReaders.Size(); ++i)
+	{
+		if (mFileReaders[i].mFileJob)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 #endif
+
+ion::Folder::~Folder() { ION_ASSERT(!HasOpenContent(), "Folder has open content"); }
+
+ion::Folder::Folder(Folder&& other) noexcept
+  : mPath(std::move(other.mPath)),
+	mPacked(std::move(other.mPacked)),
+	mFileReaders(std::move(other.mFileReaders)),
+	mMutex(std::move(other.mMutex))
+{
+}
+
+ion::Folder& ion::Folder::operator=(Folder&& other) noexcept
+{
+	mPath = std::move(other.mPath);
+	mPacked = std::move(other.mPacked);
+	mFileReaders = std::move(other.mFileReaders);
+	mMutex = std::move(other.mMutex);
+	return *this;
+}
+
+ion::Folder::FileReader& ion::Folder::FileReader::operator=(ion::Folder::FileReader&& other) noexcept
+{
+	mFileJob = std::move(other.mFileJob);
+	mContents = std::move(other.mContents);
+	return *this;
+}
+
+ion::Folder::FileContentAccess::FileContentAccess(Folder& folder, FileContentTracker& content) : mFolder(folder), mContent(content)
+{
+	folder.OnContentAccessStarted(content);
+}
+ion::Folder::FileContentAccess::~FileContentAccess() { mFolder.OnContentAccessEnded(mContent); }
+
+

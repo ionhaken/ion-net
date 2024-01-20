@@ -549,8 +549,6 @@ void Reset(NetReception& reception, NetControl& control)
 
 void AddToBanList(NetReception& reception, NetControl& control, const char* IP, ion::TimeMS milliseconds)
 {	
-	ion::TimeMS time = ion::SteadyClock::GetTimeMS();
-
 	if (IP == 0 || IP[0] == 0)
 		return;
 
@@ -559,6 +557,8 @@ void AddToBanList(NetReception& reception, NetControl& control, const char* IP, 
 	{
 		return;
 	}
+
+	ion::TimeMS time = ion::SteadyClock::GetTimeMS();
 
 	reception.mBanList.Access(
 	  [&](NetBanListVector& banList)
@@ -629,7 +629,7 @@ void RemoveFromBanList(NetReception& reception, NetControl& control, const char*
 					  banList[index] = std::move(banList[banList.Size() - 1]);
 				  }
 				  banList.Erase(banList.Size() - 1);
-				  reception.mIsAnyoneBanned = banList.Size() != 0;			  
+				  reception.mIsAnyoneBanned = banList.Size() != 0;
 				  break;
 			  }
 		  }

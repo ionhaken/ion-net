@@ -51,21 +51,19 @@ STATIC_INSTANCE(Core, CoreResource);
 void CoreInit()
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(core::gGuard);
-	if (0 != core::gIsInitialized++)
-	{
-		return;
-	}
-	ION_MEMORY_SCOPE(ion::tag::Core);
 	constexpr size_t CoreMemoryDefaultSize = 1024 * 1024;
-	core::gInstance.Init(CoreMemoryDefaultSize);
+
+	core::Init([]() {}, CoreMemoryDefaultSize);
+	ION_MEMORY_SCOPE(ion::tag::Core);
 }
 void CoreDeinit()
 {
 	ION_ACCESS_GUARD_WRITE_BLOCK(core::gGuard);
-	if (1 != core::gIsInitialized--)
+	if (1 != core::gRefCount--)
 	{
 		return;
 	}
+	core::gIsInitialized = false;
 #if ION_CLEAN_EXIT
 	core::gInstance.Deinit();
 #endif

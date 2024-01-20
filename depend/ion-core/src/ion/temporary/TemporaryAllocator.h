@@ -291,6 +291,7 @@ public:
 
 	T* AllocateTwoPhasePre(size_type numBytes = sizeof(T))
 	{
+		ION_ASSERT_FMT_IMMEDIATE((numBytes % alignof(T)) == 0, "Allocation size must align with type");
 #if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
 		TemporaryBlock* block;
 		ion::temporary::BytePool& temporaryPool = ion::Thread::GetTemporaryPool();

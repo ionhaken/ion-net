@@ -18,7 +18,7 @@
 ION_CODE_SECTION(".jobs")
 void ion::parallel_for::MultiPartition::Set(UInt partitionSize, size_t /*numTaskLists*/)
 {
-	size_t partitions = ion::Min(mPartitions.Capacity(), (TotalItems() / partitionSize));
+	size_t partitions = ion::Min(size_t(mPartitions.Capacity()), (TotalItems() / partitionSize));
 	if (partitions > 1)
 	{
 		mPartitions.Resize(partitions);

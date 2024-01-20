@@ -209,14 +209,14 @@ public:
 	}
 
 	template <typename T, ion::UInt partitionSize, ion::UInt batchSize, typename GraphContextType>
-	static inline void NodeEntryPoint(ArenaVector<uint8_t>& nodeData, GraphContextType& userData, ion::JobScheduler& js)
+	static ION_INLINE_RELEASE void NodeEntryPoint(ArenaVector<uint8_t>& nodeData, GraphContextType& userData, ion::JobScheduler& js)
 	{
 		T* iter = ion::AssumeAligned<T>(reinterpret_cast<T*>(nodeData.Data()));
 
 #if ION_GRAPH_FORCE_MULTITHREADING
 		if constexpr (true)
 #else
-		if constexpr (batchSize > 16 * 1024)  // Use parallel only for heavy types. Currently this is just guess work.
+		if constexpr (batchSize < 16 * 1024 || partitionSize == 1)  // Use parallel only for heavy types. Currently this is just guess work.
 #endif
 		{
 			js.ParallelFor(&iter[0], &iter[nodeData.Size() / sizeof(T)],
@@ -275,7 +275,7 @@ public:
 		inline T* Create(ion::UInt phase, Args&&... args)
 		{
 			ION_PROFILER_SCOPE(NodeScript, "Add node");
-			T* t = GraphUpdater::mGraph.template Add<T>(GraphUpdater::mGraphId, phase + GraphUpdater::mOffset, GraphUpdater::mOffset,
+			T* t = GraphUpdater::mGraph.template Add<T>(GraphUpdater::mGraphId, phase + GraphUpdater::mOffset,
 														phase + 1u == GraphUpdater::mCount, std::forward<Args>(args)...);
 			return t;
 		}
@@ -306,7 +306,7 @@ public:
 	};
 	NodeAdder Reserve(GraphId graphId, UInt phaseCount) { return Reserve(graphId, phaseCount, phaseCount, 0); }
 
-	NodeAdder Reserve(GraphId graphId, UInt phaseCount, UInt reservedPhaseCount, UInt firstPhase)
+	NodeAdder Reserve(GraphId graphId, [[maybe_unused]] UInt phaseCount, UInt reservedPhaseCount, UInt firstPhase)
 	{
 		ION_ASSERT(phaseCount > 0, "Invalid node count");
 		if (mGraphInfo.Size() <= graphId)
@@ -320,9 +320,9 @@ public:
 		return NodeAdder{{*this, graphId, ion::SafeRangeCast<ion::UInt>(reservedPhaseCount), firstPhase}};
 	}
 
-	inline NodeEraser Clear(GraphId graphId, UInt phaseCount) { return Clear(graphId, phaseCount, phaseCount, 0); }
+	ION_FORCE_INLINE NodeEraser Clear(GraphId graphId, UInt phaseCount) { return Clear(graphId, phaseCount, phaseCount, 0); }
 
-	inline NodeEraser Clear(GraphId graphId, UInt phaseCount, UInt reservedPhaseCount, UInt firstPhase)
+	ION_FORCE_INLINE NodeEraser Clear(GraphId graphId, [[maybe_unused]] UInt phaseCount, UInt reservedPhaseCount, UInt firstPhase)
 	{
 		ION_ASSERT(phaseCount > 0, "Invalid node count");
 		ION_ASSERT(mGraphInfo[graphId].nodes.Size() == reservedPhaseCount, "Invalid node count");
@@ -339,7 +339,7 @@ public:
 	}
 
 	template <typename T, typename... Args>
-	T* Add(GraphId graphId, ion::UInt phaseId, ion::UInt offset, bool isFinalNode, Args&&... args)
+	T* Add(GraphId graphId, ion::UInt phaseId, bool isFinalNode, Args&&... args)
 	{
 		Phase& phase = mPhases[isFinalNode ? 1 : 0][phaseId];
 		auto blockIndex = phase.BlockIndex(mResource, T::Type);
@@ -353,7 +353,7 @@ public:
 			ArenaAllocator<T, Resource> allocator(&mResource);
 			data.ResizeFast(allocator, sizeof(T) + pos, (sizeof(T) + pos) * 2);
 		}
-		T* node = ion::AssumeAligned<T>(new (data.Data() + pos) T(std::forward<Args>(args)...));
+		T* node = ion::AssumeAligned<T>(new (data.Data() + pos) T(ion_forward(args)...));
 
 		mNumNodesPerPhase[phaseId]++;
 
@@ -362,7 +362,6 @@ public:
 			ResizeFast(mResource, block.graphIds, index + 1, index * 2 + 1);
 		}
 		block.graphIds[index] = graphId;
-		ION_ASSERT(phaseId >= offset, "Invalid phase");
 		mGraphInfo[graphId].nodes[phaseId].index = index;
 		return node;
 	}
@@ -622,10 +621,6 @@ private:
 		ION_PROFILER_SCOPE_DETAIL(NodeScript, ION_STRINGIFY(__name), nodeData.Size() / sizeof(__name));                                   \
 		ion::graph::NodeHierarchy<>::NodeDebugEntryPoint<__name>(nodeData, *static_cast<GraphContextType*>(userData));                    \
 	}
-
-#define ION_NODE_ENTRYPOINT_IMPL(__name, __graph)                                                                                 \
-	ION_NODE_ENTRYPOINT_IMPL_SCHEDULER_PARAMS(__name, __graph, ion::Max(1u, static_cast<uint32_t>(1024 * 1024 / sizeof(__name))), \
-											  ion::Max(1u, static_cast<uint32_t>(1024 * 512 / sizeof(__name))))
 
 #define ION_NODE_ENTRYPOINT(__name, __graph, __contextType)                                                                 \
 	static constexpr auto Type =                                                                                            \

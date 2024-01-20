@@ -17,7 +17,6 @@
 #include <ion/time/CoreTime.h>
 #include <ion/jobs/JobDispatcher.h>
 #include <ion/debug/Profiling.h>
-#include <ion/jobs/Task.h>
 #include <ion/jobs/ThreadPool.h>
 #include <ion/jobs/TimedJob.h>
 #include <cmath>
@@ -27,8 +26,7 @@
 
 ION_CODE_SECTION(".jobs")
 ion::JobDispatcher::JobDispatcher(UInt hwConcurrency)
-  : mDispatcherJobPool(256),
-	mThreadPool(hwConcurrency),
+  : mThreadPool(hwConcurrency),
 	mThread((
 	  [&]()
 	  {
@@ -65,17 +63,17 @@ ion::JobDispatcher::JobDispatcher(UInt hwConcurrency)
 						auto timeLeft = dJob->TimeLeft(now);
 						if (timeLeft <= 0)
 						{
-							Task task(dJob->mJob);
+							JobWork work(dJob->mJob);
 							DEBUG_DISPATCHER("Dispatch task " << dJob->mJob->ToString()
 															  << ";timeLeft=" << static_cast<double>(timeLeft) / 1000 << "ms"
 															  << ";now=" << now);
 							if (dJob->IsMainThread())
 							{
-								mThreadPool.AddMainThreadTask(std::move(task));
+								mThreadPool.AddMainThreadTask(std::move(work));
 							}
 							else
 							{
-								mThreadPool.PushTask(std::move(task));
+								mThreadPool.PushTask(std::move(work));
 							}
 						}
 						else
@@ -114,7 +112,8 @@ ion::JobDispatcher::JobDispatcher(UInt hwConcurrency)
 		  mInQueue.DequeueAll([&](DispatcherJob* job) { job->mJob->OnRemoved(); });
 
 		  ion::ForEach(mTimedQueue, [&](DispatcherJob* job) -> void { job->mJob->OnRemoved(); });
-	  }))
+	  })),
+	mDispatcherJobPool(256)
 {
 	ION_ASSERT(ion::core::gSharedDispatcher == nullptr, "Duplicate job dispatcher");
 	ion::core::gSharedDispatcher = this;

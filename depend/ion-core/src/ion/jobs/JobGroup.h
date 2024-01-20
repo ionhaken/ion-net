@@ -16,7 +16,7 @@
 #pragma once
 #include <atomic>
 #include <ion/jobs/BaseJob.h>
-#include <ion/jobs/TaskQueue.h>
+#include <ion/jobs/JobQueue.h>
 
 namespace ion
 {
@@ -32,8 +32,7 @@ public:
 	void PushJob(ion::BaseJob& job)
 	{
 		mNumJobsAvailable++;
-		mQueue.PushTask(Task(&job));
-		mQueue.WakeUp();
+		mQueue.PushTaskAndWakeUp(JobWork(&job));
 	}
 
 	bool Work(ion::JobScheduler& js);
@@ -41,8 +40,8 @@ public:
 	void Finalize();
 
 private:
-	TaskQueue::Stats mStats;
-	ion::TaskQueue mQueue;
+	JobQueueStats mStats;
+	ion::JobQueueSingleOwner mQueue;
 	std::atomic<UInt> mNumJobsAvailable;
 };
 }  // namespace ion

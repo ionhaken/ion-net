@@ -60,38 +60,68 @@ public:
 	template <class Function>
 	inline void PushTask(Function&& function)
 	{
-		PushTask(false, std::forward<decltype(function)>(function));
+		if (mDispatcher.ThreadPool().GetWorkerCount() > 0)
+		{
+			auto* job = new SelfDestructingJob<Function>(std::forward<decltype(function)>(function));
+			JobWork work(job);
+			mDispatcher.ThreadPool().PushTask(std::move(work));
+		}
+		else
+		{
+			function();
+		}
 	}
 
 	template <class Function>
-	inline void PushLongTask(Function&& function)
+	inline void PushIOTask(Function&& function)
 	{
-		PushTask(true, std::forward<decltype(function)>(function));
+		auto* job = new SelfDestructingJob<Function>(std::forward<decltype(function)>(function));
+		JobWork work(job);
+		mDispatcher.ThreadPool().PushIOTask(std::move(work));
+	}
+
+	template <class Function>
+	inline void PushBackgroundTask(Function&& function)
+	{
+		auto* job = new SelfDestructingJob<Function>(std::forward<decltype(function)>(function));
+		JobWork work(job);
+		mDispatcher.ThreadPool().PushBackgroundTask(std::move(work));
+	}
+
+	template <class Function>
+	inline void PushMainThreadTask(Function&& function)
+	{
+		auto* job = new SelfDestructingJob<Function>(std::forward<decltype(function)>(function));
+		JobWork work(job);
+		mDispatcher.ThreadPool().AddMainThreadTask(std::move(work));
 	}
 
 	void PushJob(TimedJob& job);
 
 	void PushMainThreadJob(BaseJob& job);
 
-	// Long jobs do not ever run on main thread. This is useful when you need to run jobs
+	// Background jobs do not ever run on main thread. This is useful when you need to run jobs
 	// that persist over multiple frames.
-	void PushLongJob(BaseJob& job);
+	void PushBackgroundJob(BaseJob& job);
+
+	// I/O Job to be ran on IO threads
+	void PushIOJob(BaseJob& job);
 
 	inline void PushJob(BaseJob& job)
 	{
-		Task task(&job);
-		mDispatcher.ThreadPool().PushTask(std::move(task));
+		JobWork work(&job);
+		mDispatcher.ThreadPool().PushTask(std::move(work));
 	}
 
 	template <typename DataType>
 	static constexpr UInt DefaultBatchSize(size_t count, size_t partitions)
 	{
-		return partitions > 1 ? static_cast<UInt>(ion::Max(static_cast<size_t>(1), count / ion::MaxThreads)) : 1;
+		return partitions > 1 ? static_cast<UInt>(ion::Max(static_cast<size_t>(1), count / (ion::MaxQueues*2))) : 1;
 	}
 
 	static constexpr UInt DefaultPartitionSize(size_t count)
 	{
-		return static_cast<UInt>(ion::Max(static_cast<size_t>(1), count / (ion::MaxThreads * 4)));
+		return static_cast<UInt>(ion::Max(static_cast<size_t>(1), count / (ion::MaxQueues * 8)));
 	}
 
 	struct IndexIterator
@@ -111,7 +141,11 @@ public:
 		UInt operator*() const { return mValue; }
 		UInt& operator*() { return mValue; }
 		UInt operator-(const IndexIterator& other) const { return mValue - other.mValue; }
-		UInt operator-(const size_t count) const { return mValue - UInt(count); }
+		IndexIterator operator-(const size_t count) const 
+		{ 
+			IndexIterator result(mValue - UInt(count));
+			return result; 
+		}
 		IndexIterator operator+(const size_t count) const
 		{
 			IndexIterator result(mValue + UInt(count));
@@ -187,15 +221,17 @@ public:
 
 	// Partitions:
 	// Partition is number of tasks per job.
-	// More partitions add overhead, but have better load balancing. Use smaller values when iterations have varying
-	// speed.
+	// Less partitions add overhead, but have better load balancing. Use smaller values when iterations have varying
+	// speed, especially if a single iteration may take considerably long time.
 	//
 	// If 'partitions' is 0, all tasks will be moved to a job with given batch size, and no tasks
 	// will be run locally (except if there's only single item). This should be used when you know that are workers are idle.
+	// When partition count increases, it get's more likely parallel jobs will be created only when there's workers available. See (CheckParallelization).
+	// 
 	//
 	// BatchSize: minimum number of tasks processed once. Default value is 1 and should be increased only
 	// when tasks are really small and other threads should not steal any tasks. If batch size is larger than partition size, partition size
-	// will be ignored and tasks are put into a single job.
+	// will be ignored and tasks are put into a single partition.
 	//
 	// Note: Currently parallel fors with intermediates will not be partitioned.
 	//
@@ -206,51 +242,38 @@ public:
 		ION_ASSERT(batchSize >= 1, "Invalid batch size: " << batchSize);
 		ION_ASSERT(partitionSize > 0 || batchSize == 1, "Tasks are not batched when partition size is 0");
 
-		auto iter = first;
-#if ION_MAIN_THREAD_IS_A_WORKER
-		if (mDispatcher.ThreadPool().GetWorkerCount() > 0)
-#endif
+		Iterator iter = first;
+		JobQueueStatus status;
+
+		auto numItems = static_cast<UInt>(last - first);
+		partitionSize = mMeasurement.PartitionSize(partitionSize);
+		auto numSerialItems = ion::Max(partitionSize, batchSize);
+		Iterator parallelLast = (numItems > numSerialItems && CheckParallelization(status, numItems, partitionSize)) ? (last - numSerialItems - 1) : last;
+
+		for (; iter != last; ++iter)
 		{
-			auto numItems = static_cast<UInt>(last - first);
-			partitionSize = mMeasurement.PartitionSize(partitionSize);
-			auto numSerialItems = ion::Max(partitionSize, batchSize);
-			if (numItems > numSerialItems)
+			if (parallelLast != last)
 			{
-				TaskQueueStatus status;
-				if (numItems < size_t(partitionSize) * 1024u)
+				if (status.IsFree())
 				{
-					// Run locally until there's a thread available.
+					ParallelForInternal(iter, last, function, status.GetFirstQueue(), partitionSize, batchSize, intermediate);
+					return;
+				}
+				if (iter != parallelLast)
+				{
 					status.FindFreeQueue(mDispatcher.ThreadPool());
 				}
 				else
 				{
-					// If there are many generated partitions, parallel jobs will be generated
-					// even if there are no available threads.
-					status.FindAnyQueue(mDispatcher.ThreadPool());
-				}
-
-				auto parallelLast = last - numSerialItems;
-				for (; iter != parallelLast; ++iter)
-				{
-					if (status.IsFree())
-					{
-						ParallelForInternal(iter, last, function, status.GetFirstQueue(), partitionSize, batchSize, intermediate);
-						return;
-					}
-					status.FindFreeQueue(mDispatcher.ThreadPool());
-					JobCall(std::forward<decltype(function)>(function), *iter, intermediate);
+					parallelLast = last;
 				}
 			}
-		}
-
-		// Rest of iterations
-		for (; iter != last; ++iter)
-		{
-			JobCall(std::forward<decltype(function)>(function), *iter, intermediate);
+			// Note! This call must be done only in one place to avoid inlined function getting generated multiple times.
+			JobCall(std::forward<decltype(function)&&>(function), *iter, intermediate);
 		}
 	}
 
-	struct TaskQueueStatus
+	struct JobQueueStatus
 	{
 	public:
 		inline void FindAnyQueue(ThreadPool& tp) { mFirstQueueIndex = tp.UseNextQueueIndexExceptThis(); }
@@ -271,7 +294,7 @@ public:
 	}
 
 	template <class FunctionA, class FunctionB>
-	inline void ParallelInvoke(FunctionA&& functionA, FunctionB&& functionB, TaskQueueStatus& status)
+	inline void ParallelInvoke(FunctionA&& functionA, FunctionB&& functionB, JobQueueStatus& status)
 	{
 		ParallelInvoke(std::forward<decltype(functionA)>(functionA), std::forward<decltype(functionB)>(functionB), status.GetFirstQueue());
 	}
@@ -288,48 +311,20 @@ public:
 	// Adds job to be executed after time critical block
 	inline void PushDelayedJob(BaseJob* job)
 	{
-		Task task(job);
+		JobWork work(job);
 		if (mDelayedTasks.IsActive())
 		{
-			if (mDispatcher.ThreadPool().GetWorkerCount() > 0)
-			{
-				mDispatcher.ThreadPool().PushTask(std::move(task));
-			}
-			else
-			{
-				task.Run();
-			}
+			mDispatcher.ThreadPool().PushDelayedTask(std::move(work));
 		}
 		else
 		{
-			mDelayedTasks.Add(std::move(task));
+			mDelayedTasks.Add(std::move(work));
 		}
 	}
 
 	void UpdateOptimizer(double t);
 
 private:
-	template <class Function>
-	inline void PushTask(bool isLong, Function&& function)
-	{
-		if (mDispatcher.ThreadPool().GetWorkerCount() > 0 || isLong)
-		{
-			auto* job = new SelfDestructingJob<Function>(std::forward<decltype(function)>(function));
-			Task task(job);
-			if (isLong)
-			{
-				mDispatcher.ThreadPool().PushLongTask(std::move(task));
-			}
-			else
-			{
-				mDispatcher.ThreadPool().PushTask(std::move(task));
-			}
-		}
-		else
-		{
-			function();
-		}
-	}
 
 	template <typename Function>
 	class SelfDestructingJob : public BaseJob
@@ -337,7 +332,7 @@ private:
 	public:
 		SelfDestructingJob(Function&& function) : BaseJob(), mFunction(function) {}
 
-		virtual void RunTask()
+		void DoWork() final
 		{
 			Thread::SetCurrentJob(nullptr);
 			mFunction();
@@ -355,7 +350,7 @@ private:
 
 		void Begin() { mCounter++; }
 
-		void Add(Task&& task)
+		void Add(JobWork&& task)
 		{
 			AutoLock<Mutex> lock(mSync);
 			mTasks.Add(std::move(task));
@@ -369,23 +364,16 @@ private:
 			if (--mCounter == 0)
 			{
 				AutoLock<Mutex> lock(mSync);
-				if (pool.GetWorkerCount() > 0)
-				{
-					std::for_each(mTasks.Begin(), mTasks.End(), [&](Task& task) { pool.PushTask(std::move(task)); });
-				}
-				else
-				{
-					std::for_each(mTasks.Begin(), mTasks.End(), [&](Task& task) { task.Run(); });
-				}
+				pool.PushDelayedTasks(mTasks);
 				mTasks.Clear();
 			}
 		}
 
 	private:
-		Vector<Task, ion::CoreAllocator<Task>> mTasks;
+		Vector<JobWork, ion::CoreAllocator<JobWork>> mTasks;
 		Mutex mSync;
 		std::atomic<size_t> mCounter;
-	} mDelayedTasks;
+	};
 
 	void BeginTimeCritical() { mDelayedTasks.Begin(); }
 	void EndTimeCritical() { mDelayedTasks.End(mDispatcher.ThreadPool()); }
@@ -424,7 +412,10 @@ private:
 		}
 	}
 
+	bool CheckParallelization(JobQueueStatus& status, UInt numItems, UInt partitionSize);
+
 	JobDispatcher mDispatcher;
+	DelayedTasks mDelayedTasks;
 	struct SelfMeasurement
 	{
 		SelfMeasurement() : mLastTime(0), mBestCoefficientA(1.0f), mCoefficientA(1.0f), mVolatility(1.0f) {}

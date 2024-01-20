@@ -65,7 +65,7 @@ public:
 
 	virtual void RunTimedTask() = 0;
 
-	virtual void RunTask() override;
+	void DoWork() override;
 
 	virtual bool Cancel();
 
@@ -106,7 +106,7 @@ class OneShotJob : public TimedJob
 public:
 	OneShotJob(ion::MemTag tag, double delay);
 
-	virtual void RunTask() final override;
+	void DoWork() final;
 
 	~OneShotJob();
 };
@@ -123,7 +123,7 @@ public:
 	//		When job is consider late, extra intervals will be reset.
 	PeriodicJob(ion::MemTag tag, double interval, UInt extraIntervals = 0, UInt maxIntervalsLate = 0);
 
-	virtual void RunTask() final override;
+	void DoWork() final;
 
 	virtual void OnDispatched() override;
 

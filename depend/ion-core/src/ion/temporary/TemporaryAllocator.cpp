@@ -217,7 +217,7 @@ void TemporaryInit()
 	{
 		return;
 	}
-	ion::MemoryScope memoryScope(ion::tag::Core);
+	ION_MEMORY_SCOPE(ion::tag::Core);
 	temporary::mPoolRegistry = new temporary::PoolRegistry();
 	ION_CHECK_FATAL(temporary::mPoolRegistry, "Fatal: Out of memory for temporary memory pool");
 }
@@ -246,7 +246,7 @@ void TemporaryDeinit()
 		ION_LOG_FMT_IMMEDIATE("Temporary memory: %zu times out of memory", size_t(temporary::mPoolRegistry->mOutOfMemory));
 	}
 	#endif
-	ion::MemoryScope memoryScope(ion::tag::Core);
+	ION_MEMORY_SCOPE(ion::tag::Core);
 	delete temporary::mPoolRegistry;
 	temporary::mPoolRegistry = nullptr;
 	#endif

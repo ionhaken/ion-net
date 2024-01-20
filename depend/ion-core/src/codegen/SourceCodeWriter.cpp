@@ -104,6 +104,6 @@ void ion::codegen::SourceCodeWriter::WriteNamespaceEnd()
 void ion::codegen::SourceCodeWriter::AutoGenHeader()
 {
 	WriteLn("/*");
-	WriteLn(" * Auto-generated using Ionhaken Core Libray Codegen.");
+	WriteLn(" * Auto-generated using Ion Haken Core Library Codegen.");
 	WriteLn(" */");
 }

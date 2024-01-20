@@ -66,7 +66,7 @@ void ion::NetTimeSync::Update(const NetRttTracker& tracker)
 
 void ion::NetTimeSync::Update(NetRttTracker::SampleBuffer& samples, TimeMS latestSendTime, TimeDeltaMS latestOffset)
 {
-	std::sort(samples.Begin(), samples.End(),
+	ion::Sort(samples.Begin(), samples.End(),
 			  [&](const NetRttTracker::Sample& a, const NetRttTracker::Sample& b)
 			  {
 				  if (NetIsTimeInRange(a.offset, latestOffset, MaxSampleOffsetDiff))

@@ -90,7 +90,7 @@ protected:
 	}
 
 protected:
-	u8* ION_RESTRICT mDataPtr;
+	u8* mDataPtr;
 	uint32_t mNumberOfBytesUsed = 0;
 	uint32_t mCapacity;
 	bool mIsExternalData = false; // #TODO: Remove, this is ByteBufferView property.

@@ -35,7 +35,7 @@ inline void HashPassword(unsigned char* out, size_t bufferSize, const ion::Array
 {
 	ION_ASSERT(ion::NetIsInitialized(), "ion::secure not initialized");
 	static_assert(crypto_pwhash_argon2id_SALTBYTES == sizeof(uint64_t) * 2, "Invalid nonce");
-	int ret = crypto_pwhash_argon2id(out, bufferSize, password, (unsigned long long)passwordLength, (const uint8_t*)nonce.Data(), 3u,
+	[[maybe_unused]] int ret = crypto_pwhash_argon2id(out, bufferSize, password, (unsigned long long)passwordLength, (const uint8_t*)nonce.Data(), 3u,
 									 crypto_pwhash_argon2id_MEMLIMIT_MIN, int(crypto_pwhash_argon2id_ALG_ARGON2ID13));
 	ION_ASSERT(ret == 0, "crypto_pwhash_argon2id failed");
 }

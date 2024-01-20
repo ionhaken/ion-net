@@ -305,7 +305,7 @@ void CloseConnectionInternal(NetControl& control, NetExchange& exchange, const N
 		}
 		else
 		{
-			SendBuffered(control, std::move(cmd.Release()));
+			SendBuffered(control, cmd.Release());
 		}
 	}
 	else
@@ -408,7 +408,7 @@ void PingInternal(NetControl& control, NetExchange& exchange, const NetSocketAdd
 
 		if (performImmediate)
 		{
-			ion::NetExchangeLayer::SendImmediate(exchange, control, std::move(cmd.Release()), now);
+			ion::NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
 		}
 		else
 		{

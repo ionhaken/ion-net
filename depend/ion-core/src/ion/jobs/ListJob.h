@@ -66,7 +66,7 @@ protected:
 		WaitableJob::Wait();
 	}
 
-	virtual void RunTask() final override
+	 void DoWork() final
 	{
 		ION_PROFILER_SCOPE_DETAIL(Scheduler, "Task List", size_t(ListJobBase::NumItems() - ListJobBase::Index()));
 		this->OnTaskStarted();

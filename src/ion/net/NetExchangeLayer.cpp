@@ -1254,7 +1254,7 @@ void SendConnectionRequestAccepted(NetExchange& exchange, const NetConnections& 
 			writer.Process(now);
 			writer.Process(incomingTimestamp);
 		}
-		NetExchangeLayer::SendImmediate(exchange, control, std::move(cmd.Release()), now);
+		NetExchangeLayer::SendImmediate(exchange, control, cmd.Release(), now);
 	}
 }
 

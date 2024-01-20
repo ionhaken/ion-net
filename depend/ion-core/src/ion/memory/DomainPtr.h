@@ -20,7 +20,7 @@ namespace ion
 {
 
 template <typename T, typename Allocator>
-using DomainPtr = ion::Ptr<T, Allocator>;
+using DomainPtr = ion::Ptr<T>;
 
 template <typename T, typename Allocator, typename... Args>
 ion::DomainPtr<T, Allocator> MakeDomainPtr(Args&&... args)

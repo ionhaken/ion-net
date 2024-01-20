@@ -29,6 +29,8 @@
 	#include <ion/tweakables/Tweakables.h>
 	#include <ion/container/Vector.h>
 
+	#include <ion/util/Bits.h>
+
 namespace ion
 {
 namespace profiling
@@ -38,7 +40,7 @@ struct TemporaryStringBuffer
 	ion::Vector<ion::UniquePtr<ion::String>> mData;
 };
 
-const constexpr size_t MaxProfilingIds = 1024;
+constexpr size_t MaxProfilingIds = 2048;
 
 struct ProfilingSummary
 {
@@ -55,23 +57,48 @@ constexpr ion::UInt MaxBuffers = 4 * ion::MaxThreads;
 	#endif
 static_assert(MaxBuffers >= 2 * MaxThreads, "Not enough profiling buffers for thread pool");
 using Resource = int;
+
+TWEAKABLE_BOOL("profiler.scheduler", ProfilerEnableScheduler, true);
+TWEAKABLE_BOOL("profiler.job", ProfilerEnableJob, false);
+TWEAKABLE_BOOL("profiler.render", ProfilerEnableRender, false);
+TWEAKABLE_BOOL("profiler.physics", ProfilerEnablePhysics, false);
+TWEAKABLE_BOOL("profiler.nodescript", ProfilerEnableNodeScript, false);
+TWEAKABLE_BOOL("profiler.memory", ProfilerEnableMemory, false);
+
+TWEAKABLE_BOOL("profiler.all", ProfilerEnableAll, false);
+
+// Profiling is not ready when memory allocation is registered, add it here explicitly.
+constexpr const char* PreInitEventStrings[] = {"Invalid", "Memory alloc", "Memory free", "Memory aligned free", "Memory aligned alloc"};
+constexpr uint16_t PreInitTags[] = {ion::profiling::tag::Core, ion::profiling::tag::Memory, ion::profiling::tag::Memory,
+									ion::profiling::tag::Memory, ion::profiling::tag::Memory};
+
+uint32_t RegisterPreInit(const char* name)
+{
+	for (unsigned int i = 0; i < sizeof(PreInitEventStrings) / sizeof(const char*); ++i)
+	{
+		if (ion::StringCompare(name, PreInitEventStrings[i]) == 0)
+		{
+			return i;
+		}
+	}
+	ION_ASSERT_FMT_IMMEDIATE(false, "Invalid pre init string: %s", name);
+	return 0;
+}
+
 struct ProfilingData
 {
 	ProfilingData(Resource&) : gSchedulerCount(0)
 	{
+		std::fill(mEnabledTags.Begin(), mEnabledTags.End(), false);
 		std::fill(mStoredEnabledTags.Begin(), mStoredEnabledTags.End(), true);
 		std::fill(mBufferOrder.Begin(), mBufferOrder.End(), uint8_t(255));
-		mStoredEnabledTags[ion::profiling::tag::Job] = false;
-		mStoredEnabledTags[ion::profiling::tag::Physics] = false;
-		mStoredEnabledTags[ion::profiling::tag::Render] = false;
-		mStoredEnabledTags[ion::profiling::tag::NodeScript] = false;
-		mStoredEnabledTags[ion::profiling::tag::Memory] = false;
+
 		mEvents.Reserve(MaxProfilingIds);
 
-		// Profiling is not ready when memory allocation is registered, add it here explicitly.
-		// Also id=0 is consider invalid tag
-		mEvents.Add(ProfilingEvent{"Invalid profiling block", "", 0, ion::profiling::tag::Core});
-		mEvents.Add(ProfilingEvent{"Memory alloc", "", 0, ion::profiling::tag::Memory});
+		for (unsigned int i = 0; i < sizeof(PreInitEventStrings) / sizeof(const char*); ++i)
+		{
+			mEvents.Add(ProfilingEvent{PreInitEventStrings[i], "", i, PreInitTags[i]});
+		}
 		Unpause();
 	}
 	~ProfilingData()
@@ -81,13 +108,41 @@ struct ProfilingData
 		ion::tracing::Flush();
 	}
 
-	void OnBeginScheduling() { gSchedulerCount++; }
+	void OnBeginScheduling()
+	{
+		gSchedulerCount++;
+
+		auto SetTagState = [&](uint16_t tag, bool isSet) -> bool
+		{
+			if (TWEAKABLE_VALUE(ProfilerEnableAll))
+			{
+				isSet = true;
+			}
+			if (mStoredEnabledTags[tag] != isSet)
+			{
+				mStoredEnabledTags[tag] = isSet;
+				return true;
+			}
+			return false;
+		};
+
+		bool changed = false;
+		changed |= SetTagState(ion::profiling::tag::Scheduler, TWEAKABLE_VALUE(ProfilerEnableScheduler));
+		changed |= SetTagState(ion::profiling::tag::Job, TWEAKABLE_VALUE(ProfilerEnableJob));
+		changed |= SetTagState(ion::profiling::tag::Render, TWEAKABLE_VALUE(ProfilerEnableRender));
+		changed |= SetTagState(ion::profiling::tag::Physics, TWEAKABLE_VALUE(ProfilerEnablePhysics));
+		changed |= SetTagState(ion::profiling::tag::NodeScript, TWEAKABLE_VALUE(ProfilerEnableNodeScript));
+		changed |= SetTagState(ion::profiling::tag::Memory, TWEAKABLE_VALUE(ProfilerEnableMemory));
+		if (changed)
+		{
+			mEnabledTags = mStoredEnabledTags;
+		}
+	}
 
 	void OnEndScheduling() { gSchedulerCount--; }
 
 	const char* GetName(uint32_t id) const
 	{
-		// #TODO: This is not thread safe. Register() could resize the vector
 		return mEvents[id].name.CStr();
 	}
 
@@ -101,10 +156,12 @@ struct ProfilingData
 
 	uint32_t Register(uint16_t tag, const char* name, const char* file, uint32_t line)
 	{
-		ion::MemoryScope scope(ion::tag::Profiling);
+		ION_MEMORY_SCOPE(ion::tag::Profiling);
 		uint32_t id;
 		ion::AutoLock<Mutex> lock(mMutex);
 		id = ion::SafeRangeCast<uint32_t>(mEvents.Size());
+		// If we need to resize mEvents, we will violate GetName() thread safety.
+		ION_ASSERT_FMT_IMMEDIATE(id < MaxProfilingIds, "Out of events capacity");
 		mEvents.Add({name, file, line, tag});
 		return id;
 	}
@@ -167,18 +224,18 @@ ion::ProfilingBuffer* Buffer(size_t index, uint8_t priority)
 		ION_CHECK_FAILED("Out of profiling buffers");
 		abort();
 	}
-	ion::MemoryScope scope(ion::tag::Profiling);
+	ION_MEMORY_SCOPE(ion::tag::Profiling);
 	Instance().data[index].Resize(ion::Thread::GetQueueIndex() != ion::Thread::NoQueueIndex &&
 									  priority == uint8_t(ion::Thread::Priority::Normal)
 									? ION_PROFILER_BUFFER_SIZE_PER_THREAD
 									: (ION_PROFILER_BUFFER_SIZE_PER_THREAD / 16));
-	Instance().mBufferOrder[index] = priority;
+	Instance().mBufferOrder[index] = priority == uint8_t(ion::Thread::Priority::Highest) ? 0 : priority;
 	return &Instance().data[index];
 }
 
 void Record(uint64_t CaptureLengthMs, bool saveFile)
 {
-	ion::MemoryScope scope(ion::tag::Profiling);
+	ION_MEMORY_SCOPE(ion::tag::Profiling);
 	Instance().Pause();
 	ION_LOG_INFO("Saving profiling data.");
 	TemporaryStringBuffer stringBuffer;
@@ -234,7 +291,7 @@ void Record(uint64_t CaptureLengthMs, bool saveFile)
 	if (saveFile)
 	{
 		static size_t indexCounter = 0;
-		ion::StackString<256> filename;
+		ion::StackStringFormatter<256> filename;
 		auto exeName = ion::core::gInstance.Data().ExecutableName();
 		if (!exeName.IsEmpty())
 		{
@@ -253,7 +310,7 @@ void Record(uint64_t CaptureLengthMs, bool saveFile)
 		}
 		ION_LOG_INFO_FMT("Writing profiling data to %s.", filename.CStr());
 		indexCounter++;
-		output.Save(filename.CStr());
+		output.Save(filename);
 	}
 	else
 	{
@@ -266,8 +323,8 @@ void Record(uint64_t CaptureLengthMs, bool saveFile)
 
 uint32_t Register(uint16_t tag, const char* name, const char* file, uint32_t line)
 {
-	uint32_t id = (gIsInitialized != 0 ? Instance().Register(tag, name, file, line) : (tag == ion::profiling::tag::Memory ? 1 : 0));
-	ION_ASSERT(id, "Cannot register scope");
+	uint32_t id = (gIsInitialized != 0 ? Instance().Register(tag, name, file, line) : RegisterPreInit(name));
+	ION_ASSERT_FMT_IMMEDIATE(id, "Cannot register scope for %s", name);
 	return id;
 }
 
@@ -309,6 +366,27 @@ void ProfilingDeinit()
 
 }  // namespace ion
 
+ion::ProfilingBuffer::ProfilingBuffer()
+{
+	mSamples.Resize(1);
+	mDetailInfo.Resize(1);
+}
+
+void ion::ProfilingBuffer::Resize(size_t maxSamples)
+{
+	mSamples.Resize(maxSamples);
+	#if !ION_PLATFORM_ANDROID
+	mDetailInfo.Resize(SafeRangeCast<uint16_t>(uint64_t(1) << (63 - ion::CountLeadingZeroes<uint64_t>(maxSamples) - 2)));
+	#endif
+}
+
+size_t ion::ProfilingBuffer::Add(const Sample& sample)
+{
+	size_t nextSamplePos = ion::Mod2(mSamplePos++, mSamples.Size());
+	mSamples[nextSamplePos] = sample;
+	return nextSamplePos;
+}
+
 void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, ion::JSONArrayWriter& tracesArray, ion::SystemTimePoint now,
 								uint64_t lenMs, UInt tid)
 {
@@ -329,6 +407,7 @@ void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, 
 
 	size_t endPos = mSamplePos % mSamples.Size();
 	size_t pos = (endPos - 2) % mSamples.Size();
+
 	if (mSamples[pos].type == Event::None)
 	{
 		return;
@@ -354,12 +433,12 @@ void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, 
 		pos = nextPos;
 	}
 
-	const ion::Array<ArrayView<const char, uint32_t>, 9> tagView{ion::MakeArray<ArrayView<const char, uint32_t>, 9>(
-	  [&](size_t i)
+	constexpr size_t NumTags = sizeof(ion::profiling::tag::TagStrings) / sizeof(const char*);
+	constexpr ion::Array<ArrayView<const char, uint32_t>, NumTags> tagView{ion::MakeArray<ArrayView<const char, uint32_t>, NumTags>(
+	  [&](auto i)
 	  {
-		  static const ion::Array<const char* const, 9> Tags = {"Generic", "Core",	 "Scheduler", "Job", "Tracing",
-																"Network", "Render", "Physics",	  "Game"};
-		  return ion::ArrayView<const char, uint32_t>(Tags[i], uint32_t(strlen(Tags[i])));
+		  return ion::ArrayView<const char, uint32_t>(ion::profiling::tag::TagStrings[i],
+													  uint32_t(ion::ConstexprStringLength(ion::profiling::tag::TagStrings[i])));
 	  })};
 
 	// Write samples
@@ -375,14 +454,21 @@ void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, 
 		{
 			JSONStructWriter sampleJSON(tracesArray);
 			const ion::String& str = ion::profiling::Instance().GetName(sample.id);
-			if (sample.mDetailedInfo[0] == 0)
+			if (!(uint8_t(sample.type) & (1 << 7)))
 			{
 				sampleJSON.AddMember("name", str);
 			}
 			else
 			{
 				ion::StackString<256> detailedStr;
-				detailedStr.Format("%s (%s)", str.CStr(), &sample.mDetailedInfo[0]);
+				if (mDetailInfo[sample.mDetailId].mSampleIndex != pos)
+				{
+					detailedStr.Format("%s (?)", str.CStr());
+				}
+				else
+				{
+					detailedStr.Format("%s (%s)", str.CStr(), &mDetailInfo[sample.mDetailId].mText);
+				}
 				stringBuffer.mData.Add(ion::MakeUnique<ion::String>(detailedStr));
 				sampleJSON.AddMember("name", *stringBuffer.mData.Back().get());
 			}
@@ -414,7 +500,7 @@ void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, 
 			prevTime = deltaUs;
 
 			sampleJSON.AddMember("ts", deltaUs);
-			switch (sample.type)
+			switch (Event(uint8_t(sample.type) & 0x7F))
 			{
 			case Event::Begin:
 				sampleJSON.AddMember("ph", "B");
@@ -446,7 +532,7 @@ void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, 
 	{
 		double mTotalTime;
 		size_t mIndex;
-		bool operator<(const ProfilingTime& other) const { return mTotalTime < other.mTotalTime; }
+		bool operator<(const ProfilingTime& other) const { return mTotalTime > other.mTotalTime; }
 	};
 	ion::Vector<ProfilingTime> totals;
 	totals.Reserve(ion::profiling::Instance().mSummary.Size());
@@ -461,8 +547,8 @@ void ion::ProfilingBuffer::Save(profiling::TemporaryStringBuffer& stringBuffer, 
 					 ion::profiling::ProfilingSummary elem = ion::profiling::Instance().mSummary[ref.mIndex];
 					 if (elem.numSamples > 0)
 					 {
-						 ION_LOG_INFO("Profiler: avg: "
-									  << (elem.total / elem.numSamples) * (1000.0 * 1000.0)
+						 ION_LOG_INFO("Profiler: total: "
+									  << elem.total * (1000.0) << "ms\t\t\t avg: " << (elem.total / elem.numSamples) * (1000.0 * 1000.0)
 									  << "us\t\t\t min: " << elem.min * (1000.0 * 1000.0)
 									  << "us\t\t\t max: " << elem.max * (1000.0 * 1000.0) << "us\t\t\t samples:" << elem.numSamples
 									  << "\t\t\t" << ion::profiling::Instance().GetName(ion::SafeRangeCast<unsigned int>(ref.mIndex)));

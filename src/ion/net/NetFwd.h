@@ -14,11 +14,11 @@ using NetInterfaceResource = TSMultiPoolResource<VirtualMemoryBuffer, ion::tag::
 template <typename T, typename Source>
 class ArenaAllocator;
 
-template <typename T, typename Allocator>
+template <typename T>
 class Ptr;
 
 template <typename T, typename Resource>
-using ArenaPtr = ion::Ptr<T, ion::ArenaAllocator<T, Resource>>;
+using ArenaPtr = ion::Ptr<T>;
 
 struct NetCommand;
 using NetCommandPtr = ArenaPtr<NetCommand, NetInterfaceResource>;

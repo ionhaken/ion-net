@@ -80,7 +80,7 @@ namespace ion
 			}
 		}
 
-		virtual void RunTask() override final;
+		void DoWork() override final;
 
 		void RunTaskInternal();
 
@@ -88,7 +88,7 @@ namespace ion
 	};
 
 	template<typename Iterator, class Function>
-	void SplittingJob<Iterator, Function>::RunTask()
+	void SplittingJob<Iterator, Function>::DoWork()
 	{
 		ION_PROFILER_SCOPE(Scheduler, "Splitted Tasks");
 		this->OnTaskStarted();

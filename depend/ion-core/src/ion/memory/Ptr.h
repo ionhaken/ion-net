@@ -20,7 +20,7 @@
 namespace ion
 {
 // Pointer container that will assert it has been deallocated when destructor is called.
-template <typename T, typename Allocator>
+template <typename T>
 class Ptr
 {
 public:

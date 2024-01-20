@@ -47,11 +47,11 @@ void DeinitSocket(NetSocket& socket);
 
 int CloseSocket(NetSocket& socket);
 
-void SendTo(NetSocket& socket, NetSocketSendParameters* bsp);
+inline void SendTo(NetSocket& socket, NetSocketSendParameters* bsp);
 
 NetBindResult BindSocket(NetSocket& socketLayer, NetBindParameters& bindParameters);
 
-ION_FORCE_INLINE int SendTo(NetNativeSocket nativeSocket, const NetSocketSendParameters& sendParameters)
+inline int SendTo(NetNativeSocket nativeSocket, const NetSocketSendParameters& sendParameters)
 {
 	return sendto(nativeSocket, sendParameters.data, sendParameters.length, 0, (const sockaddr*)&sendParameters.mAddress,
 #if ION_NET_FEATURE_IPV6 == 1

@@ -21,6 +21,19 @@
 ION_CODE_SECTION(".jobs")
 void ion::WaitableJob::Wait()
 {
+	if (ion::Thread::GetCurrentJob()->GetType() == BaseJob::Type::IOJob)
+	{
+		for (;;)
+		{
+			AutoLock<ThreadSynchronizer> lock(mSynchronizer);
+			if (mNumTasksInProgress == 0 && mNumTasksAvailable == 0)
+			{
+				return;
+			}
+			lock.UnlockAndWait();
+		}
+	}
+
 	// Wait for job completion and try to do tasks for this job when available.
 	// Note: must have lock before exiting hence doing BlockingWait().
 	// Otherwise other thread notifying this thread might access deleted task
@@ -36,6 +49,7 @@ void ion::WaitableJob::Wait()
 	{
 		lastQueueIndex = mThreadPool.RandomQueueIndex();
 	}
+
 	for (;;)
 	{
 		lastQueueIndex = mThreadPool.DoJobWork(lastQueueIndex, this);
@@ -74,38 +88,13 @@ bool ion::WaitableJob::BlockingWait(bool taskQueueEmpty)
 		}
 	}
 
-	// All tasks are already being processed: Wait until tasks complete
-
 	if (mNumTasksInProgress == 0)
-	{
-		return true;
+	{		
+		return true; // All tasks complete
 	}
 
-	// Currently adding companion worker to do other tasks while we are waiting
-	// I.e. when our job is done there's going to be more workers active than what's
-	// optimal, but we are able to continue here as soon as possible.
-	// #TODO: If we are companion worker, continue working on task pool instead of
-	// spawning other companion workers.
-	ION_ASSERT(mNumTasksAvailable == 0 && mNumTasksInProgress > 0, "Invalid state");
-	bool spawnCompanion = ion::Thread::GetQueueIndex() != ion::Thread::NoQueueIndex;
-	if (spawnCompanion)
-	{
-		if ION_LIKELY (mThreadPool.GetWorkerCount() > 0)
-		{
-			mThreadPool.AddCompanionWorker();
-			lock.UnlockAndWait();
-			mThreadPool.RemoveCompanionWorker();
-		}
-		else
-		{
-			mThreadPool.WorkOnMainThreadNoBlock();
-		}
-	}
-	else
-	{
-		lock.UnlockAndWait();
-	}
-
+	// All tasks are already being processed: Wait until tasks complete
+	lock.UnlockAndWaitEnsureWork(mThreadPool);
 	return mNumTasksInProgress == 0 && mNumTasksAvailable == 0;
 }
 ION_SECTION_END

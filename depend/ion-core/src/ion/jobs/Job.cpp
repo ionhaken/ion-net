@@ -24,7 +24,7 @@ void ion::Job::Execute()
 		  // NOTE: Cannnot Execute locally, always adding tasks.
 		  if (GetThreadPool().GetWorkerCount() > 0)
 		  {
-			  GetThreadPool().PushTask(Task(this));
+			  GetThreadPool().PushTask(JobWork(this));
 		  }
 		  else
 		  {
@@ -48,7 +48,14 @@ void ion::Job::ExecuteLong()
 	  [&]()
 	  {
 		  ION_PROFILER_SCOPE(Job, "Add long task");
-		  GetThreadPool().PushLongTask(Task(this));
+		  if (GetType() == Type::IOJob)
+		  {
+			  GetThreadPool().PushIOTask(JobWork(this));
+		  }
+		  else
+		  {
+			  GetThreadPool().PushBackgroundTask(JobWork(this));
+		  }
 	  });
 }
 ION_SECTION_END
@@ -56,7 +63,7 @@ ION_SECTION_END
 ION_CODE_SECTION(".jobs")
 void ion::Job::ExecuteOnQueue(Thread::QueueIndex queue)
 {
-	GetThreadPool().AddTaskWithoutWakeUp(Task(this), queue);
+	GetThreadPool().AddTaskWithoutWakeUp(JobWork(this), queue);
 	if (queue != ion::Thread::GetQueueIndex())
 	{
 		GetThreadPool().WakeUp(1, queue);
@@ -65,7 +72,7 @@ void ion::Job::ExecuteOnQueue(Thread::QueueIndex queue)
 ION_SECTION_END
 
 ION_CODE_SECTION(".jobs")
-void ion::Job::RunTask()
+void ion::Job::DoWork()
 {
 	for (;;)
 	{
@@ -93,11 +100,11 @@ void ion::Job::RunTask()
 ION_SECTION_END
 
 ION_CODE_SECTION(".jobs")
-void ion::RepeatableIOJob::RunTask()
+void ion::RepeatableIOJob::DoWork()
 {
 	for (;;)
 	{
-		ION_ASSERT_FMT_IMMEDIATE(!mIsStarving, "RepeatableIOJob triggered when it was not starving");
+		ION_ASSERT_FMT_IMMEDIATE(!mIsStarving, "RepeatableIOJob triggered when it was starving");
 		mIsStarving.store(true, std::memory_order_release);
 		RunIOJob();
 		AutoLock<Mutex> lock(mMutex);
@@ -120,7 +127,7 @@ void ion::RepeatableIOJob::Execute(ion::ThreadPool& tp)
 		if (mIsDone)
 		{
 			mIsDone = false;
-			tp.PushLongTask(ion::Task(this));
+			tp.PushIOTask(ion::JobWork(this));
 		}
 	}
 }

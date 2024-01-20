@@ -102,6 +102,11 @@
 	#define ION_CONFIG_PLATFORM_WRAPPERS 0
 #endif
 
+// Real value is implemented as a fixed-point to enforce cross platform determinism
+#ifndef ION_CONFIG_REAL_IS_FIXED_POINT
+	#define ION_CONFIG_REAL_IS_FIXED_POINT 0
+#endif
+
 // ----------------------------------------------------------------------------------------------------------
 // External code with license requirements
 // ----------------------------------------------------------------------------------------------------------
@@ -160,7 +165,6 @@
 // Error checking
 // ----------------------------------------------------------------------------------------------------------
 
-// Asserts enabled. If disabled, asserts are replaced with "assume()".
 #ifndef ION_ASSERTS_ENABLED
 	#define ION_ASSERTS_ENABLED ION_CONFIG_ERROR_CHECKING
 #endif

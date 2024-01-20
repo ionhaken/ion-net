@@ -34,8 +34,6 @@ struct NetConnections
 
 	NetSocketAddress mSocketListFirstBoundAddress = NetUnassignedSocketAddress;  // Cached for fast access
 
-	Offline mOffline;
-
 	Synchronized<RequestedConnections> mRequestedConnections;
 
 #if ION_NET_SIMULATOR
@@ -43,5 +41,7 @@ struct NetConnections
 #endif
 	Array<NetSocketAddress, NetMaximumNumberOfInternalIds> mIpList;
 	NetSocketAddress mFirstExternalID;
+
+	Offline mOffline;
 };
 }  // namespace ion

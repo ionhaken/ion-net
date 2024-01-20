@@ -40,7 +40,8 @@ public:
 
 	using id = uint64_t;
 
-	friend class TaskQueue;
+	template<typename T>
+	friend class JobQueue;
 	friend class BaseJob;
 
 	ION_CLASS_NON_COPYABLE(Runner);

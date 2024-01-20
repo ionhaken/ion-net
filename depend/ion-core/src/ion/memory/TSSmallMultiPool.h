@@ -58,7 +58,7 @@ public:
 
 	virtual ~TSSmallMultiPool() {}
 
-	void* Allocate(size_t count, size_t align)
+	void* Allocate(size_t count, [[maybe_unused]] size_t align)
 	{
 		ION_ASSERT(align <= SmallMultiPoolBase::Align, "Unsupported align");
 		ION_ASSERT(count <= MaxSize(), "Too large block;Max size=" << MaxSize());

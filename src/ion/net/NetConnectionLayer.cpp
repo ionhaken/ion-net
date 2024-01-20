@@ -1069,7 +1069,7 @@ void CreateSockets(ion::NetConnections& connections, NetControl& control, const 
 		bbp.type = parameters.mNetSocketDescriptors[i].socketType;
 		bbp.protocol = parameters.mNetSocketDescriptors[i].protocol;
 		bbp.nonBlockingSocket = false;
-		bbp.setBroadcast = true;
+		bbp.setBroadcast = false;
 		bbp.setIPHdrIncl = false;
 		bbp.doNotFragment = false;
 

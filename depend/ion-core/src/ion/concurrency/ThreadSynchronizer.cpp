@@ -13,10 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <ion/tracing/Log.h>
-#include <ion/concurrency/ThreadSynchronizer.h>
+#include <ion/concurrency/Thread.h>
 #include <ion/concurrency/ThreadSynchronization.inl>
+#include <ion/concurrency/ThreadSynchronizer.h>
+
+#include <ion/jobs/ThreadPool.h>
+
 #include <ion/hw/TimeCaps.h>
+#include <ion/tracing/Log.h>
 #if ION_PLATFORM_LINUX
 	#include <sys/time.h>
 	#include <errno.h>
@@ -93,6 +97,38 @@ void ThreadSynchronizer::Wait(TimeMS milliseconds)
 	ION_ASSERT(ret == 0 || ret == ETIMEDOUT || ret == EINTR, "Unexpected return value");
 #endif
 	mWaitingThreads--;
+}
+
+void ThreadSynchronizerLock::UnlockAndWaitEnsureWork(ThreadPool& threadPool)
+{
+	ION_ASSERT(ion::Thread::GetCurrentJob()->GetType() != BaseJob::Type::IOJob, "Workers only, IO work should not spawn companions");
+	// Currently adding companion worker to do other tasks while we are waiting
+	// I.e. when our job is done there's going to be more workers active than what's
+	// optimal, but we are able to continue here as soon as possible.
+	auto queueIndex = ion::Thread::GetQueueIndex();
+	bool isMainThreadOrWorker = queueIndex != ion::Thread::NoQueueIndex;
+	if (isMainThreadOrWorker)
+	{
+		if ION_LIKELY (threadPool.GetWorkerCount() > 0)
+		{
+			threadPool.AddCompanionWorker();
+			UnlockAndWait();
+			threadPool.RemoveCompanionWorker();
+		}
+		else
+		{
+			DoWakeUps();
+			Synchronizer().Unlock();
+			threadPool.WorkOnMainThreadNoBlock();
+			Synchronizer().Lock();
+		}
+	}
+	else
+	{
+		threadPool.AddCompanionWorker();
+		UnlockAndWait();
+		threadPool.RemoveCompanionWorker();
+	}
 }
 
 }  // namespace ion

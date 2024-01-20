@@ -44,7 +44,7 @@ struct Resource
 	#if ION_CONFIG_MEMORY_RESOURCES == 1
 	TLSFResource<MonotonicBufferResource<64 * 1024, ion::tag::External, ion::NativeAllocator<uint8_t>>, ion::tag::External> mTLSF;
 	#endif
-	MPSCQueue<void*, ion::NativeAllocator<char>> mFreeElems;
+	MPSCQueue<void*, ion::NativeAllocator<void*>> mFreeElems;
 
 	inline void* Allocate(size_t size)
 	{

@@ -47,18 +47,8 @@ enum class ErrorMode : uint8_t
 extern ErrorMode errorMode;
 extern bool allowAbnormalCondition;
 }  // namespace ion::debug
-	#if ION_COMPILER_MSVC
-		#define ION_DEBUG_BREAK				 __debugbreak();
-		#define THROW_EXCEPTION(__exception) throw __exception
-	#elif ION_COMPILER_CLANG
-		#define ION_DEBUG_BREAK __builtin_debugtrap()
-		#define THROW_EXCEPTION(__exception)
-	#else
-		#define ION_DEBUG_BREAK __builtin_trap()
-		#define THROW_EXCEPTION(__exception)
-	#endif
 
-	#define ION_ERROR_HANDLER                      \
+#define ION_ERROR_HANDLER                      \
 		do                                         \
 		{                                          \
 			if (::ion::debug::IsErrorDebugBreak()) \
@@ -145,20 +135,30 @@ extern bool allowAbnormalCondition;
 		}                                                          \
 	} while (0)
 
+
 #if (ION_ASSERTS_ENABLED == 1)
 	#define ION_ASSERT(__expr, __msg, ...) ION_CHECK(__expr, __msg, __VA_ARGS__)
 	#define ION_VERIFY(__expr, __msg, ...) ION_CHECK(__expr, __msg, __VA_ARGS__)
-	#define ION_UNREACHABLE(__msg, ...)	   ION_CHECK_FAILED(__msg, __VA_ARGS__)
-   // constexpr confirmant assert
+	#define ION_ASSUME(__expr, __msg, ...)					ION_CHECK(__expr, __msg, __VA_ARGS__)
+	#define ION_UNREACHABLE(__msg, ...)						ION_CHECK_FAILED(__msg, __VA_ARGS__)
+
+	// Constexpr checks
 	#define ION_ASSERT_FMT_IMMEDIATE(__expr, __format, ...) ION_CHECK_FMT_IMMEDIATE(__expr, __format, __VA_ARGS__)
+	#define ION_ASSUME_FMT_IMMEDIATE(__expr, __msg, ...)	ION_CHECK_FMT_IMMEDIATE(__expr, __msg, __VA_ARGS__)
 #else
-	#define ION_ASSERT_FMT_IMMEDIATE(__expr, __msg, ...) ION_ASSUME(__expr)
-	#define ION_ASSERT(__expr, __msg, ...)				 ION_ASSUME(__expr)
-	#define ION_VERIFY(__expr, __msg, ...)				 __expr
+
+	#define ION_ASSERT_FMT_IMMEDIATE(__expr, __msg, ...)
+	#define ION_ASSERT(__expr, __msg, ...) ((void)0)
+	#define ION_VERIFY(__expr, __msg, ...) __expr
+
 	#if ION_COMPILER_MSVC
-		#define ION_UNREACHABLE(__msg, ...) __assume(0)
+		#define ION_ASSUME(__expr, __msg, ...)				 __assume(__expr)
+		#define ION_UNREACHABLE(__msg, ...)					 __assume(0)
+		#define ION_ASSUME_FMT_IMMEDIATE(__expr, __msg, ...) __assume(__expr)
 	#else
-		#define ION_UNREACHABLE(__msg, ...) __builtin_unreachable()
+		#define ION_ASSUME(__expr, __msg, ...)				 __builtin_assume(__expr)
+		#define ION_UNREACHABLE(__msg, ...)					 __builtin_unreachable()
+		#define ION_ASSUME_FMT_IMMEDIATE(__expr, __msg, ...) __builtin_assume(__expr)
 	#endif
 #endif
 

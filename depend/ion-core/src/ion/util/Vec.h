@@ -31,10 +31,30 @@ struct Vec
 
 	constexpr Vec() = default;
 	Vec(const Vec& copy) = default;
+	
+	template <typename U>
+	Vec(const Vec<U, N>& other)
+	{
+		for (size_t i = 0; i < N; ++i)
+		{
+			mData[i] = other[i];
+		}
+	}
+
 	Vec(Vec&& other) = default;
 	Vec& operator=(const Vec& other)
 	{
 		mData = other.mData;
+		return *this;
+	}
+
+	template<typename U>
+	Vec& operator=(const Vec<U, N>& other)
+	{
+		for (size_t i = 0; i < N; ++i) 
+		{
+			mData[i] = other[i];
+		}
 		return *this;
 	}
 
@@ -154,7 +174,7 @@ struct Vec
 		return *this;
 	}
 
-	ION_FORCE_INLINE bool operator==(const Vec& other) const { return !(*this != other); }
+	constexpr bool operator==(const Vec& other) const { return !(*this != other); }
 
 	inline bool operator!=(const Vec& other) const
 	{
@@ -281,9 +301,10 @@ struct Vec
 
 	[[nodiscard]] constexpr T Distance(T x1, T y1) const
 	{
-		auto xa = x() - x1;
-		auto ya = y() - y1;
-		return T(ion::sqrt(xa * xa + ya * ya));
+		T xa = x() - x1;
+		T ya = y() - y1;
+		T s = xa * xa + ya * ya;
+		return ion::sqrt(s);
 	}
 
 	[[nodiscard]] constexpr T Distance(const Vec& p) const { return Distance(p.x(), p.y()); }
@@ -470,7 +491,7 @@ template <typename T, size_t N>
 	Vec<T, N> out;
 	for (size_t i = 0; i < N; ++i)
 	{
-		out[i] = ion::Abs(a[i]);
+		out[i] = ion::Absf(a[i]);
 	}
 	return out;
 }
@@ -556,6 +577,7 @@ inline void Handler(LogEvent& e, const ion::Vec<double, 2>& value)
 	e.Write(buffer);
 }
 }  // namespace tracing
+
 }  // namespace ion
 
 #include <ion/string/String.h>

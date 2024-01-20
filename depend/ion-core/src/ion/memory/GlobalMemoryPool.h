@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <ion/Types.h>
+
 // Global memory pool using thread-local memory pools
 namespace ion
 {

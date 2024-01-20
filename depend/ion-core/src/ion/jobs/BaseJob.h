@@ -78,7 +78,7 @@ public:
 
 	inline const BaseJob* GetRootJob() const { return (mSourceJob == nullptr) ? this : mSourceJob->GetRootJob(); }
 
-	inline bool IsMyJob(const BaseJob* job) const
+	inline bool IsMyJob(const BaseJob* const ION_RESTRICT job) const
 	{
 		ION_ASSERT(job != this, "Must check higher level");
 		if (job == mSourceJob)
@@ -97,9 +97,19 @@ public:
 		return false;
 	}
 
-	virtual void RunTask() = 0;
+	virtual void DoWork() = 0;
 
-protected:
+	enum class Type : uint8_t
+	{
+		CoreJob,
+		BackgroundJob,
+		IOJob
+	};
+
+	Type GetType() const { return mType; }
+	void SetType(Type type) { mType = type; }
+
+	protected:
 	BaseJob* const mSourceJob;
 #if ION_JOB_STATS == 1
 	ion::StopClock mStatTimer;
@@ -113,6 +123,7 @@ private:
 #if ION_MEMORY_TRACKER
 	MemTag mTag;
 #endif
+	Type mType = Type::CoreJob;
 	BaseJob& operator=(const BaseJob&) = delete;
 	BaseJob(const BaseJob&) = delete;
 };

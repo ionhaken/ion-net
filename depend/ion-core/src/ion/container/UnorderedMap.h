@@ -67,6 +67,15 @@ public:
 		return *this;
 	}
 
+	UnorderedMap(UnorderedMap&& other) noexcept : mImpl(std::move(other.mImpl)) {}
+
+	UnorderedMap& operator=(UnorderedMap&& other) noexcept
+	{
+		mImpl = std::move(other.mImpl);
+		return *this;
+	}
+
+
 	void Reserve(size_t s) { mImpl.reserve(s); }
 
 	template <typename Resource>

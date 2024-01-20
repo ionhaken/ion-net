@@ -135,7 +135,7 @@ private:
 };
 
 template <typename T, typename Resource>
-using ArenaPtr = ion::Ptr<T, ion::ArenaAllocator<T, Resource>>;
+using ArenaPtr = ion::Ptr<T>;
 
 template <typename T, typename Resource, typename... Args>
 ion::ArenaPtr<T, Resource> MakeArenaPtr(Resource* resource, Args&&... args)

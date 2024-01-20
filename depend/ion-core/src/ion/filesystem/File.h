@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 #pragma once
-#include <ion/Base.h>
+#include <ion/container/Vector.h>
+
 #include <cstdarg>
 #include <fstream>
-#include <sstream>
+#include <ion/Base.h>
 #include <ion/tracing/Log.h>
-
-// #TODO: Replace with ion::Vector
-#include <vector>
+#include <ion/util/InplaceFunction.h>
+#include <sstream>
 
 #if ION_PLATFORM_ANDROID
 	#include <ion/byte/ByteBuffer.h>
@@ -30,30 +30,44 @@
 	#include <stdio.h>
 #endif
 
+#if ION_PLATFORM_ANDROID
+struct AAssetManager;
+struct AAsset;
+#endif
+
 namespace ion
 {
 class ByteReader;
+
+using FileJobCallback = ion::InplaceFunction<void(ion::Vector<byte>&, size_t fileSize, size_t unpackedSize), 32, 8>;
+
 namespace file_util
 {
-void ReplaceTargetFile(const char* target, ByteReader& inStream);
-}
-class Folder;
+
+#if ION_PLATFORM_ANDROID
+void SetAssetManager(AAssetManager* a);
+#endif
+
+void AllFiles(StringView path, ion::Vector<ion::String>& files);
+void ReplaceTargetFile(StringView target, ByteReader& inStream);
+void DeleteTargetFile(StringView fileStr);
+ion::String WorkingDir();
+bool IsPathAvailable(StringView str);
+bool IsFileAvailable(StringView str);
+
+}  // namespace file_util
 class FileIn
 {
 public:
-	FileIn(const ion::Folder& folder, const char* target);
-
 	FileIn(const char* target);
 
-	bool Get(std::string&);
-
-	bool GetAsVector(std::vector<uint8_t>& tmp);
+	bool Get(Vector<uint8_t>& tmp, size_t pos = 0, size_t len = 0);
 
 	~FileIn();
 
 private:
 #if ION_PLATFORM_ANDROID
-	ion::ByteBuffer<> mImpl;
+	AAsset* mImpl = nullptr;
 #else
 	std::ifstream mImpl;
 #endif
@@ -126,7 +140,6 @@ public:
 		{
 			fclose(mImpl);
 		}
-		// mImpl.close();
 	}
 
 	// std::ofstream mImpl;

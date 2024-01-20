@@ -17,7 +17,6 @@
 
 #include <ion/jobs/WaitableJob.h>
 #include <ion/debug/Profiling.h>
-#include <ion/jobs/Task.h>
 #include <ion/jobs/ThreadPool.h>
 #include <ion/debug/AccessGuard.h>
 #include <ion/memory/Memory.h>
@@ -30,14 +29,9 @@ namespace task
 template <typename T>
 using Function = ion::InplaceFunction<T,
 
-// If inplace function size is too small,
-// move some of the lambda data inside a struct or use ParallelForIndex
-#if ION_BUILD_DEBUG
-									  sizeof(void*) * 12,
-#else
-									  sizeof(void*) * 8,
-#endif
-									  16>;
+									  // If inplace function size is too small,
+									  // move some of the lambda data inside a struct or use ParallelForIndex
+									  128 - 16, 16>;
 
 }  // namespace task
 
@@ -84,7 +78,7 @@ public:
 
 	void Execute(Thread::QueueIndex queue);
 
-	virtual void RunTask() final override;
+	void DoWork() final;
 
 private:
 	void ExecuteOnQueue(Thread::QueueIndex queue);
@@ -142,7 +136,7 @@ public:
 	}
 
 private:
-	virtual void RunTask() final override
+	void DoWork() final
 	{
 		ION_ASSERT(!mIsDone, "Cannot rerun IOJob. Please use RepeatedIOJob");
 		RunIOJob();
@@ -156,7 +150,7 @@ private:
 class RepeatableIOJob : public BaseJob
 {
 public:
-	RepeatableIOJob(ion::MemTag tag) : BaseJob(tag), mIsStarving(true), mIsDone(true) {}
+	RepeatableIOJob(ion::MemTag tag) : BaseJob(tag), mIsStarving(true), mIsDone(true) { SetType(BaseJob::Type::IOJob); }
 
 	bool IsDone() const { return mIsDone; }
 
@@ -166,7 +160,7 @@ public:
 	{
 		if (!mIsDone)
 		{
-			ION_LOG_INFO("Waiting for RepeatableIOJob to finish");
+			ION_DBG("Waiting for RepeatableIOJob to finish");
 			while (!mIsDone)
 			{
 				ion::Thread::Sleep(100);
@@ -184,7 +178,7 @@ public:
 	}
 
 private:
-	virtual void RunTask() final override;
+	void DoWork() final;
 	ion::Mutex mMutex;
 	std::atomic<bool> mIsStarving;	// False only when there is undone work
 	std::atomic<bool> mIsDone;		// True only when there is active job.
@@ -195,21 +189,21 @@ struct EmptyIntermediate
 };
 
 template <typename Parameter, class Function, class Intermediate>
-inline void JobCall(Function&& function, Parameter& param, Intermediate* intermediate)
+ION_FORCE_INLINE_RELEASE void JobCall(Function&& function, Parameter& param, Intermediate* intermediate)
 {
 	ION_PROFILER_SCOPE(Job, "Task (Intermediate)");
 	function(param, intermediate->GetMain());
 }
 
 template <typename Parameter, class Function>
-inline void JobCall(Function&& function, Parameter& param, EmptyIntermediate*)
+ION_FORCE_INLINE_RELEASE void JobCall(Function&& function, Parameter& param, EmptyIntermediate*)
 {
 	ION_PROFILER_SCOPE(Job, "Task (EmptyIntermediate)");
 	function(param);
 }
 
 template <typename Parameter, class Function>
-inline void JobCall(Function&& function, Parameter& param)
+ION_FORCE_INLINE_RELEASE void JobCall(Function&& function, Parameter& param)
 {
 	ION_PROFILER_SCOPE(Job, "Task");
 	function(param);

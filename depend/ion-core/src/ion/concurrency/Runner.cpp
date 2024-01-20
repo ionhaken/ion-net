@@ -82,7 +82,7 @@ bool Runner::Start(size_t stackSize, Thread::Priority priority, Thread::QueueInd
 		mState = Runner::State::Terminated;
 		return false;
 	}
-	auto res = ::ResumeThread(mHandle.Ref<ThreadHandleType>());
+	[[maybe_unused]] auto res = ::ResumeThread(mHandle.Ref<ThreadHandleType>());
 	ION_ASSERT(res, "Thread resume failed " << ion::debug::GetLastErrorString());
 	return true;
 #else
@@ -98,7 +98,7 @@ bool Runner::Start(size_t stackSize, Thread::Priority priority, Thread::QueueInd
 
 	// res = pthread_attr_setstack(&attr, sp, stack_size); // #TODO: Set stack address
 
-	#if !ION_PLATFORM_ANDROID  // Android uses setpriority instead of scheduling params
+	#if ION_THREAD_USE_SCHEDULING_POLICY
 	res = pthread_attr_setschedpolicy(&attr, ion::Thread::GetSchedulingPolicy());
 	ION_ASSERT_FMT_IMMEDIATE(res == 0, "Invalid scheduling policy");
 
@@ -144,10 +144,10 @@ void Runner::Join()
 #endif
 
 #if ION_PLATFORM_MICROSOFT
-	auto waitResult = WaitForSingleObject(mHandle.Ref<ThreadHandleType>(), INFINITE);
+	[[maybe_unused]] auto waitResult = WaitForSingleObject(mHandle.Ref<ThreadHandleType>(), INFINITE);
 	ION_ASSERT(waitResult != (DWORD)0xFFFFFFFF, "Wait failed:" << ion::debug::GetLastErrorString());
 	ION_ASSERT(mState == Runner::State::Terminated, "Thread has not finished");
-	auto res = CloseHandle(mHandle.Ref<ThreadHandleType>());
+	[[maybe_unused]] auto res = CloseHandle(mHandle.Ref<ThreadHandleType>());
 	ION_ASSERT(res, "Thread close failed:" << ion::debug::GetLastErrorString());
 	mHandle.Ref<ThreadHandleType>() = nullptr;
 #endif

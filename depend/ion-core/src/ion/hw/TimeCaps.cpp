@@ -31,7 +31,7 @@ TimeCaps::TimeCaps(TimeMS millis)
 	UINT TARGET_RESOLUTION = static_cast<UINT>(millis);	 // target in milliseconds
 	TIMECAPS tc;
 	wTimerRes;
-	auto res = timeGetDevCaps(&tc, sizeof(TIMECAPS));
+	[[maybe_unused]] auto res = timeGetDevCaps(&tc, sizeof(TIMECAPS));
 	ION_ASSERT(res == TIMERR_NOERROR, "cannot get time caps");
 	{
 		wTimerRes = Min(Max(tc.wPeriodMin, TARGET_RESOLUTION), tc.wPeriodMax);

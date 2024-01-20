@@ -20,8 +20,10 @@
 #include <ion/util/Math.h>
 #include <ion/util/Bits.h>
 
+
 namespace ion
 {
+#if ION_CONFIG_REAL_IS_FIXED_POINT
 constexpr const size_t NumSinEntries = 1024;
 constexpr const int16_t gSinValues[NumSinEntries] = {
   0 /*0.000000*/,		99 /*0.006042*/,	  200 /*0.012207*/,		300 /*0.018311*/,
@@ -281,10 +283,18 @@ constexpr const int16_t gSinValues[NumSinEntries] = {
   -806 /*-0.049194*/,	-705 /*-0.043030*/,	  -605 /*-0.036926*/,	-504 /*-0.030762*/,
   -404 /*-0.024658*/,	-303 /*-0.018494*/,	  -203 /*-0.012390*/,	-102 /*-0.006226*/
 };
+#endif
 
 class FixedMath
 {
 public:
+	static inline ion::Fixed32 Abs(ion::Fixed32 fp)
+	{
+		fp.m_value = std::abs(fp.m_value);
+		return fp;
+	}
+
+#if ION_CONFIG_REAL_IS_FIXED_POINT
 	FixedMath() {}
 
 	static const int32_t base = ion::Fixed32::FractionBits;
@@ -302,11 +312,7 @@ public:
 		return value;
 	}
 
-	static inline ion::Fixed32 Abs(ion::Fixed32 fp)
-	{
-		fp.m_value = std::abs(fp.m_value);
-		return fp;
-	}
+
 
 	template <typename T, size_t U>
 	static inline FixedPoint<T, U> Abs(FixedPoint<T, U> fp)
@@ -540,9 +546,10 @@ private:
 		return static_cast<int16_t>((intermediate + ((intermediate & 0x7FFF) == 0x4000 ? 0 : 0x4000)) >> 15);
 #endif
 	}
+	#endif
 };
 
-[[nodiscard]] inline ion::Fixed32 Abs(ion::Fixed32 value) noexcept { return FixedMath::Abs(value); }
+#if ION_CONFIG_REAL_IS_FIXED_POINT
 
 [[nodiscard]] inline ion::Fixed32 exp(ion::Fixed32 value) { return FixedMath::exp(value); }
 
@@ -571,13 +578,13 @@ template <typename T, unsigned int U>
 }
 
 template <typename T, unsigned int U>
-[[nodiscard]] inline bool isnormal(ion::FixedPoint<T, U> y)
+[[nodiscard]] inline bool IsNormal(ion::FixedPoint<T, U> y)
 {
 	return !isnan(y) && y != 0;
 }
 
 template <typename T, unsigned int U>
-[[nodiscard]] inline bool signbit(ion::FixedPoint<T, U> y)
+[[nodiscard]] inline bool SignBit(ion::FixedPoint<T, U> y)
 {
 	return y < 0;
 }
@@ -600,27 +607,6 @@ template <typename T, unsigned int U>
 		b >>= 2;  // if a' = a/2, then b' = b / 4
 	}
 	return q;
-}
-
-template <typename T>
-[[nodiscard]] inline ion::Fraction<T> sqrt(ion::Fraction<T> fraction)
-{
-	const T scale = 1 << (sizeof(T) * 2);
-	const T scaleSqrt = static_cast<T>(ion::sqrt(uint64_t(scale)));
-
-	ION_ASSERT(fraction.Numerator() >= 0 && fraction.Denominator() >= 0, "Invalid input");
-	T val = static_cast<T>(fraction);
-	if (val > scale)
-	{
-		val = static_cast<T>(ion::sqrt(uint64_t(val)));
-		return ion::Fraction<T>(val, 1);
-	}
-	else
-	{
-		val = static_cast<T>(fraction * scale);
-		val = static_cast<T>(ion::sqrt(uint64_t(val)));
-		return ion::Fraction<T>(val, scaleSqrt);
-	}
 }
 
 [[nodiscard]] inline ion::Fixed32 pow(ion::Fixed32 value, int /*n*/) noexcept
@@ -672,6 +658,53 @@ template <>
 	return value.Compare(0) == ion::Fixed64::ComparatorResult::Incomparable;
 }
 #endif
+#endif
+
+
+template <typename T>
+[[nodiscard]] inline ion::Fraction<T> sqrt(ion::Fraction<T> fraction)
+{
+	const T scale = 1 << (sizeof(T) * 2);
+	const T scaleSqrt = static_cast<T>(ion::sqrt(uint64_t(scale)));
+
+	ION_ASSERT(fraction.Numerator() >= 0 && fraction.Denominator() >= 0, "Invalid input");
+	T val = static_cast<T>(fraction);
+	if (val > scale)
+	{
+		val = static_cast<T>(ion::sqrt(uint64_t(val)));
+		return ion::Fraction<T>(val, 1);
+	}
+	else
+	{
+		val = static_cast<T>(fraction * scale);
+		val = static_cast<T>(ion::sqrt(uint64_t(val)));
+		return ion::Fraction<T>(val, scaleSqrt);
+	}
+}
+
+template<>
+[[nodiscard]] inline ion::Fixed32 sqrt(ion::Fixed32 x)
+{
+	ION_ASSERT_FMT_IMMEDIATE(x >= 0 && !std::isinf(static_cast<float>(x)), "Invalid input");
+	if (x < ion::Fraction32(1, 100))
+	{
+		return ion::Fixed32(0u);
+	}
+
+	ion::Fixed32 currentVal(x);
+	currentVal *= ion::Fraction32(1, 2);
+
+	int i = ((1 << 5) | static_cast<int>(x));
+	while ((i >>= 1) != 0)
+	{
+		currentVal += x / currentVal;
+		currentVal *= ion::Fraction32(1, 2);
+	}
+	return currentVal;
+}
+
+template<>
+[[nodiscard]] inline ion::Fixed32 Absf(ion::Fixed32 value) noexcept { return FixedMath::Abs(value); }
 
 template <>
 [[nodiscard]] constexpr ion::Fixed32 Reciprocal(const ion::Fixed32 value)
@@ -683,4 +716,13 @@ template <>
 	return ion::Fixed32(1) / value;
 #endif
 }
+
+template <typename T>
+constexpr T ConvertRealTo(const ion::Fixed32& value)
+{
+	return value.ConvertTo<T>();
+}
+
+
 }  // namespace ion
+

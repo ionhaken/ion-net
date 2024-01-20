@@ -66,7 +66,7 @@ public:
 
 	[[nodiscard]] inline T* AllocateRaw(size_type numBytes)
 	{
-		ION_ASSERT(numBytes % alignof(T) == 0, "Invalid allocation");
+		ION_ASSERT_FMT_IMMEDIATE(numBytes % alignof(T) == 0, "Allocation size must align with type");
 		if constexpr (alignof(T) <= MinimumAlignment)
 		{
 			T* ret = (T*)(ion::Malloc(numBytes));
@@ -81,6 +81,7 @@ public:
 
 	[[nodiscard]] inline T* AllocateRaw(size_type numBytes, size_t alignment)
 	{
+		ION_ASSERT_FMT_IMMEDIATE((numBytes % alignof(T)) == 0, "Allocation size must align with type");
 		if (alignment <= MinimumAlignment)
 		{
 			T* ret = (T*)(ion::Malloc(numBytes));

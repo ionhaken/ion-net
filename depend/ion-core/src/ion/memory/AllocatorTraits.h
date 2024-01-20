@@ -52,9 +52,23 @@ constexpr typename T::value_type* Construct(T& allocator, Args&&... args)
 	return AllocatorTraits<T>::template Construct<typename T::value_type>(allocator, std::forward<Args>(args)...);
 }
 
+template <typename T, class... Args>
+constexpr typename T::value_type* ConstructUsingGlobalAllocator(Args&&... args)
+{
+	T allocator;
+	return AllocatorTraits<T>::template Construct<typename T::value_type>(allocator, std::forward<Args>(args)...);
+}
+
 template <typename T>
 constexpr void Destroy(T& allocator, typename T::value_type* ptr)
 {
+	AllocatorTraits<T>::template Destroy<typename T::value_type>(allocator, ptr);
+}
+
+template <typename T>
+constexpr void DestroyUsingGlobalAllocator(typename T::value_type* ptr)
+{
+	T allocator;
 	AllocatorTraits<T>::template Destroy<typename T::value_type>(allocator, ptr);
 }
 

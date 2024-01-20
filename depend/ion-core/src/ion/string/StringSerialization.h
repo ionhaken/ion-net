@@ -303,4 +303,7 @@ inline ion::UInt Serialize(const unsigned long& data, ion::StringWriter& writer)
 #endif
 // ----------
 
+template <>
+UInt Serialize(const StringView& data, StringWriter& writer);
+
 }  // namespace ion::serialization

@@ -89,12 +89,12 @@ template <typename T>
 using CoreAllocator = DomainAllocator<T, CoreResourceProxy>;
 
 template <typename T>
-using CorePtr = Ptr<T, CoreAllocator<T>>;
+using CorePtr = Ptr<T>;
 
 template <typename T, typename... Args>
 inline ion::CorePtr<T> MakeCorePtr(Args&&... args)
 {
-	return MakeDomainPtr<T, CoreAllocator<T>>(std::forward<Args>(args)...);
+	return MakeDomainPtr<T, CoreAllocator<T>>(ion_forward(args)...);
 }
 
 template <typename T>

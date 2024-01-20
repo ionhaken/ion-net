@@ -28,7 +28,7 @@ const uint32_t IKCP_CMD_WASK = 2;  // cmd: window probe (ask)
 const uint32_t IKCP_CMD_WINS = 3;  // cmd: window size (tell)
 const uint32_t IKCP_CMD_IMMEDIATE = 4;  // cmd: push immediate data - expect immediate ack
 const uint32_t IKCP_CMD_UNRELIABLE_NO_ACK = 5;  // cmd: push unrealiable data without ack
-const uint32_t IKCP_CMD_RESERVED = 6;
+//const uint32_t IKCP_CMD_RESERVED = 6;
 
 void EncodeReliableSegment(ByteWriterUnsafe& writer, const NetUpstreamSegmentHeader& ION_RESTRICT seg)
 {
@@ -82,9 +82,7 @@ const uint32_t IKCP_RTO_MAX = 60000;
 
 const uint32_t IKCP_ASK_SEND = 1;  // need to send IKCP_CMD_WASK
 const uint32_t IKCP_ASK_TELL = 2;  // need to send IKCP_CMD_WINS
-const uint32_t IKCP_WND_SND = MinSndWindowSize;
 const uint32_t IKCP_WND_RCV = MaxNumberOfFragments + 1;	 // must >= max fragment size
-const uint32_t IKCP_ACK_FAST = 3;
 const uint32_t IKCP_INTERVAL = 100;
 const uint32_t IKCP_DEADLINK = 20;
 const uint32_t IKCP_THRESH_INIT = 2;
@@ -213,7 +211,7 @@ NetPacket* NetChannel::Receive(ion::NetControl& control, ion::NetRemoteSystem& r
 			if (size > 0)
 			{
 				packet = NetControlLayer::AllocateUserPacket(control, size);
-				auto ret = Receive(control, remote, NetPacketHeader(packet), size);
+				[[maybe_unused]] int ret = Receive(control, remote, NetPacketHeader(packet), size);
 				ION_ASSERT(ret == int(size), "Invalid reception");
 				packet->mAddress = remote.mAddress;
 				packet->mLength = size;

@@ -35,9 +35,8 @@ namespace detail
 constexpr size_t NextMemoryBlockSize(size_t request, size_t minimumAllocation)
 {
 	// Big block size to detect strange memory allocations. Increase limit when needed.
-	constexpr size_t BigBlockSize = size_t(512) * 1024 * 1024;
 	request = ion::Max(request, minimumAllocation);
-	ION_ASSERT_FMT_IMMEDIATE(request <= BigBlockSize, "Check allocation size: %lu MBytes", request / (1024 * 1024));
+	ION_ASSERT_FMT_IMMEDIATE(request <= size_t(512) * 1024 * 1024, "Check allocation size: %lu MBytes", request / (1024 * 1024));
 	return request;
 }
 
@@ -283,7 +282,7 @@ public:
 #endif
 	}
 
-	void Deallocate(void* p, size_t) { ION_ASSERT(IsEqual(p), "Invalid source"); }
+	void Deallocate([[maybe_unused]] void* p, size_t) { ION_ASSERT(IsEqual(p), "Invalid source"); }
 
 private:
 	detail::MemoryBufferBlock* StartBlock() { return reinterpret_cast<detail::MemoryBufferBlock*>(mDefaultBlock.Data()); }

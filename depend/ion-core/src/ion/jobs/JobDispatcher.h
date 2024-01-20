@@ -31,7 +31,6 @@ namespace ion
 {
 class TimedJob;
 class DispatcherJob;
-class Task;
 
 class JobDispatcher
 {
@@ -53,7 +52,6 @@ public:
 	void StopThreads();
 
 private:
-	ion::ThreadSafeObjectPool<DispatcherJob, ion::CoreAllocator<DispatcherJob>> mDispatcherJobPool;
 
 	// Wait is called by TimedJob
 	template <class Function>
@@ -67,15 +65,15 @@ private:
 		}
 	}
 
-	std::atomic<TimeUS> mNextUpdate;
-
 	UInt DoJobWork(UInt queue);
 	void Reschedule(TimedJob* job);
 
 	ion::ThreadPool mThreadPool;
-	SCThreadSynchronizer mSynchronizer;
 	MPSCQueue<DispatcherJob*, ion::CoreAllocator<DispatcherJob*>> mInQueue;
+	SCThreadSynchronizer mSynchronizer;
 	Vector<DispatcherJob*, ion::CoreAllocator<DispatcherJob*>> mTimedQueue;	 // #TODO: Use priority queue
 	Runner mThread;
+	ion::ThreadSafeObjectPool<DispatcherJob, ion::CoreAllocator<DispatcherJob>> mDispatcherJobPool;
+	std::atomic<TimeUS> mNextUpdate;
 };
 }  // namespace ion

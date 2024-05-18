@@ -19,16 +19,17 @@
 
 namespace ion
 {
-template <typename T>
-class ComponentId : public IdType<T>
+template <typename T, T TInvalid = (std::numeric_limits<T>::max)()>
+class ComponentId : public IdType<T, TInvalid>
 {
+	using Super = IdType<T, TInvalid>;
 public:
 #if ION_COMPONENT_VERSION_NUMBER
 	constexpr bool operator==(const ComponentId& other) const
 	{
-		if (IdType<T>::operator==(other))
+		if (Super::operator==(other))
 		{
-			ION_ASSERT_FMT_IMMEDIATE(mVersion == other.mVersion || !IdType<T>::IsValid() || !other.IdType<T>::IsValid(),
+			ION_ASSERT_FMT_IMMEDIATE(mVersion == other.mVersion || !Super::IsValid() || !other.Super::IsValid(),
 									 "Version mismatch");
 			return true;
 		}
@@ -37,16 +38,16 @@ public:
 
 	constexpr bool operator!=(const ComponentId& other) const
 	{
-		if (IdType<T>::operator!=(other))
+		if (Super::operator!=(other))
 		{
 			return true;
 		}
-		ION_ASSERT_FMT_IMMEDIATE(mVersion == other.mVersion || !IdType<T>::IsValid() || !other.IdType<T>::IsValid(), "Version mismatch");
+		ION_ASSERT_FMT_IMMEDIATE(mVersion == other.mVersion || !Super::IsValid() || !other.Super::IsValid(), "Version mismatch");
 		return false;
 	}
 #endif
 
-	constexpr T GetIndex() const { return IdType<T>::GetRaw(); }
+	constexpr T GetIndex() const { return Super::GetRaw(); }
 
 #if ION_COMPONENT_VERSION_NUMBER
 	constexpr T GetVersion() const { return mVersion; }
@@ -54,7 +55,7 @@ public:
 
 protected:
 	constexpr ComponentId()
-	  : IdType<T>()
+	  : Super()
 #if ION_COMPONENT_VERSION_NUMBER
 		,
 		mVersion(0)
@@ -63,9 +64,9 @@ protected:
 	}
 
 #if ION_COMPONENT_VERSION_NUMBER
-	constexpr ComponentId(const T anIndex, const T aVersion) : IdType<T>(anIndex), mVersion(aVersion) {}
+	constexpr ComponentId(const T anIndex, const T aVersion) : Super(anIndex), mVersion(aVersion) {}
 #else
-	constexpr ComponentId(const T anIndex) : IdType<T>(anIndex) {}
+	constexpr ComponentId(const T anIndex) : Super(anIndex) {}
 #endif
 
 private:

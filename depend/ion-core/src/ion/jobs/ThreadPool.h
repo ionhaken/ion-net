@@ -34,6 +34,8 @@ public:
 	ION_FORCE_INLINE const UInt GetWorkerCount() const { return mNumWorkers; }
 	const UInt GetQueueCount() const { return mNumWorkerQueues; }
 
+	int GetWaitingWorkerCount() const { return mStats.mNumWaiting; }
+
 	void AddCompanionWorker(Thread::QueueIndex = Thread::NoQueueIndex);
 
 	void RemoveCompanionWorker() { mCompanionWorkersNeeded--; }

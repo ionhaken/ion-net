@@ -535,25 +535,7 @@ constexpr bool operator<(Fixed32 lhs, Fixed32 rhs) noexcept { return lhs.IsLessT
 
 constexpr bool operator>(Fixed32 lhs, Fixed32 rhs) noexcept { return lhs.IsGreaterThan(rhs); }
 
-constexpr ion::Fixed32 sqrt(ion::Fixed32 x)
-{
-	ION_ASSERT_FMT_IMMEDIATE(x >= 0 && !std::isinf(static_cast<float>(x)), "Invalid input");
-	if (x < ion::Fraction32(1, 100))
-	{
-		return ion::Fixed32(0u);
-	}
 
-	ion::Fixed32 currentVal(x);
-	currentVal *= ion::Fraction32(1, 2);
-
-	int i = ((1 << 5) | static_cast<int>(x));
-	while ((i >>= 1) != 0)
-	{
-		currentVal += x / currentVal;
-		currentVal *= ion::Fraction32(1, 2);
-	}
-	return currentVal;
-}
 }  // namespace ion
 
 namespace std
@@ -586,8 +568,6 @@ public:
 	static constexpr bool has_infinity = true;
 	static constexpr bool has_quiet_NaN = true;
 	static constexpr bool has_signaling_NaN = false;
-	static constexpr float_denorm_style has_denorm = denorm_absent;
-	static constexpr bool has_denorm_loss = false;
 	static constexpr ion::Fixed32 infinity() noexcept { return ion::Fixed32::GetInfinity(); }
 	static constexpr ion::Fixed32 quiet_NaN() noexcept { return ion::Fixed32::GetNaN(); }
 
@@ -598,5 +578,7 @@ public:
 	static constexpr bool traps = false;
 	static constexpr bool tinyness_before = false;
 	static constexpr float_round_style round_style = round_toward_zero;
+	
+	static constexpr ion::Fixed32 signaling_NaN() noexcept { return ion::Fixed32{0}; }
 };
 }  // namespace std

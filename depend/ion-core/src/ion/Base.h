@@ -231,6 +231,7 @@
 #if ION_COMPILER_MSVC
 	#define ION_PRAGMA_WRN_PUSH								   __pragma(warning(push))
 	#define ION_PRAGMA_WRN_IGNORE_SIGNED_UNSIGNED_MISMATCH	   __pragma(warning(disable : 4389))
+	#define ION_PRAGMA_WRN_IGNORE_NONSTANDARD_EXTENSION		   __pragma(warning(disable : 4201))
 	#define ION_PRAGMA_WRN_IGNORE_CONVERSION_LOSS_OF_DATA	   __pragma(warning(disable : 4244))
 	#define ION_PRAGMA_WRN_IGNORE_UNARY_MINUS_TO_UNSIGNED_TYPE __pragma(warning(disable : 4146))
 	#define ION_PRAGMA_WRN_IGNORE_UNREACHABLE_CODE			   __pragma(warning(disable : 4702))
@@ -238,6 +239,7 @@
 #else
 	#define ION_PRAGMA_WRN_PUSH _Pragma("clang diagnostic push")
 	#define ION_PRAGMA_WRN_IGNORE_SIGNED_UNSIGNED_MISMATCH
+	#define ION_PRAGMA_WRN_IGNORE_NONSTANDARD_EXTENSION
 	#define ION_PRAGMA_WRN_IGNORE_CONVERSION_LOSS_OF_DATA
 	#define ION_PRAGMA_WRN_IGNORE_UNARY_MINUS_TO_UNSIGNED_TYPE
 	#define ION_PRAGMA_WRN_IGNORE_UNREACHABLE_CODE
@@ -290,4 +292,11 @@
 #else
 	#define ION_DEBUG_BREAK __builtin_trap()
 	#define THROW_EXCEPTION(__exception)
+#endif
+
+// Note: 'thread_local' can give poor code generation
+#if ION_COMPILER_MSVC
+	#define ION_THREAD_LOCAL __declspec(thread)
+#else
+	#define ION_THREAD_LOCAL __thread
 #endif

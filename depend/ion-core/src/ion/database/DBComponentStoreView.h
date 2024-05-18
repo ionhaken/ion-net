@@ -26,7 +26,6 @@ protected:
 
 	constexpr ComponentStoreView(T& aStore, const typename T::Index anIndex) : mStore(aStore), mIndex(anIndex)
 	{
-		ION_ASSERT_FMT_IMMEDIATE(anIndex != ~static_cast<typename T::Index>(0), "Invalid component");
 		mStore.OnCreated(mIndex);
 	}
 

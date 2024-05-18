@@ -493,10 +493,18 @@ LogEvent& operator<<(ion::tracing::LogEvent& out, const ion::String& text)
 	return out;
 }
 
+struct TracingHelper // To friend StringView
+{
+	static LogEvent& Write(ion::tracing::LogEvent& out, const ion::StringView& text)
+	{
+		out.Write(text.Copy(), text.Length());
+		return out;
+	}
+};
+
 LogEvent& operator<<(ion::tracing::LogEvent& out, const ion::StringView& text)
 {
-	out.Write(text.CStr(), text.Length());
-	return out;
+	return TracingHelper::Write(out, text);
 }
 
 LogEvent& operator<<(LogEvent& out, const ion::MultiData<char, uint32_t>& multi)

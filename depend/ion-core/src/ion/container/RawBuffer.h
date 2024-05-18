@@ -111,7 +111,7 @@ public:
 	[[nodiscard]] constexpr Value* const Get() const { return mData; }
 
 	// Init container with given data
-	inline void CreateFrom(const Value* source, size_t size)
+	inline void CreateFrom(const Value* ION_RESTRICT source, size_t size)
 	{
 		if constexpr (std::is_trivially_copyable<Value>::value)
 		{
@@ -133,7 +133,7 @@ public:
 	}
 
 	// Replace container sequence with given sequence assuming give size is larger than original size
-	void Replace(Value* newContainer, size_t size)
+	void Replace(Value* ION_RESTRICT newContainer, size_t size)
 	{
 		MoveTo(newContainer, size);
 		Set(newContainer, size);
@@ -149,7 +149,7 @@ public:
 	}
 
 	// Move part of contents to given byte sequence
-	inline void MoveTo(Value* destination, size_t size)
+	inline void MoveTo(Value* ION_RESTRICT destination, size_t size)
 	{
 		if constexpr (std::is_trivially_copyable<Value>::value)
 		{
@@ -173,7 +173,7 @@ public:
 	}
 
 	// Copy contents of given sequence to container.
-	void CopyFrom(const Value* source, size_t newSize, size_t oldSize)
+	void CopyFrom(const Value* ION_RESTRICT source, size_t newSize, size_t oldSize)
 	{
 		auto replaces = ion::Min(oldSize, newSize);
 		ion::Copy(source, &source[replaces], mData);

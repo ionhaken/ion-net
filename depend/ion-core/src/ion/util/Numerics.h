@@ -71,17 +71,17 @@ template <typename VecType, typename RadiansType = typename VecType::type>
 	return ion::atan2(vec.y(), vec.x());
 }
 
-template <typename DegreeType, typename VecType = ion::Vec2<DegreeType>>
-[[nodiscard]] constexpr VecType DegreesToUVec(DegreeType degrees)
-{
-	return RadiansToUVec(DegreesToRadians(degrees));
-}
-
 template <typename T>
 [[nodiscard]] constexpr T DegreesToRadians(T degrees)
 {
 	// return degrees / (static_cast<T>(ion::Fraction32(180)) / ion::Math::Pi<T>());
 	return ion::Math::Pi<T>() * degrees / (static_cast<T>(ion::Fraction32(180)));
+}
+
+template <typename DegreeType, typename VecType = ion::Vec2<DegreeType>>
+[[nodiscard]] constexpr VecType DegreesToUVec(DegreeType degrees)
+{
+	return RadiansToUVec(DegreesToRadians(degrees));
 }
 
 template <typename T>

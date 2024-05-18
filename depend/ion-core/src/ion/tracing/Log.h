@@ -71,6 +71,11 @@ inline void Handler(Logger& logger, const T& value)
 	#define ION_DBG_TAG(__tag, __msg, ...) \
 		ION_LOG_CALL(/*ion::logging::tag::__tag,*/ ion::tracing::EventType::EventDebug, __msg, __VA_ARGS__);
 	#define ION_DBG_FMT(__format, ...) ION_LOG_FMT_CALL(::ion::tracing::EventType::EventDebug, __format, __VA_ARGS__);
+	#define ION_DBG_FMT_IMMEDIATE(__format, ...)                                                   \
+		do                                                                                         \
+		{                                                                                          \
+			ION_LOG_FMT_IMMEDIATE_CALL(ion::tracing::EventType::EventDebug, __format, __VA_ARGS__); \
+		} while (0)
 
 #else
 	#define ION_DBG_TAG(__tag, __msg, ...) \

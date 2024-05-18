@@ -209,7 +209,24 @@ void ion::PeriodicJob::DoWork()
 {
 	// Pre-start handling: Sleep/Busyloop until it's the actual time to run the task
 	ION_ASSERT(TimeLeft() <= 0 || mPreStartTime > 0, "Pre-started although no pre-start time set");
-	TimeDeltaUS timeLeft = Timer().PreciseWaitUntil(mPreStartTime);
+	TimeDeltaUS timeLeft = 0;
+	{
+		if (mPreStartTime > 0)
+		{
+			ION_PROFILER_SCOPE(Job, "Precise wait");
+			auto queueIndex = ion::Thread::GetQueueIndex();
+			bool isMainThreadOrWorker = queueIndex != ion::Thread::NoQueueIndex;
+			if (isMainThreadOrWorker)
+			{
+				ion::core::gSharedDispatcher->ThreadPool().AddCompanionWorker();
+			}
+			timeLeft = Timer().PreciseWaitUntil(mPreStartTime);
+			if (isMainThreadOrWorker)
+			{
+				ion::core::gSharedDispatcher->ThreadPool().RemoveCompanionWorker();
+			}
+		}
+	}
 	while (timeLeft <= 0)
 	{
 		RunTimedTask();

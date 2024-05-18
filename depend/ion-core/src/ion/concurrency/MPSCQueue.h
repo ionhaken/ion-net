@@ -87,7 +87,7 @@ public:
 		return result;
 #else
 		mMutex.Lock();
-		auto result = mData.Enqueue(std::move(item));
+		auto result = mData.Enqueue(std::forward<T>(item));
 		mMutex.Unlock();
 		return result;
 #endif

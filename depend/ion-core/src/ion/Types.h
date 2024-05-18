@@ -123,6 +123,11 @@ using Vec2 = Vec<T, 2>;
 
 using Vec2f = Vec<float, 2>;
 
+template <typename T>
+using Vec3 = Vec<T, 3>;
+
+using Vec3f = Vec<float, 3>;
+
 template <typename TValue, typename TSize = uint32_t>
 struct MultiData;
 

@@ -68,7 +68,11 @@ public:
 
 	void Wait(UInt firstQueueIndex)
 	{
-		ListJobBase::AddTaskLists(firstQueueIndex);
+		size_t numTaskLists = ListJobBase::CountNumIntermediateBatches();
+		if (numTaskLists > 1)
+		{
+			ListJobBase::AddTaskLists(firstQueueIndex, numTaskLists);
+		}
 		ion::Thread::SetCurrentJob(this);
 		mFunction(true);
 		ion::Thread::SetCurrentJob(this->mSourceJob);
@@ -79,6 +83,9 @@ protected:
 	void DoWork() final
 	{
 		ION_PROFILER_SCOPE_DETAIL(Scheduler, "Task List intermediate", ListJobBase::NumItems());
+#if ION_LIST_JOB_USE_LATE_TASKS
+		AddLateTaskLists(1);
+		#endif
 		this->OnTaskStarted();
 		mFunction(false);
 		this->OnTaskDone();

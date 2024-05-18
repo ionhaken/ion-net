@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 #pragma once
+#include <ion/container/StaticVector.h>
+
 #include <ion/jobs/Job.h>
 #include <ion/jobs/ThreadPool.h>
-#include <ion/container/StaticVector.h>
+
+#define ION_LIST_JOB_USE_LATE_TASKS 1
 
 namespace ion
 {
@@ -234,7 +237,9 @@ protected:
 
 	void AddTaskLists(UInt firstQueueIndex, size_t numTaskLists);
 
-	void AddTaskListsLocked(UInt firstQueueIndex, size_t numTaskLists);
+#if ION_LIST_JOB_USE_LATE_TASKS
+	void AddLateTaskLists(size_t numTaskLists);
+#endif
 };
 
 class ListJobBase : public ParallelForJob
@@ -247,9 +252,24 @@ public:
 	{
 	}
 
-	void AddTaskLists(UInt firstQueueIndex);
+	void AddTaskLists(UInt firstQueueIndex, size_t numTaskLists);
+
+#if ION_LIST_JOB_USE_LATE_TASKS
+	inline void AddLateTaskLists(UInt taskCount)
+	{
+		if (mNumLateTasks-- > 0)
+		{
+			if (mIndex < mNumItems * 7 / 8)
+			{
+				ParallelForJob::AddLateTaskLists(taskCount);
+			}
+		}
+	}
+#endif
 
 protected:
+	size_t CountNumIntermediateBatches() const;
+
 	inline bool FindTasks(size_t& startIndex, size_t& endIndex)
 	{
 		auto nextBatchIndex = mIndex.fetch_add(1, std::memory_order_relaxed);
@@ -272,199 +292,13 @@ protected:
 
 private:
 	std::atomic<size_t> mIndex;
+#if ION_LIST_JOB_USE_LATE_TASKS
+	std::atomic<long> mNumLateTasks = 0;
+#endif
 	const size_t mMinBatchSize;
 	const size_t mNumItems;
 
 private:
 };
 
-#if 0
-
-	template<typename Algorithm>
-	class ListJob : public ParallelForJob
-	{
-		ION_CLASS_NON_COPYABLE_NOR_MOVABLE(ListJobBase);
-	public:
-		template<typename Iterator>
-		ListJobBase(ThreadPool& tp, const Iterator& first, const Iterator& last, size_t batchSize)
-			:
-			ParallelForJob(tp),
-			mBatchSize(batchSize)
-		{
-		}
-
-		void AddTaskLists(UInt firstQueueIndex);
-
-	protected:
-
-		void DoWork() override
-		{
-			ION_ASSERT(false, "Sub class must implement DoWork()");
-		}
-
-		bool HasTasks(size_t tsIndex) const;
-
-		size_t NumTaskSequences() const { return mTaskSequences.Size(); }
-
-		size_t ChooseFirstTaskSequence();
-
-		template<typename Callback>
-		inline void ProcessSequences(Callback&& callback)
-		{
-			ION_PROFILER_SCOPE(Job, "List iteration");
-			size_t numTaskSeqs = NumTaskSequences();
-			size_t firstTaskSequence = ChooseFirstTaskSequence();
-			for (size_t j = 0; j < numTaskSeqs; ++j)
-			{
-				size_t taskSequence = (firstTaskSequence + j) % numTaskSeqs;
-				if (ListJobBase::HasTasks(taskSequence))
-				{
-					callback(taskSequence);
-				}
-			}
-		}
-
-
-	private:
-
-		UInt mBatchSize;
-		std::atomic<size_t> mFirstSequenceIndex;
-	};
-
-	template<typename Iterator, class Function>
-	class ListJob : public ListJobBase
-	{
-		ION_CLASS_NON_COPYABLE_NOR_MOVABLE(ListJob);
-	public:
-
-		ListJob(ThreadPool& tp, const Iterator& first, const Iterator& last, const Function&& function,
-			size_t minBatchSize)
-			:
-			ListJobBase(tp, first, last, minBatchSize),
-			mFunction([function, first, this]()
-				{
-					ListJobBase::ProcessSequences([&](size_t taskSequence)
-						{
-							size_t startIndex;
-							size_t endIndex;
-							while (ListJobBase::FindTasks(taskSequence, startIndex, endIndex))
-							{
-								ListJobBase::ProcessBatch(first, startIndex, endIndex,
-									[&](auto& iter)
-									{
-										function(iter);
-									});
-							}
-						});
-				})
-		{
-		}
-
-		void Wait(UInt firstQueueIndex)
-		{
-			ListJobBase::AddTaskLists(firstQueueIndex);
-			ion::Thread::SetCurrentJob(this);
-			mFunction();
-			ion::Thread::SetCurrentJob(this->mSourceJob);
-			WaitableJob::Wait();
-		}
-
-	protected:
-
-		void DoWork() final
-		{
-			ION_PROFILER_SCOPE(Scheduler, "Task List");
-			this->OnTaskStarted();
-			mFunction();
-			this->OnTaskDone();
-		}
-
-	private:
-		task::Function<void()> mFunction;
-	};
-#endif
 }  // namespace ion
-
-#if 0  // #TODO: Parallel for to support intermediate list correctly
-namespace ion
-{
-
-	template<typename Iterator, class Function, class Intermediate>
-	class IntermediateListJob : public ListJobBase
-	{
-		ION_CLASS_NON_COPYABLE_NOR_MOVABLE(IntermediateListJob);
-	public:
-
-		IntermediateListJob(ThreadPool& tp, const Iterator& first, const Iterator& last, const Function&& function,
-			size_t minBatchSize, Intermediate& intermediate)
-			:
-			ListJobBase(tp, first, last, minBatchSize),
-			mFunction([function, first, &intermediate, this](bool isWaiting)
-				{
-					ION_PROFILER_SCOPE(Job, "List iteration (intermediate)");
-					if (isWaiting)
-					{
-						ProcessSequences([&](size_t taskSequence)
-							{
-								size_t startIndex;
-								size_t endIndex;
-								while (ListJobBase::FindTasks(taskSequence, startIndex, endIndex))
-								{
-									ListJobBase::ProcessBatch(first, startIndex, endIndex, [&](auto& iter)
-										{
-											function(iter, intermediate.GetMain());
-										});
-								}
-							});
-					}
-					else
-					{
-						typename Intermediate::Type* freeIntermediate;
-
-						ListJobBase::ProcessSequences([&](size_t taskSequence)
-							{
-								size_t startIndex;
-								size_t endIndex;
-								if (ListJobBase::FindTasks(taskSequence, startIndex, endIndex))
-								{
-									freeIntermediate = &intermediate.GetFree();
-									do
-									{
-										ListJobBase::ProcessBatch(first, startIndex, endIndex, [&](auto& iter)
-											{
-												function(iter, *freeIntermediate);
-											});
-									} while (ListJobBase::FindTasks(taskSequence, startIndex, endIndex));
-								}
-							});
-					}
-				})
-		{
-		}
-
-				void Wait(UInt firstQueueIndex)
-				{
-					ListJobBase::AddTaskLists(firstQueueIndex);
-					ion::Thread::SetCurrentJob(this);
-					mFunction(true);
-					ion::Thread::SetCurrentJob(this->mSourceJob);
-					WaitableJob::Wait();
-				}
-
-	protected:
-
-		void DoWork() final
-		{
-			ION_PROFILER_SCOPE(Scheduler, "Task List(intermediate)");
-			this->OnTaskStarted();
-			mFunction(false);
-			this->OnTaskDone();
-		}
-
-	private:
-		static constexpr size_t Alignment = 16;
-		task::Function<void(bool)> mFunction;
-	};
-}
-
-#endif

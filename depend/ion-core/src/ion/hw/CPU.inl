@@ -44,7 +44,7 @@ namespace ion
 {
 namespace platform
 {
-inline void Yield()
+ION_FORCE_INLINE void Yield()
 {
 #if ION_PLATFORM_MICROSOFT
 	SwitchToThread();
@@ -54,7 +54,7 @@ inline void Yield()
 }
 
 // The PAUSE instruction is x86 specific. It's sole use is in spin-lock wait loops
-inline void RelaxCPU()
+ION_FORCE_INLINE void RelaxCPU()
 {
 #if ION_PLATFORM_MICROSOFT
 	YieldProcessor();  //_mm_pause();
@@ -65,7 +65,7 @@ inline void RelaxCPU()
 #endif
 }
 
-inline void Nop()
+ION_FORCE_INLINE void Nop()
 {
 #if ION_PLATFORM_MICROSOFT
 	__nop();
@@ -74,7 +74,7 @@ inline void Nop()
 #endif
 }
 
-inline void PreFetchL1(const void* ptr)
+ION_FORCE_INLINE void PreFetchL1(const void* ptr)
 {
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
 	_mm_prefetch((const char*)(ptr), _MM_HINT_T0);
@@ -87,7 +87,7 @@ inline void PreFetchL1(const void* ptr)
 #endif
 }
 
-inline void PreFetchL2(const void* ptr)
+ION_FORCE_INLINE void PreFetchL2(const void* ptr)
 {
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
 	_mm_prefetch((const char*)(ptr), _MM_HINT_T1);
@@ -100,7 +100,7 @@ inline void PreFetchL2(const void* ptr)
 #endif
 }
 
-inline void PreFetchL1ForWrite(const void* ptr)
+ION_FORCE_INLINE void PreFetchL1ForWrite(const void* ptr)
 {
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_I86))
 	_m_prefetchw(ptr);

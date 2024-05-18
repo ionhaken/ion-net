@@ -285,6 +285,11 @@ public:
 	[[nodiscard]] std::unique_ptr<wchar_t[]> WStr() const;
 	[[nodiscard]] std::wstring WideString() const;
 #endif
+
+	NativeType::iterator Begin() { return mImpl.Begin(); }
+	NativeType::const_iterator Begin() const { return mImpl.Begin(); }
+	NativeType::iterator End() { return mImpl.End(); }
+	NativeType::const_iterator End() const { return mImpl.End(); }
 };
 
 // #TODO: Need to specialize string hashes case by case

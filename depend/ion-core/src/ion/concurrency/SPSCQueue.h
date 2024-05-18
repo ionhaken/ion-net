@@ -105,10 +105,10 @@ public:
 		ION_ACCESS_GUARD_WRITE_BLOCK(mWriteGuard);	// Only single writer supported
 		bool result;
 #if ION_EXTERNAL_SPSC_QUEUE
-		result = mData.enqueue(std::move(item));
+		result = mData.enqueue(std::forward<T>(item));
 #else
 		mMutex.Lock();
-		mData.PushFront(std::move(item));
+		mData.PushFront(std::forward<T>(item));
 		mMutex.Unlock();
 		result = true;
 #endif

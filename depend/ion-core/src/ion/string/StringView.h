@@ -33,21 +33,28 @@ template <typename Allocator>
 class BasicString;
 
 class String;
+namespace tracing
+{
+struct TracingHelper;
+}
 
 class StringView
 {
 	friend class String;
 	friend class StringWriter;
 	friend class JSONStructWriter;
+	friend struct tracing::TracingHelper;
 
 public:
 	StringView();
 
-	constexpr explicit StringView(const char* const text, size_t size) : mArray(text, size) {}
+	explicit StringView(const char* const text, size_t size) : mArray(text, size) {}
+
+	StringView(const char text[]) : StringView(text, StringLen(text)) {}
 
 	// Compile time view of string. If compilation fails, use ion::StringLength() to get runtime string length for string view.
 	// Note: It's not always good idea to have compile time generated view as it uses additional memory for string length.
-	ION_CONSTEVAL StringView(const char text[]) : StringView(text, ConstexprStringLength(text)) {}
+	static ION_CONSTEVAL StringView CompileTime(const char text[]) { return StringView(ConstexprStringLength(text), text); }
 
 	explicit StringView(const String& string);
 
@@ -82,6 +89,8 @@ public:
 	}
 
 private:
+	ION_CONSTEVAL StringView(size_t size, const char* const text) : mArray(text, size) {}
+
 	// To by-pass assert of CStr() - used by friend classes only.
 	[[nodiscard]] const char* const Copy() const { return mArray.Data(); }
 

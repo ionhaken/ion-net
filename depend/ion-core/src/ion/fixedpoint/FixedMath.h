@@ -682,7 +682,6 @@ template <typename T>
 	}
 }
 
-template<>
 [[nodiscard]] inline ion::Fixed32 sqrt(ion::Fixed32 x)
 {
 	ION_ASSERT_FMT_IMMEDIATE(x >= 0 && !std::isinf(static_cast<float>(x)), "Invalid input");

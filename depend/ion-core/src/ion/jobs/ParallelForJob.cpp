@@ -63,25 +63,50 @@ ION_SECTION_END
 ION_CODE_SECTION(".jobs")
 void ion::ParallelForJob::AddTaskLists(UInt firstQueueIndex, size_t numTaskLists)
 {
-	// -1 because local thread is also using doing task list
-	ION_ASSERT(numTaskLists > 1, "Not enough lists for running parallel");
-	numTaskLists = ion::Min(numTaskLists - 1, static_cast<size_t>(GetThreadPool().GetWorkerCount()));
+	ION_ASSERT(numTaskLists > 0 && numTaskLists <= GetThreadPool().GetWorkerCount(), "Not enough lists for running parallel");
 	AutoLock<ThreadSynchronizer> lock(GetSynchronizer());
-	AddTaskListsLocked(firstQueueIndex, numTaskLists);
-}
-ION_SECTION_END
-
-ION_CODE_SECTION(".jobs")
-void ion::ParallelForJob::AddTaskListsLocked(UInt firstQueueIndex, size_t numTaskLists)
-{
 	NumTasksInProgress() += ion::SafeRangeCast<UInt>(numTaskLists);
 	NumTasksAvailable() += ion::SafeRangeCast<UInt>(numTaskLists);
 	GetThreadPool().AddTasks(ion::Thread::QueueIndex(firstQueueIndex), ion::SafeRangeCast<UInt>(numTaskLists), this);
 }
 ION_SECTION_END
 
+#if ION_LIST_JOB_USE_LATE_TASKS
 ION_CODE_SECTION(".jobs")
-void ion::ListJobBase::AddTaskLists(UInt firstQueueIndex)
+void ion::ParallelForJob::AddLateTaskLists(size_t numTaskLists)
+{
+	ION_ASSERT(numTaskLists > 0 && numTaskLists <= GetThreadPool().GetWorkerCount(), "Not enough lists for running parallel");
+	auto queueIndex = GetThreadPool().UseNextQueueIndexExceptThis();
+	AutoLock<ThreadSynchronizer> lock(GetSynchronizer());
+	NumTasksInProgress() += ion::SafeRangeCast<UInt>(numTaskLists);
+	NumTasksAvailable() += ion::SafeRangeCast<UInt>(numTaskLists);
+	GetThreadPool().AddTasks(ion::Thread::QueueIndex(queueIndex), ion::SafeRangeCast<UInt>(numTaskLists), this);
+}
+ION_SECTION_END
+#endif
+
+ION_CODE_SECTION(".jobs")
+void ion::ListJobBase::AddTaskLists(UInt firstQueueIndex, size_t numTaskLists)
+{
+	numTaskLists = ion::Min(numTaskLists, size_t(GetThreadPool().GetWorkerCount() + ION_MAIN_THREAD_IS_A_WORKER));
+#if ION_LIST_JOB_USE_LATE_TASKS
+	size_t maxTaskListCount = UInt(GetThreadPool().GetWaitingWorkerCount() + 2) * 2;
+	if (numTaskLists > maxTaskListCount)
+	{
+		mNumLateTasks = numTaskLists - maxTaskListCount;
+		numTaskLists = maxTaskListCount;
+	}
+#endif
+	if (numTaskLists > 1)
+	{
+		ParallelForJob::AddTaskLists(firstQueueIndex, numTaskLists - 1);
+	}
+}
+ION_SECTION_END
+
+#if 1
+ION_CODE_SECTION(".jobs")
+size_t ion::ListJobBase::CountNumIntermediateBatches() const
 {
 	ION_ASSERT(mMinBatchSize > 0, "Invalid batch size");
 	size_t numBatches = mNumItems;
@@ -94,19 +119,7 @@ void ion::ListJobBase::AddTaskLists(UInt firstQueueIndex)
 		}
 		numBatches /= mMinBatchSize;
 	}
-	ION_ASSERT(numBatches > 1, "Not enough batches for running parallel");
-	{
-		// -1 because local thread is also virtually one task list
-		size_t numTaskLists = ion::Min(numBatches - 1, static_cast<size_t>(ParallelForJob::GetThreadPool().GetWorkerCount()));
-
-		// If there is lot to do have additional task lists.
-		if (numBatches > numTaskLists * 2)
-		{
-			numTaskLists = numTaskLists * 2;
-		}
-
-		AutoLock<ThreadSynchronizer> lock(ParallelForJob::GetSynchronizer());
-		ParallelForJob::AddTaskListsLocked(firstQueueIndex, numTaskLists);
-	}
+	return numBatches;
 }
 ION_SECTION_END
+#endif

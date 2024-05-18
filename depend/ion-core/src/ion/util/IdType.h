@@ -21,12 +21,12 @@
 namespace ion
 {
 
-template <typename T, T TMax = (std::numeric_limits<T>::max)()>
+template <typename T, T TInvalid = (std::numeric_limits<T>::max)(), T TMax = (std::numeric_limits<T>::max)()>
 class IdType
 {
 public:
 	static constexpr T Max = TMax;
-	static constexpr T Invalid = Max;
+	static constexpr T Invalid = TInvalid;
 
 	using Type = T;
 
@@ -44,14 +44,14 @@ public:
 	constexpr IdType operator++()
 	{
 		++mId;
-		ION_ASSERT_FMT_IMMEDIATE(mId <= Max, "Increased to out of id range");
+		ION_ASSERT_FMT_IMMEDIATE(mId != TInvalid && mId <= Max, "Increased to out of id range");
 		return *this;
 	}
 
 	constexpr IdType operator--()
 	{
 		--mId;
-		ION_ASSERT_FMT_IMMEDIATE(mId <= Max, "Decreased to out of id range");
+		ION_ASSERT_FMT_IMMEDIATE(mId != TInvalid && mId <= Max, "Decreased to out of id range");
 		return *this;
 	}
 
@@ -61,7 +61,7 @@ protected:
 	constexpr void SetRaw(const T value)
 	{
 		mId = value;
-		ION_ASSERT_FMT_IMMEDIATE(mId <= Max, "Raw value is out of id range");
+		ION_ASSERT_FMT_IMMEDIATE(mId != TInvalid && mId <= Max, "Raw value is out of id range");
 	}
 
 private:

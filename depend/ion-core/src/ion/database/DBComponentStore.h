@@ -32,8 +32,6 @@ public:
 	{
 	}
 
-	static constexpr T INVALID_INDEX = static_cast<T>(-1);
-
 #if ION_COMPONENT_READ_WRITE_CHECKS
 	void OnCreated(T index)
 	{

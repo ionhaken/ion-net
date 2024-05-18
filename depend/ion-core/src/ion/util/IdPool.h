@@ -95,7 +95,7 @@ public:
 	{
 #if ION_BUILD_DEBUG
 		ION_ASSERT(index < mTotalItems, "Invalid index");
-		ION_ASSERT(ion::Find(mFreeItems, index) == mFreeItems.End(), "Duplicate free");
+		ION_ASSERT(ion::Find(mFreeItems, index) == mFreeItems.End(), "Duplicate free:" << index);
 #endif
 		mFreeItems.Add(index);
 	}

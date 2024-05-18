@@ -18,12 +18,12 @@
 
 namespace ion
 {
-template <typename Type, typename ContainerType>
+template <typename Type, typename ContainerType = typename std::underlying_type<Type>::type>
 class BitFlags
 {
 public:
 	template <typename... Args>
-	inline BitFlags(Args... args)
+	inline BitFlags(Args... args) : mState(0)
 	{
 		for (auto&& x : {args...})
 		{
@@ -53,6 +53,18 @@ public:
 		mState = ContainerType(int(mState) & ~(1 << int(TFlag)));
 	}
 
+	template <Type TFlag, Type TFlag2>
+	void Clear()
+	{
+		mState = ContainerType(int(mState) & ~(1 << int(TFlag) | 1 << int(TFlag2)));
+	}
+
+	template <Type TFlag>
+	void Change(bool isEnabled)
+	{
+		mState = ContainerType(isEnabled ? int(mState) | (1 << int(TFlag)) : int(mState) & ~(1 << int(TFlag)));
+	}
+
 	template <Type TFlag>
 	constexpr bool IsSet() const
 	{
@@ -60,6 +72,8 @@ public:
 	}
 	constexpr bool operator==(const BitFlags<Type, ContainerType>& other) const { return mState == other.mState; }
 	constexpr bool operator!=(const BitFlags<Type, ContainerType>& other) const { return mState != other.mState; }
+
+	constexpr bool IsAnySet() const { return mState != 0; }
 
 private:
 	ContainerType mState = 0;

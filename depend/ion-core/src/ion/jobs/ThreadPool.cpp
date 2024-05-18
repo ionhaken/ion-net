@@ -349,7 +349,7 @@ bool ion::ThreadPool::CompanionWorker(Thread::QueueIndex index)
 	  {
 		  mNumBackgroundWorkers++;
 		  mCompanionWorkersActive++;
-		  while (mAreCompanionsActive)
+		  while (mAreCompanionsActive || mNumAvailableBackgroundTasks > 0)
 		  {
 			  {
 				  ION_PROFILER_SCOPE(Job, "Background Job Queue");
@@ -422,9 +422,18 @@ void ion::ThreadPool::WorkOnMainThread()
 	if (mainThreadQueue.Run() == JobQueueStatus::Empty)
 	{
 #if ION_MAIN_THREAD_IS_A_WORKER
-		AddCompanionWorker(); // Slacking workers is increased in next Wait() call.  
+		AddCompanionWorker();
 #endif
-		mainThreadQueue.Wait(mStats);
+		{
+			ION_PROFILER_SCOPE(Job, "Main thread waiting");
+#if ION_MAIN_THREAD_IS_A_WORKER
+			mStats.mJoblessQueueIndex = 0;
+			JobQueueStats stats;  // Main thread does not count as waiting worker-thread since it's waiting for main thread work.
+#else
+			JobQueueStats& stats = mStats;
+#endif
+			mainThreadQueue.Wait(stats);
+		}
 #if ION_MAIN_THREAD_IS_A_WORKER
 		RemoveCompanionWorker();
 #endif

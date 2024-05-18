@@ -191,7 +191,7 @@ inline void Handler(LogEvent& e, const ion::ConfigString& value)
 #if ION_TWEAKABLES
 
 	#define TWEAKABLE_TYPE(__command, __name, __value, __type, __minValue, __maxValue) \
-		/*static __type g##__name = __value;*/                                       \
+		/*static __type g##__name = __value;*/                                         \
 		static ion::ConfigValue<__type> g##__name(ion::tweakables::Type::Tweakable, __command, __value, __minValue, __maxValue);
 
 	#define TWEAKABLE_BOOL(__command, __name, __value) TWEAKABLE_TYPE(__command, __name, __value, bool, false, true)
@@ -201,11 +201,13 @@ inline void Handler(LogEvent& e, const ion::ConfigString& value)
 		TWEAKABLE_TYPE(__command, __name, __value, float, __minValue, __maxValue)
 	#define TWEAKABLE_IS_EQUAL(__name, __value) (g##__name == __value)
 	#define TWEAKABLE_IS_GT(__name, __value)	(g##__name > __value)
+	#define TWEAKABLE_IS_LT(__name, __value)	(g##__name < __value)
 	#define TWEAKABLE_SET(__name, __value)		g##__name##Store = __value
 #else
 	#define TWEAKABLE_BOOL(__command, __name, __value)							static constexpr bool g##__name = __value;
 	#define TWEAKABLE_UINT(__command, __name, __minValue, __value, __maxValue)	static constexpr ion::UInt g##__name = __value;
 	#define TWEAKABLE_FLOAT(__command, __name, __minValue, __value, __maxValue) static constexpr float g##__name = __value;
-	#define TWEAKABLE_IS_EQUAL(__name, __value)									constexpr(ION_CONCATENATE(g, __name) == __value)
+	#define TWEAKABLE_IS_EQUAL(__name, __value)									constexpr(g##__name == __value)
 	#define TWEAKABLE_IS_GT(__name, __value)									constexpr(g##__name > __value)
+	#define TWEAKABLE_IS_LT(__name, __value)									constexpr(g##__name < __value)
 #endif

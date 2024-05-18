@@ -66,7 +66,7 @@ Runner::Runner(Runner&& other) noexcept
 
 bool Runner::Start(size_t stackSize, Thread::Priority priority, Thread::QueueIndex index)
 {
-	ION_ASSERT(stackSize >= sizeof(Thread::ThreadLocalStore) + (8 * 1024) && stackSize >= Thread::MinimumStackSize,
+	ION_ASSERT(stackSize >= Thread::MaxThreadLocalStoreSize + (8 * 1024) && stackSize >= Thread::MinimumStackSize,
 			   "Stack size below recommended size");
 	ION_ASSERT(mState == Runner::State::Terminated, "Thread was already started");
 	mState = Runner::State::Running;

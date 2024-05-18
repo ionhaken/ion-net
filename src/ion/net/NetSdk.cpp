@@ -80,7 +80,7 @@ bool NetInit()
 			(void)close(fd);
 		}
 #endif
-		int sodiumInit = sodium_init();
+		[[maybe_unused]] int sodiumInit = sodium_init();
 		ION_ASSERT(sodiumInit >= 0, "Sodium init failed");
 		
 		net::gInstance.Init(4 * 1024 * 1024);

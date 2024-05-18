@@ -70,8 +70,8 @@ using MemTag = uint16_t;
 
 namespace tag
 {
-const MemTag IgnoreLeaks = 0;
-const MemTag Unset = 1;
+const MemTag Unset = 0;
+const MemTag IgnoreLeaks = 1;
 const MemTag Temporary = 2;	// Temporary and stack allocators, object pool
 const MemTag Core = 3;
 const MemTag Network = 4;

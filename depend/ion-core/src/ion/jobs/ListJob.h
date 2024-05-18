@@ -58,7 +58,7 @@ protected:
 	{
 		if (numTaskLists > 1)
 		{
-			ParallelForJob::AddTaskLists(firstQueueIndex, numTaskLists);
+			ListJobBase::AddTaskLists(firstQueueIndex, numTaskLists);
 		}
 		ion::Thread::SetCurrentJob(this);
 		mFunction();
@@ -66,9 +66,12 @@ protected:
 		WaitableJob::Wait();
 	}
 
-	 void DoWork() final
+	void DoWork() final
 	{
 		ION_PROFILER_SCOPE_DETAIL(Scheduler, "Task List", size_t(ListJobBase::NumItems() - ListJobBase::Index()));
+#if ION_LIST_JOB_USE_LATE_TASKS
+		AddLateTaskLists(1);
+		#endif
 		this->OnTaskStarted();
 		mFunction();
 		this->OnTaskDone();

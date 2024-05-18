@@ -56,7 +56,37 @@ namespace
 std::atomic<int64_t> gSleepMinMicros;
 EmptyJob gEmptyJob;
 }  // namespace
-thread_local Thread::ThreadLocalStore ion::Thread::mTLS;
+
+// Thread local storage
+#if ION_CONFIG_JOB_SCHEDULER
+extern ION_THREAD_LOCAL BaseJob* ion::Thread::mJob = nullptr;
+#endif
+#if ION_CONFIG_TEMPORARY_ALLOCATOR
+extern ION_THREAD_LOCAL ion::temporary::BytePool* ion::Thread::mTemporaryMemory = nullptr;
+#endif
+#if ION_CONFIG_JOB_SCHEDULER
+extern ION_THREAD_LOCAL uint64_t ion::Thread::mRandState[2] = {0};
+#endif
+#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
+extern ION_THREAD_LOCAL UInt ion::Thread::mId = ~static_cast<UInt>(0);
+#endif
+#if ION_CONFIG_JOB_SCHEDULER
+extern ION_THREAD_LOCAL ion::Thread::QueueIndex ion::Thread::mQueueIndex = 0;
+#endif
+// Debug features
+#if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
+extern ION_THREAD_LOCAL ProfilingBuffer* ion::Thread::mProfiling = nullptr;
+#endif
+#if ION_MEMORY_TRACKER
+extern ION_THREAD_LOCAL ion::MemTag ion::Thread::mMemoryTag = ion::tag::Unset;
+#endif
+#if 0
+static_assert(sizeof(ion::Thread::mJob) + sizeof(ion::Thread::mTemporaryMemory) + sizeof(ion::Thread::mRandState) +
+				  sizeof(ion::Thread::mId) + sizeof(ion::Thread::mQueueIndex) + sizeof(ion::Thread::mProfiling) +
+				  sizeof(ion::Thread::mMemoryTag) <=
+				ion::Thread::MaxThreadLocalStoreSize,
+			  "TLS must have small size");
+#endif
 
 #if ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_JOB_SCHEDULER
 template <typename T>
@@ -82,7 +112,7 @@ public:
 
 		// IdPool allocates memory only when freeing ids, so it's safe to reserve id before memory pool is ready
 		T id = mIds.Reserve();
-		ion::Thread::mTLS.mId = id;
+		ion::Thread::mId = id;
 	#if ION_CONFIG_GLOBAL_MEMORY_POOL
 		GlobalMemoryThreadInit(id);
 	#endif
@@ -96,7 +126,7 @@ public:
 		ION_MEMORY_SCOPE(ion::tag::Core);
 		mMutex.Lock();
 		mFreeingIds.Add(id);
-		ion::Thread::mTLS.mId = ~static_cast<UInt>(0);
+		ion::Thread::mId = ~static_cast<UInt>(0);
 		mMutex.Unlock();
 	}
 
@@ -151,7 +181,7 @@ bool isInitialized = false;
 
 bool ion::Thread::IsReady() { return isInitialized; }
 
-bool ion::Thread::IsThreadInitialized() { return IsReady() && mTLS.mId != ~static_cast<UInt>(0); }
+bool ion::Thread::IsThreadInitialized() { return IsReady() && mId != ~static_cast<UInt>(0); }
 
 namespace ion
 {
@@ -206,10 +236,6 @@ void ion::Thread::Init(ion::Thread::QueueIndex index, ion::Thread::Priority prio
 	ION_ASSERT_FMT_IMMEDIATE(!IsThreadInitialized(), "Thread already initialized");
 #endif
 	InitThreadIdPool();
-#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
-  ION_MEMORY_TRACKER
-	std::memset(&mTLS, 0x0, sizeof(ThreadLocalStore));
-#endif
 #if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
 	gThreadIdPool.load()->Reserve();
 #endif
@@ -222,21 +248,21 @@ void ion::Thread::Deinit()
 	ion::FPControl::Validate();
 #endif
 #if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
-	ION_ASSERT(mTLS.mId != ~static_cast<UInt>(0), "Thread not initialized");
+	ION_ASSERT(mId != ~static_cast<UInt>(0), "Thread not initialized");
 	ION_ASSERT(isInitialized, "Threading not initialized");
 #endif
 
 #if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
-	mTLS.mProfiling = nullptr;
+	mProfiling = nullptr;
 #endif
 #if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
-	gThreadIdPool.load()->Free(mTLS.mId);
+	gThreadIdPool.load()->Free(mId);
 #endif
 #if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
-	if (mTLS.mTemporaryMemory)
+	if (mTemporaryMemory)
 	{
-		ion::temporary::ThreadDeinit(mTLS.mTemporaryMemory);
-		mTLS.mTemporaryMemory = nullptr;
+		ion::temporary::ThreadDeinit(mTemporaryMemory);
+		mTemporaryMemory = nullptr;
 	}
 #endif
 }
@@ -327,7 +353,7 @@ void ion::Thread::SetPriority(ion::Thread::Priority priority)
 	#else
 	int tid = 0;
 	#endif
-	
+
 	errno = 0;
 #elif ION_THREAD_USE_SCHEDULING_POLICY
 	pthread_t handle = pthread_self();
@@ -354,24 +380,24 @@ void ion::Thread::SetPriority(ion::Thread::Priority priority)
 void ion::Thread::InitInternal(ion::Thread::QueueIndex index, ion::Thread::Priority priority)
 {
 #if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL
-	if (mTLS.mId == 0)
+	if (mId == 0)
 	{
 		SetMainThreadPolicy();
 	}
 #endif
 
 #if ION_CONFIG_JOB_SCHEDULER
-	mTLS.mQueueIndex = index;
-	mTLS.mJob = &gEmptyJob;
+	mQueueIndex = index;
+	mJob = &gEmptyJob;
 #endif
 #if ION_PROFILER_BUFFER_SIZE_PER_THREAD > 0
-	mTLS.mProfiling = profiling::Buffer(mTLS.mId, uint8_t(priority));
+	mProfiling = profiling::Buffer(mId, uint8_t(priority));
 #endif
 #if ION_CONFIG_JOB_SCHEDULER
 	{
 		time_t now;
 		time(&now);
-		ion::Random::Seed((static_cast<uint64_t>(std::hash<uint64_t>()(uint64_t(GetId()) ^ uint64_t(now)))), mTLS.mRandState);
+		ion::Random::Seed((static_cast<uint64_t>(std::hash<uint64_t>()(uint64_t(GetId()) ^ uint64_t(now)))), mRandState);
 	}
 #endif
 
@@ -379,9 +405,9 @@ void ion::Thread::InitInternal(ion::Thread::QueueIndex index, ion::Thread::Prior
 
 #if ION_THREAD_USE_IDEAL_PROCESSOR
 	// Use ideal processor when index is set, but let main thread (id 0) choose ideal processor itself
-	if (index != NoQueueIndex && mTLS.mId != 0)
+	if (index != NoQueueIndex && mId != 0)
 	{
-		auto res = SetThreadIdealProcessor(handle, mTLS.mId);
+		auto res = SetThreadIdealProcessor(handle, mId);
 		ION_ASSERT(res != -1, "Cannot set ideal processor for index " << index);
 	}
 #endif
@@ -390,21 +416,11 @@ void ion::Thread::InitInternal(ion::Thread::QueueIndex index, ion::Thread::Prior
 #endif
 }
 
-#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
-  ION_MEMORY_TRACKER
-ion::Thread::ThreadLocalStore::ThreadLocalStore() {}
-#endif
-
-#if ION_CONFIG_JOB_SCHEDULER || ION_CONFIG_GLOBAL_MEMORY_POOL || ION_CONFIG_TEMPORARY_ALLOCATOR || ION_PROFILER_BUFFER_SIZE_PER_THREAD || \
-  ION_MEMORY_TRACKER
-ion::Thread::ThreadLocalStore::~ThreadLocalStore() {}
-#endif
-
 #if ION_CONFIG_TEMPORARY_ALLOCATOR == 1
 ion::temporary::BytePool& ion::Thread::InitTemporaryMemory()
 {
-	mTLS.mTemporaryMemory = ion::temporary::ThreadInit();
-	return *mTLS.mTemporaryMemory;
+	mTemporaryMemory = ion::temporary::ThreadInit();
+	return *mTemporaryMemory;
 }
 #endif
 

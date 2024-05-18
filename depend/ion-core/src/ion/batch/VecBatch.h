@@ -205,7 +205,7 @@ public:
 		return *this;
 	}
 
-	template<typename ShiftType>
+	template <typename ShiftType>
 	[[nodiscard]] constexpr RawBatch operator<<(ShiftType shift) const
 	{
 		return RawBatch(mValue << shift);
@@ -246,10 +246,7 @@ public:
 		return values;
 	}
 
-	inline void Set(size_t index, const Type& v)
-	{
-		mValue[index] = v;
-	}
+	inline void Set(size_t index, const Type& v) { mValue[index] = v; }
 
 	inline void LoadAligned(const ion::Vec<Type, ElementCount>& v) { mValue.load_aligned(v.Data()); }
 
@@ -284,7 +281,6 @@ public:
 	constexpr RawBoolBatch<Type> operator<(const RawBatch<Type>& other) const { return mValue < other.mValue; }
 
 private:
-
 	ION_ALIGN(DefaultAlignment) T mValue;
 };
 
@@ -303,7 +299,7 @@ template <typename T, typename F>
 	return detail::MakeFloatBatch<T>(f, std::make_index_sequence<RawBatch<T>::ElementCount>{});
 }
 
-template <typename T = RawBatch<float>>
+template <size_t Dim = 2, typename T = RawBatch<float>>
 class VecBatch
 {
 public:
@@ -313,128 +309,290 @@ public:
 
 	VecBatch() = default;
 
-	inline VecBatch(const Vec2<Type>& v) : mX(v.x()), mY(v.y()) {}
+	inline VecBatch(const Vec2<Type>& v) : mData{v.x(), v.y()} { static_assert(Dim == 2, "invalid dimension"); }
 
-	inline VecBatch(const T& x, const T& y) : mX(x), mY(y) {}
+	inline VecBatch(const Vec3<Type>& v) : mData{v.x(), v.y(), v.z()} { static_assert(Dim == 3, "invalid dimension"); }
+
+	inline VecBatch(const T& x, const T& y) : mData{x, y} { static_assert(Dim == 2, "invalid dimension"); }
+
+	inline VecBatch(const T& x, const T& y, const T& z) : mData{x, y, z} { static_assert(Dim == 3, "invalid dimension"); }
 
 	static size_t Size() { return ElementCount; }
 
 	inline void Set(size_t index, const ion::Vec2<Type>& v)
 	{
-		mX.Set(index, v.x());
-		mY.Set(index, v.y());
+		static_assert(Dim == 2, "invalid dimension"); 
+		X().Set(index, v.x());
+		Y().Set(index, v.y());
+	}
+
+	inline void Set(size_t index, const ion::Vec3<Type>& v)
+	{
+		static_assert(Dim == 3, "invalid dimension"); 
+		X().Set(index, v.x());
+		Y().Set(index, v.y());
+		Z().Set(index, v.z());
 	}
 
 	inline VecBatch& operator-=(const VecBatch& v)
 	{
-		mX -= v.mX;
-		mY -= v.mY;
+		X() -= v.X();
+		Y() -= v.Y();
+		if constexpr (Dim == 3)
+		{
+			Z() -= v.Z();
+		}
 		return *this;
 	}
 
 	inline VecBatch& operator-=(const Type& v)
 	{
 		T splat(v);
-		mX -= splat;
-		mY -= splat;
+		X() -= splat;
+		Y() -= splat;
+		if constexpr (Dim == 3)
+		{
+			Z() -= splat;
+		}
 		return *this;
 	}
 
-	inline VecBatch operator-(const VecBatch& v) const { return VecBatch(mX - v.mX, mY - v.mY); }
+	inline VecBatch operator-(const VecBatch& v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() - v.X(), Y() - v.Y(), Z() - v.Z());
+		}
+		else
+		{
+			return VecBatch(X() - v.X(), Y() - v.Y());
+		}
+	}
 
-
-	inline VecBatch operator-() const { return VecBatch(-mX, -mY); }
+	inline VecBatch operator-() const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(-X(), -Y(), -Z());
+		}
+		else
+		{
+			return VecBatch(-X(), -Y());
+		}
+	}
 
 	inline VecBatch& operator+=(const VecBatch& v)
 	{
-		mX += v.mX;
-		mY += v.mY;
+		X() += v.X();
+		Y() += v.Y();
+		if constexpr (Dim == 3)
+		{
+			Z() += v.Z();
+		}
 		return *this;
 	}
 
 	inline VecBatch& operator+=(const Type& v)
 	{
 		T splat(v);
-		mX += splat;
-		mY += splat;
+		X() += splat;
+		Y() += splat;
+		if constexpr (Dim == 3)
+		{
+			Z() += splat;
+		}
 		return *this;
 	}
 
-	inline VecBatch operator+(const Vec<Type, 2>& v) const { return VecBatch(mX + v.x(), mY + v.y()); }
+	inline VecBatch operator+(const Vec<Type, Dim>& v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() + v.x(), Y() + v.y(), Z() + v.z());
+		}
+		else
+		{
+			return VecBatch(X() + v.x(), Y() + v.y());
+		}
+	}
 
-	inline VecBatch<T> operator+(const VecBatch<T>& v) const { return VecBatch<T>(mX + v.mX, mY + v.mY); }
+	inline VecBatch operator+(const VecBatch<Dim, T>& v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch<Dim, T>(X() + v.X(), Y() + v.Y(), Z() + v.Z());
+		}
+		else
+		{
+			return VecBatch<Dim, T>(X() + v.X(), Y() + v.Y());
+		}
+	}
 
-	inline VecBatch operator+(Type v) const { return VecBatch(mX + v, mY + v); }
+	inline VecBatch operator+(Type v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch<Dim, T>(X() + v, Y() + v, Z() + v);
+		}
+		else
+		{
+			return VecBatch<Dim, T>(X() + v, Y() + v);
+		}
+	}
 
 	inline VecBatch& operator*=(const VecBatch& v)
 	{
-		mX *= v.mX;
-		mY *= v.mY;
+		X() *= v.X();
+		Y() *= v.Y();
+		if constexpr (Dim == 3)
+		{
+			Z() *= v.Z();
+		}
 		return *this;
 	}
 
 	inline VecBatch& operator*=(const Type& v)
 	{
 		T splat(v);
-		mX *= splat;
-		mY *= splat;
+		X() *= splat;
+		Y() *= splat;
+		if constexpr (Dim == 3)
+		{
+			Z() *= splat;
+		}
 		return *this;
 	}
 
-	inline VecBatch operator*(const VecBatch& v) const { return VecBatch(mX * v.mX, mY * v.mY); }
+	inline VecBatch operator*(const VecBatch& v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() * v.X(), Y() * v.Y(), Z() * v.Z());
+		}
+		else
+		{
+			return VecBatch(X() * v.X(), Y() * v.Y());
+		}
+	}
 
-	inline VecBatch operator*(const RawBatch<Type>& v) const { return VecBatch(mX * v, mY * v); }
+	inline VecBatch operator*(const RawBatch<Type>& v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() * v, Y() * v, Z() * v);
+		}
+		else
+		{
+			return VecBatch(X() * v, Y() * v);
+		}
+	}
 
 	inline VecBatch operator*(const Type v) const
 	{
 		T splat(v);
-		return VecBatch(mX * splat, mY * splat);
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() * splat, Y() * splat, Z() * splat);
+		}
+		else
+		{
+			return VecBatch(X() * splat, Y() * splat);
+		}
 	}
 
 	inline VecBatch& operator/=(const VecBatch& v)
 	{
-		mX /= v.mX;
-		mY /= v.mY;
+		X() /= v.X();
+		Y() /= v.Y();
+		if constexpr (Dim == 3)
+		{
+			Z() /= v.Z();
+		}
 		return *this;
 	}
 
 	inline VecBatch& operator/=(const Type& v)
 	{
 		T splat(v);
-		mX /= splat;
-		mY /= splat;
+		X() /= splat;
+		Y() /= splat;
+		if constexpr (Dim == 3)
+		{
+			Z() /= splat;
+		}
 		return *this;
 	}
 
-	inline VecBatch operator/(const VecBatch& v) const { return VecBatch(mX / v.mX, mY / v.mY); }
+	inline VecBatch operator/(const VecBatch& v) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() / v.X(), Y() / v.Y(), Z() / v.Z());
+		}
+		else
+		{
+			return VecBatch(X() / v.X(), Y() / v.Y());
+		}
+	}
 
 	inline VecBatch operator/(const Type v) const
 	{
 		T splat(v);
-		return VecBatch(mX / splat, mY / splat);
+		if constexpr (Dim == 3)
+		{
+			return VecBatch(X() / splat, Y() / splat, Z() / splat);
+		}
+		else
+		{
+			return VecBatch(X() / splat, Y() / splat);
+		}
 	}
 
-	[[nodiscard]] constexpr T& X() { return mX; }
+	[[nodiscard]] constexpr T& X() { return mData[0]; }
 
-	[[nodiscard]] constexpr T& Y() { return mY; }
+	[[nodiscard]] constexpr T& Y() { return mData[1]; }
 
-	[[nodiscard]] constexpr const T& X() const { return mX; }
+	[[nodiscard]] constexpr T& Z() { return mData[2]; }
 
-	[[nodiscard]] constexpr const T& Y() const { return mY; }
+	[[nodiscard]] constexpr const T& X() const { return mData[0]; }
 
-	[[nodiscard]] constexpr ion::Vec2<Type> operator[](size_t index) const { return ion::Vec2<float>(mX[index], mY[index]); }
+	[[nodiscard]] constexpr const T& Y() const { return mData[1]; }
 
-	[[nodiscard]] constexpr T LengthSqr() const { return T(mX * mX + mY * mY); }
+	[[nodiscard]] constexpr const T& Z() const { return mData[2]; }
+
+	[[nodiscard]] constexpr ion::Vec<Type, Dim> operator[](size_t index) const
+	{
+		if constexpr (Dim == 3)
+		{
+			return ion::Vec3<float>(X()[index], Y()[index], Z()[index]);
+		}
+		else if constexpr (Dim == 2) 
+		{
+			return ion::Vec2<float>(X()[index], Y()[index]);
+		}
+	}
+
+	[[nodiscard]] constexpr T LengthSqr() const
+	{
+		if constexpr (Dim == 3)
+		{
+			return T(X() * X() + Y() * Y(), Z() * Z());
+		}
+		else
+		{
+			return T(X() * X() + Y() * Y());
+		}
+	}
 
 	[[nodiscard]] constexpr T Length() const { return LengthSqr().Sqrt(); }
 
-	[[nodiscard]] constexpr T DistanceSqr(VecBatch<T> other) const
+	[[nodiscard]] constexpr T DistanceSqr(VecBatch<Dim, T> other) const
 	{
 		other = other - *this;
 		return other.LengthSqr();
 	}
 
-	[[nodiscard]] constexpr T Distance(const VecBatch<T>& other) const { return DistanceSqr(other).Sqrt(); }
+	[[nodiscard]] constexpr T Distance(const VecBatch<Dim, T>& other) const { return DistanceSqr(other).Sqrt(); }
 
 	bool IsYLessThan(Type limit) const
 	{
@@ -443,71 +601,78 @@ public:
 	}
 
 private:
-	T mX;
-	T mY;
+	ion::Array<T, Dim> mData;
 };
 
-template <typename T>
-inline VecBatch<T>& operator+=(VecBatch<T>& lhs, const VecBatch<T>& rhs)
+template <size_t Dim, typename T>
+inline VecBatch<Dim, T>& operator+=(VecBatch<Dim, T>& lhs, const VecBatch<Dim, T>& rhs)
 {
 	lhs = VecBatch(lhs + rhs);
 	return lhs;
 }
 
-template <typename T, typename Type>
-inline VecBatch<T>& operator+=(VecBatch<T>& lhs, const Type& rhs)
+template <size_t Dim, typename T, typename Type>
+inline VecBatch<Dim, T>& operator+=(VecBatch<Dim, T>& lhs, const Type& rhs)
 {
 	lhs = VecBatch<T>(lhs + rhs);
 	return lhs;
 }
 
-template <typename T>
-inline VecBatch<T>& operator-=(VecBatch<T>& lhs, const VecBatch<T>& rhs)
+template <size_t Dim, typename T>
+inline VecBatch<Dim, T>& operator-=(VecBatch<Dim, T>& lhs, const VecBatch<Dim, T>& rhs)
 {
 	lhs = VecBatch(lhs - rhs);
 	return lhs;
 }
 
-template <typename T>
-inline VecBatch<T>& operator*=(VecBatch<T>& lhs, const VecBatch<T>& rhs)
+template <size_t Dim, typename T>
+inline VecBatch<Dim, T>& operator*=(VecBatch<Dim, T>& lhs, const VecBatch<Dim, T>& rhs)
 {
 	lhs = VecBatch(lhs * rhs);
 	return lhs;
 }
 
-template <typename T, typename Type>
-inline VecBatch<T>& operator*=(VecBatch<T>& lhs, const Type& rhs)
+template <size_t Dim, typename T, typename Type>
+inline VecBatch<Dim, T>& operator*=(VecBatch<Dim, T>& lhs, const Type& rhs)
 {
-	lhs = VecBatch<T>(lhs * rhs);
+	lhs = VecBatch<Dim, T>(lhs * rhs);
 	return lhs;
 }
 
-template <typename T, typename Type>
-inline VecBatch<T>& operator/=(VecBatch<T>& lhs, const Type& rhs)
+template <size_t Dim, typename T, typename Type>
+inline VecBatch<Dim, T>& operator/=(VecBatch<Dim, T>& lhs, const Type& rhs)
 {
 	lhs = VecBatch<T>(lhs / rhs);
 	return lhs;
 }
 
-template <typename T>
-inline VecBatch<T>& operator/=(VecBatch<T>& lhs, const VecBatch<T>& rhs)
+template <size_t Dim, typename T>
+inline VecBatch<Dim, T>& operator/=(VecBatch<Dim, T>& lhs, const VecBatch<Dim, T>& rhs)
 {
 	lhs = VecBatch(lhs / rhs);
 	return lhs;
 }
 
-template <typename T = RawBatch<float>>
-[[nodiscard]] inline VecBatch<T> RadiansToUVec(const T& in)
+template <size_t Dim, typename T = RawBatch<float>>
+[[nodiscard]] inline VecBatch<Dim, T> RadiansToUVec(const T& in)
 {
 #if ION_SIMD
-	VecBatch<T> out;
-	xsimd::sincos(in.Raw(), out.Y().Raw(), out.X().Raw());
+	VecBatch<Dim, T> out;
+	if constexpr (Dim == 3)
+	{
+		xsimd::sincos(in.Raw(), out.Y().Raw(), out.X().Raw());
+		out.Z() = 0;
+	}
+	else
+	{
+		xsimd::sincos(in.Raw(), out.Y().Raw(), out.X().Raw());
+	}
 	return out;
 #else
-	VecBatch<T> out;
-	for (size_t i = 0; i < VecBatch<T>::Size(); ++i)
+	VecBatch<Dim, T> out;
+	for (size_t i = 0; i < VecBatch<Dim, T>::Size(); ++i)
 	{
-		out.Set(i, ion::Vec<float, 2>(std::cos(in.Raw()[i]), std::sin(in.Raw()[i])));
+		out.Set(i, ion::Vec<float, Dim>(std::cos(in.Raw()[i]), std::sin(in.Raw()[i])));
 	}
 	return out;
 #endif
@@ -515,8 +680,10 @@ template <typename T = RawBatch<float>>
 
 using Float32Batch = RawBatch<>;
 using Int32Batch = RawBatch<int32_t>;
+using Int16Batch = RawBatch<int16_t>;
 using UInt32Batch = RawBatch<uint32_t>;
-using Vec2fBatch = VecBatch<>;
+using Vec2fBatch = VecBatch<2>;
+using Vec3fBatch = VecBatch<3>;
 
 template <typename T, size_t Count = ION_BATCH_SIZE>
 struct Batch : public ion::Vec<T, Count>
@@ -545,11 +712,19 @@ struct Batch<int32_t, 4> : public ion::Vec<int32_t, 4>
 #endif
 
 template <>
-struct Batch<ion::Vec2f, VecBatch<>::ElementCount> : public VecBatch<>
+struct Batch<ion::Vec2f, VecBatch<2>::ElementCount> : public VecBatch<2>
 {
 	Batch() {}
 	Batch(const ion::Vec2f& other) : ion::VecBatch<>(other) {}
 	Batch(const ion::Vec2fBatch& other) : ion::VecBatch<>(other) {}
+};
+
+template <>
+struct Batch<ion::Vec3f, VecBatch<3>::ElementCount> : public VecBatch<3>
+{
+	Batch() {}
+	Batch(const ion::Vec3f& other) : ion::VecBatch<3>(other) {}
+	Batch(const ion::Vec3fBatch& other) : ion::VecBatch<3>(other) {}
 };
 
 template <>
@@ -583,11 +758,20 @@ template <>
 	return t.Scalar();
 }
 
-template <typename T = float, typename F>
-[[nodiscard]] constexpr ion::VecBatch<RawBatch<T>> MakeVecBatch(F&& f)
+template <size_t Dim = 2, typename T = float, typename F>
+[[nodiscard]] constexpr ion::VecBatch<Dim, RawBatch<T>> MakeVecBatch(F&& f)
 {
-	return ion::VecBatch<RawBatch<T>>(ion::MakeFloatBatch<float>([&](size_t i) { return f(i).x(); }),
-									  ion::MakeFloatBatch<float>([&](size_t i) { return f(i).y(); }));
+	if constexpr (Dim == 2)
+	{
+		return ion::VecBatch<Dim, RawBatch<T>>(ion::MakeFloatBatch<float>([&](size_t i) { return f(i).x(); }),
+											   ion::MakeFloatBatch<float>([&](size_t i) { return f(i).y(); }));
+	}
+	else if constexpr (Dim == 3)
+	{
+		return ion::VecBatch<Dim, RawBatch<T>>(ion::MakeFloatBatch<float>([&](size_t i) { return f(i).x(); }),
+											   ion::MakeFloatBatch<float>([&](size_t i) { return f(i).y(); }),
+											   ion::MakeFloatBatch<float>([&](size_t i) { return f(i).z(); }));
+	}
 }
 
 template <>
@@ -608,16 +792,15 @@ struct BaseType<Batch<T, s>>
 	using type = T;
 };
 
-template<>
-[[nodiscard]] inline ion::Batch<float, 4> Absf(const ion::Batch<float, 4> a)
+[[nodiscard]] inline Float32Batch Abs(const Float32Batch& a)
 {
 #if ION_SIMD
-	return ion::Batch<float, 4>(xsimd::fabs(a.Raw()));
+	return Float32Batch(xsimd::fabs(a.Raw()));
 #else
-	ion::Batch<float, 4> out;
-	for (size_t i = 0; i < 4; ++i)
+	Float32Batch out;
+	for (size_t i = 0; i < Float32Batch::ElementCount; ++i)
 	{
-		out.Set(i, ion::Absf(a[i]));		
+		out.Set(i, ion::Absf(a[i]));
 	}
 	return out;
 #endif
@@ -625,7 +808,7 @@ template<>
 
 [[nodiscard]] inline Float32Batch WrapValue(const Float32Batch& a, float limit)
 {
-#if ION_SIMD	
+#if ION_SIMD
 	auto first = xsimd::select(a.Raw() > limit, a.Raw() - limit * 2, a.Raw());
 	return Float32Batch(xsimd::select(first < -limit, first + limit * 2, first));
 #else
@@ -635,7 +818,6 @@ template<>
 		float first = a[i] > limit ? a[i] - limit * 2 : a[i];
 		first = first < -limit ? first + limit * 2 : first;
 		out.Set(i, first);
-		
 	}
 	return out;
 #endif

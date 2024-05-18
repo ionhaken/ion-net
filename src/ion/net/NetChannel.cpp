@@ -20,6 +20,16 @@
 namespace ion
 {
 
+// https://github.com/skywind3000/kcp/pull/409
+// In the ikcp_parse_fastack function, it is found that if the IKCP_FASTACK_CONSERVE
+// macro is not defined, fast retransmission will be triggered repeatedly for the
+// retransmitted message. For example: the sender's A message has been retransmitted,
+// and then the sender receives a message larger than A. If there are several acks of
+// numbered packets, then these acks will cause fast retransmission of packet A.
+// Therefore, this macro should be added to use the sn sequence number and ts timestamp
+// to jointly determine whether the message needs to be retransmitted quickly.
+#define IKCP_FASTACK_CONSERVE
+
 #define ION_NET_CHANNEL_LOG(__msg, ...)	ION_NET_LOG_VERBOSE_CHANNEL(__msg, __VA_ARGS__)
 
 const uint32_t IKCP_CMD_PUSH = 0;  // cmd: push data
@@ -568,8 +578,10 @@ static void ikcp_parse_fastack(NetChannel* kcp, uint32_t sn, uint32_t ts)
 #ifndef IKCP_FASTACK_CONSERVE
 			seg->mHeader.fastack++;
 #else
-			if (DeltaTime(ts, seg->ts) >= 0)
-				seg->fastack++;
+			if (DeltaTime(ts, seg->mHeader.ts) >= 0)
+			{
+				seg->mHeader.fastack++;
+			}
 #endif
 		}
 	}

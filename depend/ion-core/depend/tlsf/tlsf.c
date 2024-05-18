@@ -124,7 +124,14 @@ enum tlsf_private {
  * Set assert macro, if it has not been provided by the user.
  */
 #if !defined (tlsf_assert)
-#define tlsf_assert assert
+#if ION_CONFIG_ERROR_CHECKING
+#define tlsf_assert(__expr) if (!(__expr)) \
+	{ \
+		ION_DEBUG_BREAK; \
+	}
+#else
+#define tlsf_assert(__expr) 
+#endif
 #endif
 
 /*
@@ -995,7 +1002,7 @@ void tlsf_remove_pool(tlsf_t *tlsf, tlsf_pool_t *pool)
  * TLSF main interface.
  */
 
-#if _DEBUG
+#ifdef _DEBUG
 int test_ffs_fls()
 {
 	/* Verify ffs/fls work properly */
@@ -1025,7 +1032,7 @@ int test_ffs_fls()
 
 tlsf_t *tlsf_create(void *mem)
 {
-#if _DEBUG
+#ifdef _DEBUG
 	if (test_ffs_fls()) {
 		assert(0 && "ffs/fls test failed\n");
 		return NULL;

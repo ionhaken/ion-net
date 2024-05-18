@@ -313,9 +313,9 @@ struct Vec
 
 	[[nodiscard]] constexpr T LengthSqr() const { return ion::LengthSqr(*this); }
 
-	[[nodiscard]] constexpr T Cross(Vec& other) { return Vec::Cross(*this, other); }
+	[[nodiscard]] constexpr T Cross(const Vec& other) const { return Vec::Cross(*this, other); }
 
-	[[nodiscard]] constexpr T Dot(Vec& other) { return Vec::Dot(*this, other); }
+	[[nodiscard]] constexpr T Dot(const Vec& other) const { return Vec::Dot(*this, other); }
 
 	[[nodiscard]] constexpr Vec NormalizedNonZero() const
 	{

@@ -207,9 +207,9 @@ public:
 		NodeRegistry::Clear(mResource, mGraphInfo);
 		// mTypeInfo.Clear(mResource);
 	}
-
+	
 	template <typename T, ion::UInt partitionSize, ion::UInt batchSize, typename GraphContextType>
-	static ION_INLINE_RELEASE void NodeEntryPoint(ArenaVector<uint8_t>& nodeData, GraphContextType& userData, ion::JobScheduler& js)
+	static ION_FORCE_INLINE void NodeEntryPoint(ArenaVector<uint8_t>& nodeData, GraphContextType& userData, ion::JobScheduler& js)
 	{
 		T* iter = ion::AssumeAligned<T>(reinterpret_cast<T*>(nodeData.Data()));
 
@@ -424,7 +424,7 @@ private:
 					   partitionWorkLoad > 1.0f ? 0u : numNodeBlocks, 1u,
 					   [&](auto& block)
 					   { mTypeInfo->mEntryPoints[NodeGroupIdx(block.typeId)][NodeTypeIdx(block.typeId)](block.data, userData, js); });
-		if (mIsDebugging)
+		if ION_UNLIKELY (mIsDebugging)
 		{
 			ion::ForEach(mPhases[partition][phase].nodeBlocks, [&](auto& block)
 						 { mTypeInfo->mDebugEntryPoints[NodeGroupIdx(block.typeId)][NodeTypeIdx(block.typeId)](block.data, userData); });
